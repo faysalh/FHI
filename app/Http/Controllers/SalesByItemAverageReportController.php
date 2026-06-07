@@ -8,12 +8,14 @@ use App\Exports\SalesByItemAverageReportExport;
 use App\Http\Requests\SalesByItemAverageReportRequest;
 use App\Repositories\SalesByItemAverageReportRepository;
 use App\Repositories\VisitsReportRepository;
+use App\Services\ReportAssemblyPriorityService;
 use App\Support\NumberDisplay;
+use App\Support\WorkingDays;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Facades\Excel;
@@ -24,9 +26,9 @@ class SalesByItemAverageReportController extends Controller
 {
     public function __construct(
         private readonly SalesByItemAverageReportRepository $repository,
-        private readonly VisitsReportRepository $visitsRepository
-    ) {
-    }
+        private readonly VisitsReportRepository $visitsRepository,
+        private readonly ReportAssemblyPriorityService $assemblyPriority
+    ) {}
 
     public function index(SalesByItemAverageReportRequest $request): View
     {
@@ -34,18 +36,17 @@ class SalesByItemAverageReportController extends Controller
         $input = array_merge([
             'date_from' => $today,
             'date_to' => $today,
-            'per_page' => 25,
+            'per_page' => 250,
             'q' => '',
-            'working_days' => 0,
         ], $request->validated());
 
         $dateFrom = (string) $input['date_from'];
         $dateTo = (string) $input['date_to'];
-        $perPage = (int) ($input['per_page'] ?? 25);
+        $perPage = (int) ($input['per_page'] ?? 250);
         $page = (int) ($input['page'] ?? 1);
         $q = trim((string) ($input['q'] ?? ''));
         $excludeCategory = trim((string) ($input['exclude_category'] ?? ''));
-        $workingDays = max(0, (int) ($input['working_days'] ?? 0));
+        $workingDays = $this->resolveWorkingDaysDivisor($dateFrom, $dateTo);
         $cities = $this->repository->normalizeCities(
             is_array($input['cities'] ?? null) ? $input['cities'] : []
         );
@@ -63,6 +64,7 @@ class SalesByItemAverageReportController extends Controller
             Log::warning('Sales by item average category options failed.', ['message' => $e->getMessage()]);
         }
 
+        $grandTotals = null;
         try {
             $rows = $this->repository->getReport(
                 $dateFrom,
@@ -73,6 +75,16 @@ class SalesByItemAverageReportController extends Controller
                 $page,
                 $perPage
             );
+            $rows->setCollection(collect(
+                $this->assemblyPriority->sortRows($rows->items(), 'category_name', 'category_name')
+            ));
+            $grandTotals = $this->repository->getGrandTotals(
+                $dateFrom,
+                $dateTo,
+                $q !== '' ? $q : null,
+                $excludeCategory !== '' ? $excludeCategory : null,
+                $cities
+            );
         } catch (Throwable $e) {
             Log::error('Sales by item average report failed.', [
                 'date_from' => $dateFrom,
@@ -82,6 +94,7 @@ class SalesByItemAverageReportController extends Controller
 
             return view('reports.sales-item-average.index', [
                 'rows' => null,
+                'grandTotals' => null,
                 'filters' => [
                     'date_from' => $dateFrom,
                     'date_to' => $dateTo,
@@ -92,7 +105,7 @@ class SalesByItemAverageReportController extends Controller
                     'working_days' => $workingDays,
                 ],
                 'errorMessage' => 'Unable to load sales by item average report. Check logs and try again.',
-                'workingDaysDivisor' => $workingDays > 0 ? $workingDays : null,
+                'workingDaysDivisor' => $workingDays,
                 'cityOptions' => $cityOptions,
                 'categoryOptions' => $categoryOptions,
                 'hasCityColumn' => $hasCityColumn,
@@ -101,6 +114,7 @@ class SalesByItemAverageReportController extends Controller
 
         return view('reports.sales-item-average.index', [
             'rows' => $rows,
+            'grandTotals' => $grandTotals,
             'filters' => [
                 'date_from' => $dateFrom,
                 'date_to' => $dateTo,
@@ -111,7 +125,7 @@ class SalesByItemAverageReportController extends Controller
                 'exclude_category' => $excludeCategory,
             ],
             'errorMessage' => null,
-            'workingDaysDivisor' => $workingDays > 0 ? $workingDays : null,
+            'workingDaysDivisor' => $workingDays,
             'cityOptions' => $cityOptions,
             'categoryOptions' => $categoryOptions,
             'hasCityColumn' => $hasCityColumn,
@@ -148,6 +162,14 @@ class SalesByItemAverageReportController extends Controller
                 $excludeCategory !== '' ? $excludeCategory : null,
                 $cities
             );
+            $rows = $this->assemblyPriority->sortRows(array_map(
+                static function (object $row) use ($category): object {
+                    $row->category_name = $category;
+
+                    return $row;
+                },
+                $rows
+            ), 'category_name', 'item_name');
         } catch (Throwable $e) {
             Log::error('Sales by item average category drilldown failed.', ['message' => $e->getMessage()]);
 
@@ -176,7 +198,6 @@ class SalesByItemAverageReportController extends Controller
     {
         $input = array_merge([
             'q' => '',
-            'working_days' => 0,
         ], $request->validated());
 
         $dateFrom = (string) $input['date_from'];
@@ -184,7 +205,7 @@ class SalesByItemAverageReportController extends Controller
         $q = trim((string) ($input['q'] ?? ''));
         $category = trim((string) ($input['category'] ?? ''));
         $excludeCategory = trim((string) ($input['exclude_category'] ?? ''));
-        $workingDays = max(0, (int) ($input['working_days'] ?? 0));
+        $workingDays = $this->resolveWorkingDaysDivisor($dateFrom, $dateTo);
         $cities = $this->repository->normalizeCities(
             is_array($input['cities'] ?? null) ? $input['cities'] : []
         );
@@ -215,6 +236,7 @@ class SalesByItemAverageReportController extends Controller
             'cities' => $cities,
             'includeItemBreakdown' => true,
             'workingDays' => $workingDays,
+            ...\App\Support\ReportPdfBranding::viewData(),
         ])->setPaper('a4', 'landscape');
 
         return $pdf->download('sales-by-item-average-'.$dateFrom.'-'.$dateTo.'.pdf');
@@ -224,7 +246,6 @@ class SalesByItemAverageReportController extends Controller
     {
         $input = array_merge([
             'q' => '',
-            'working_days' => 0,
         ], $request->validated());
 
         $dateFrom = (string) $input['date_from'];
@@ -232,7 +253,7 @@ class SalesByItemAverageReportController extends Controller
         $q = trim((string) ($input['q'] ?? ''));
         $category = trim((string) ($input['category'] ?? ''));
         $excludeCategory = trim((string) ($input['exclude_category'] ?? ''));
-        $workingDays = max(0, (int) ($input['working_days'] ?? 0));
+        $workingDays = $this->resolveWorkingDaysDivisor($dateFrom, $dateTo);
         $cities = $this->repository->normalizeCities(
             is_array($input['cities'] ?? null) ? $input['cities'] : []
         );
@@ -268,6 +289,11 @@ class SalesByItemAverageReportController extends Controller
         }
 
         return NumberDisplay::format($value / $workingDaysDivisor);
+    }
+
+    private function resolveWorkingDaysDivisor(string $dateFrom, string $dateTo): int
+    {
+        return WorkingDays::countBusinessDaysForProjectionBetween($dateFrom, $dateTo);
     }
 
     /**

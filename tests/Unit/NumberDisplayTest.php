@@ -17,11 +17,11 @@ class NumberDisplayTest extends TestCase
         $this->assertSame('100', NumberDisplay::format(100.0));
     }
 
-    public function test_non_zero_fraction_is_shown_and_trailing_zeros_trimmed(): void
+    public function test_fractional_values_are_rounded_to_whole_numbers(): void
     {
-        $this->assertSame('5,000.5', NumberDisplay::format(5000.5));
-        $this->assertSame('42.25', NumberDisplay::format(42.25));
-        $this->assertSame('1.5', NumberDisplay::format(1.5));
+        $this->assertSame('5,001', NumberDisplay::format(5000.5));
+        $this->assertSame('42', NumberDisplay::format(42.25));
+        $this->assertSame('2', NumberDisplay::format(1.5));
     }
 
     public function test_null_and_empty_string_are_zero(): void

@@ -42,4 +42,13 @@ class CustomerReportService
             throw $exception;
         }
     }
+
+    /**
+     * @param  array{q?: string|null, city?: string|null, per_page?: int|null}  $filters
+     * @return array{table: string, column_map: array<string, string>, rows: list<object>}
+     */
+    public function repositoryExportRows(array $filters): array
+    {
+        return $this->repository->getCustomerRowsForExport($filters);
+    }
 }

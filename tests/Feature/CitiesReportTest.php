@@ -22,10 +22,12 @@ class CitiesReportTest extends TestCase
     {
         $visits = Mockery::mock(VisitsReportRepository::class);
         $visits->shouldReceive('getCityOptions')->andReturn([]);
+        $visits->shouldReceive('getSalesmanOptions')->andReturn([]);
         $visits->shouldReceive('getAccountCityColumnName')->andReturn(null);
 
         $repo = Mockery::mock(CitiesReportRepository::class);
         $repo->shouldReceive('normalizeCities')->andReturn([]);
+        $repo->shouldReceive('normalizeSalesmanIds')->andReturn([]);
         $repo->shouldReceive('getReport')->once()->andReturn([
             (object) [
                 'units_sold' => 10,
@@ -46,7 +48,7 @@ class CitiesReportTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('Cities sales report');
-        $response->assertSee('Saved governorates');
+        $response->assertDontSee('Saved governorates');
         $response->assertSee('Period totals');
     }
 
@@ -54,10 +56,12 @@ class CitiesReportTest extends TestCase
     {
         $visits = Mockery::mock(VisitsReportRepository::class);
         $visits->shouldReceive('getCityOptions')->andReturn(['Test City']);
+        $visits->shouldReceive('getSalesmanOptions')->andReturn([]);
         $visits->shouldReceive('getAccountCityColumnName')->andReturn('fld_city');
 
         $repo = Mockery::mock(CitiesReportRepository::class);
         $repo->shouldReceive('normalizeCities')->andReturn([]);
+        $repo->shouldReceive('normalizeSalesmanIds')->andReturn([]);
         $repo->shouldReceive('getSalesOverTimeChartSeries')->once()->andReturn([
             (object) [
                 'sale_date' => '2026-04-01',
@@ -91,10 +95,12 @@ class CitiesReportTest extends TestCase
     {
         $visits = Mockery::mock(VisitsReportRepository::class);
         $visits->shouldReceive('getCityOptions')->andReturn([]);
+        $visits->shouldReceive('getSalesmanOptions')->andReturn([]);
         $visits->shouldReceive('getAccountCityColumnName')->andReturn(null);
 
         $repo = Mockery::mock(CitiesReportRepository::class);
         $repo->shouldReceive('normalizeCities')->andReturn([]);
+        $repo->shouldReceive('normalizeSalesmanIds')->andReturn([]);
         $repo->shouldReceive('getSalesOverTimeChartSeries')->once()->andReturn([
             (object) [
                 'sale_date' => '2026-04-01',
@@ -124,10 +130,12 @@ class CitiesReportTest extends TestCase
     {
         $visits = Mockery::mock(VisitsReportRepository::class);
         $visits->shouldReceive('getCityOptions')->andReturn([]);
+        $visits->shouldReceive('getSalesmanOptions')->andReturn([]);
         $visits->shouldReceive('getAccountCityColumnName')->andReturn(null);
 
         $repo = Mockery::mock(CitiesReportRepository::class);
         $repo->shouldReceive('normalizeCities')->andReturn([]);
+        $repo->shouldReceive('normalizeSalesmanIds')->andReturn([]);
         $repo->shouldReceive('getSalesOverTimeChartSeries')->once()->andReturn([
             (object) [
                 'sale_date' => '2026-04-01',

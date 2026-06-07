@@ -11,6 +11,24 @@
     } else {
         $pdfMeta .= ' | Customers: all';
     }
+    if (! empty($governorateLabel ?? '')) {
+        $pdfMeta .= ' | Governorate: '.$governorateLabel;
+    }
+    if (! empty($salesmanLabel ?? '')) {
+        $pdfMeta .= ' | Salesmen: '.$salesmanLabel;
+    }
+    if (! empty($storageLabel ?? '')) {
+        $pdfMeta .= ' | Storage: '.$storageLabel;
+    }
+
+    $showQuantity = $includeQuantity ?? true;
+    $showAmount = $includeAmount ?? true;
+    $showWeight = $includeWeight ?? true;
+    $metricFlags = [
+        'showQuantity' => $showQuantity,
+        'showAmount' => $showAmount,
+        'showWeight' => $showWeight,
+    ];
 @endphp
 <!DOCTYPE html>
 <html lang="ar">
@@ -18,35 +36,69 @@
     <meta charset="UTF-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
     <title>Sales report</title>
-    <style>
-        body { font-family: DejaVu Sans, Arial, sans-serif; font-size: 10px; margin: 12px; direction: ltr; unicode-bidi: normal; }
-        h1 { font-size: 14px; margin: 0 0 8px 0; }
-        .meta { font-size: 9px; color: #444; margin-bottom: 12px; }
-        table { width: 100%; border-collapse: collapse; direction: ltr; table-layout: fixed; }
-        th, td { border: 1px solid #ccc; padding: 4px 6px; text-align: left; word-wrap: break-word; }
-        th { background: #f0f0f0; font-size: 9px; }
-        .num { text-align: right; font-variant-numeric: tabular-nums; }
-    </style>
+    <style>@include('reports.partials.pdf-styles')</style>
 </head>
 <body>
-    <h1>{{ Ar::glyphs('Sales report') }}</h1>
-    <div class="meta">{{ Ar::glyphs($pdfMeta) }}</div>
+    @include('reports.partials.pdf-branding-header')
+    @include('reports.partials.pdf-title-block', ['title' => 'Sales report', 'meta' => $pdfMeta])
 
-    @if ($mode === 'totals' && isset($rows[0]))
-        @php $t = $rows[0]; @endphp
+    @if ($mode === 'totals' && ! empty($grandTotals))
         <table>
             <thead>
             <tr>
-                <th>{{ Ar::glyphs('Quantity (pcs)') }}</th>
-                <th>{{ Ar::glyphs('Amount (IQD)') }}</th>
-                <th>{{ Ar::glyphs('Weight (kg)') }}</th>
+                @if ($showQuantity)
+                    <th>{{ Ar::glyphs('Quantity (pcs)') }}</th>
+                @endif
+                @if ($showAmount)
+                    <th>{{ Ar::glyphs('Amount (IQD)') }}</th>
+                @endif
+                @if ($showWeight)
+                    <th>{{ Ar::glyphs('Weight (kg)') }}</th>
+                @endif
             </tr>
             </thead>
             <tbody>
             <tr>
-                <td class="num">{{ display_number($t->units_sold ?? 0) }}</td>
-                <td class="num">{{ display_number($t->amount ?? 0) }}</td>
-                <td class="num">{{ display_number($t->weight_total ?? 0) }}</td>
+                @if ($showQuantity)
+                    <td class="num">{{ display_number($grandTotals->units_sold ?? 0) }}</td>
+                @endif
+                @if ($showAmount)
+                    <td class="num">{{ display_number($grandTotals->amount ?? 0) }}</td>
+                @endif
+                @if ($showWeight)
+                    <td class="num">{{ display_number($grandTotals->weight_total ?? 0, 1) }}</td>
+                @endif
+            </tr>
+            </tbody>
+        </table>
+        <p class="pdf-note">{{ Ar::glyphs('Total (all matching filters)') }}</p>
+    @elseif ($mode === 'totals' && isset($rows[0]))
+        @php $t = $rows[0]; @endphp
+        <table>
+            <thead>
+            <tr>
+                @if ($showQuantity)
+                    <th>{{ Ar::glyphs('Quantity (pcs)') }}</th>
+                @endif
+                @if ($showAmount)
+                    <th>{{ Ar::glyphs('Amount (IQD)') }}</th>
+                @endif
+                @if ($showWeight)
+                    <th>{{ Ar::glyphs('Weight (kg)') }}</th>
+                @endif
+            </tr>
+            </thead>
+            <tbody>
+            <tr>
+                @if ($showQuantity)
+                    <td class="num">{{ display_number($t->units_sold ?? 0) }}</td>
+                @endif
+                @if ($showAmount)
+                    <td class="num">{{ display_number($t->amount ?? 0) }}</td>
+                @endif
+                @if ($showWeight)
+                    <td class="num">{{ display_number($t->weight_total ?? 0, 1) }}</td>
+                @endif
             </tr>
             </tbody>
         </table>
@@ -58,9 +110,15 @@
             <tr>
                 <th>{{ Ar::glyphs('Client code') }}</th>
                 <th>{{ Ar::glyphs('Client name') }}</th>
-                <th class="num">{{ Ar::glyphs('Quantity (pcs)') }}</th>
-                <th class="num">{{ Ar::glyphs('Amount (IQD)') }}</th>
-                <th class="num">{{ Ar::glyphs('Weight (kg)') }}</th>
+                @if ($showQuantity)
+                    <th class="num">{{ Ar::glyphs('Quantity (pcs)') }}</th>
+                @endif
+                @if ($showAmount)
+                    <th class="num">{{ Ar::glyphs('Amount (IQD)') }}</th>
+                @endif
+                @if ($showWeight)
+                    <th class="num">{{ Ar::glyphs('Weight (kg)') }}</th>
+                @endif
             </tr>
             </thead>
             <tbody>
@@ -68,12 +126,23 @@
                 <tr>
                     <td>{{ Ar::glyphs((string) ($row->client_code ?? '')) }}</td>
                     <td>{{ Ar::glyphs((string) ($row->client_name ?? '')) }}</td>
-                    <td class="num">{{ display_number($row->units_sold ?? 0) }}</td>
-                    <td class="num">{{ display_number($row->amount ?? 0) }}</td>
-                    <td class="num">{{ display_number($row->weight_total ?? 0) }}</td>
+                    @if ($showQuantity)
+                        <td class="num">{{ display_number($row->units_sold ?? 0) }}</td>
+                    @endif
+                    @if ($showAmount)
+                        <td class="num">{{ display_number($row->amount ?? 0) }}</td>
+                    @endif
+                    @if ($showWeight)
+                        <td class="num">{{ display_number($row->weight_total ?? 0, 1) }}</td>
+                    @endif
                 </tr>
             @endforeach
             </tbody>
+            @include('reports.partials.metric-grand-totals-tfoot', array_merge([
+                'grandTotals' => $grandTotals ?? null,
+                'labelColspan' => 2,
+                'trailingColspan' => 0,
+            ], $metricFlags))
         </table>
     @endif
 
@@ -82,21 +151,122 @@
             <thead>
             <tr>
                 <th>{{ Ar::glyphs('Category') }}</th>
-                <th class="num">{{ Ar::glyphs('Quantity (pcs)') }}</th>
-                <th class="num">{{ Ar::glyphs('Amount (IQD)') }}</th>
-                <th class="num">{{ Ar::glyphs('Weight (kg)') }}</th>
+                @if ($showQuantity)
+                    <th class="num">{{ Ar::glyphs('Quantity (pcs)') }}</th>
+                @endif
+                @if ($showAmount)
+                    <th class="num">{{ Ar::glyphs('Amount (IQD)') }}</th>
+                @endif
+                @if ($showWeight)
+                    <th class="num">{{ Ar::glyphs('Weight (kg)') }}</th>
+                @endif
             </tr>
             </thead>
             <tbody>
             @foreach ($rows as $row)
                 <tr>
                     <td>{{ Ar::glyphs((string) ($row->chicken_category ?? '')) }}</td>
-                    <td class="num">{{ display_number($row->units_sold ?? 0) }}</td>
-                    <td class="num">{{ display_number($row->amount ?? 0) }}</td>
-                    <td class="num">{{ display_number($row->weight_total ?? 0) }}</td>
+                    @if ($showQuantity)
+                        <td class="num">{{ display_number($row->units_sold ?? 0) }}</td>
+                    @endif
+                    @if ($showAmount)
+                        <td class="num">{{ display_number($row->amount ?? 0) }}</td>
+                    @endif
+                    @if ($showWeight)
+                        <td class="num">{{ display_number($row->weight_total ?? 0, 1) }}</td>
+                    @endif
                 </tr>
             @endforeach
             </tbody>
+            @include('reports.partials.metric-grand-totals-tfoot', array_merge([
+                'grandTotals' => $grandTotals ?? null,
+                'labelColspan' => 1,
+                'trailingColspan' => 0,
+            ], $metricFlags))
+        </table>
+    @endif
+
+    @if ($mode === 'by_category_items' && ! empty($categoryTotalsList ?? []))
+        <h2 class="pdf-title pdf-title--sm">{{ Ar::glyphs('Totals by category') }}</h2>
+        <table style="margin-bottom: 14px;">
+            <thead>
+            <tr>
+                <th>{{ Ar::glyphs('Category') }}</th>
+                @if ($showQuantity)
+                    <th class="num">{{ Ar::glyphs('Quantity (pcs)') }}</th>
+                @endif
+                @if ($showAmount)
+                    <th class="num">{{ Ar::glyphs('Amount (IQD)') }}</th>
+                @endif
+                @if ($showWeight)
+                    <th class="num">{{ Ar::glyphs('Weight (kg)') }}</th>
+                @endif
+            </tr>
+            </thead>
+            <tbody>
+            @foreach ($categoryTotalsList as $catRow)
+                <tr>
+                    <td>{{ Ar::glyphs((string) ($catRow['category'] ?? '')) }}</td>
+                    @if ($showQuantity)
+                        <td class="num">{{ display_number($catRow['units_sold'] ?? 0) }}</td>
+                    @endif
+                    @if ($showAmount)
+                        <td class="num">{{ display_number($catRow['amount'] ?? 0) }}</td>
+                    @endif
+                    @if ($showWeight)
+                        <td class="num">{{ display_number($catRow['weight_total'] ?? 0, 1) }}</td>
+                    @endif
+                </tr>
+            @endforeach
+            </tbody>
+            @include('reports.partials.metric-grand-totals-tfoot', array_merge([
+                'grandTotals' => $grandTotals ?? null,
+                'labelColspan' => 1,
+                'trailingColspan' => 0,
+            ], $metricFlags))
+        </table>
+    @endif
+
+    @if ($mode === 'by_category_items')
+        <h2 class="pdf-title pdf-title--sm">{{ Ar::glyphs('Items by category') }}</h2>
+        <table>
+            <thead>
+            <tr>
+                <th>{{ Ar::glyphs('Category') }}</th>
+                <th>{{ Ar::glyphs('Item name') }}</th>
+                @if ($showQuantity)
+                    <th class="num">{{ Ar::glyphs('Quantity (pcs)') }}</th>
+                @endif
+                @if ($showAmount)
+                    <th class="num">{{ Ar::glyphs('Amount (IQD)') }}</th>
+                @endif
+                @if ($showWeight)
+                    <th class="num">{{ Ar::glyphs('Weight (kg)') }}</th>
+                @endif
+            </tr>
+            </thead>
+            <tbody>
+            @foreach ($rows as $row)
+                <tr>
+                    <td>{{ Ar::glyphs((string) ($row->chicken_category ?? '')) }}</td>
+                    <td>{{ Ar::glyphs((string) ($row->item_name ?? '')) }}</td>
+                    @if ($showQuantity)
+                        <td class="num">{{ display_number($row->units_sold ?? 0) }}</td>
+                    @endif
+                    @if ($showAmount)
+                        <td class="num">{{ display_number($row->amount ?? 0) }}</td>
+                    @endif
+                    @if ($showWeight)
+                        <td class="num">{{ display_number($row->weight_total ?? 0, 1) }}</td>
+                    @endif
+                </tr>
+            @endforeach
+            </tbody>
+            @include('reports.partials.metric-grand-totals-tfoot', array_merge([
+                'grandTotals' => $grandTotals ?? null,
+                'labelColspan' => 2,
+                'trailingColspan' => 0,
+            ], $metricFlags))
         </table>
     @endif
 
@@ -107,9 +277,15 @@
                 <th>{{ Ar::glyphs('Client code') }}</th>
                 <th>{{ Ar::glyphs('Client name') }}</th>
                 <th>{{ Ar::glyphs('Category') }}</th>
-                <th class="num">{{ Ar::glyphs('Quantity (pcs)') }}</th>
-                <th class="num">{{ Ar::glyphs('Amount (IQD)') }}</th>
-                <th class="num">{{ Ar::glyphs('Weight (kg)') }}</th>
+                @if ($showQuantity)
+                    <th class="num">{{ Ar::glyphs('Quantity (pcs)') }}</th>
+                @endif
+                @if ($showAmount)
+                    <th class="num">{{ Ar::glyphs('Amount (IQD)') }}</th>
+                @endif
+                @if ($showWeight)
+                    <th class="num">{{ Ar::glyphs('Weight (kg)') }}</th>
+                @endif
             </tr>
             </thead>
             <tbody>
@@ -118,15 +294,26 @@
                     <td>{{ Ar::glyphs((string) ($row->client_code ?? '')) }}</td>
                     <td>{{ Ar::glyphs((string) ($row->client_name ?? '')) }}</td>
                     <td>{{ Ar::glyphs((string) ($row->chicken_category ?? '')) }}</td>
-                    <td class="num">{{ display_number($row->units_sold ?? 0) }}</td>
-                    <td class="num">{{ display_number($row->amount ?? 0) }}</td>
-                    <td class="num">{{ display_number($row->weight_total ?? 0) }}</td>
+                    @if ($showQuantity)
+                        <td class="num">{{ display_number($row->units_sold ?? 0) }}</td>
+                    @endif
+                    @if ($showAmount)
+                        <td class="num">{{ display_number($row->amount ?? 0) }}</td>
+                    @endif
+                    @if ($showWeight)
+                        <td class="num">{{ display_number($row->weight_total ?? 0, 1) }}</td>
+                    @endif
                 </tr>
             @endforeach
             </tbody>
+            @include('reports.partials.metric-grand-totals-tfoot', array_merge([
+                'grandTotals' => $grandTotals ?? null,
+                'labelColspan' => 3,
+                'trailingColspan' => 0,
+            ], $metricFlags))
         </table>
     @endif
 
-    <p style="font-size: 8px; color: #666; margin-top: 12px;">{{ Ar::glyphs('Exported rows are capped at '.$exportCap.' for PDF/CSV.') }}</p>
+    @include('reports.partials.pdf-footer')
 </body>
 </html>

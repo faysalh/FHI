@@ -1,96 +1,12 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cities sales report</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 16px; background: #f5f5f5; }
-        .container { max-width: 1200px; margin: 0 auto; background: #fff; border-radius: 8px; padding: 16px; }
-        .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; border-bottom: 1px solid #ddd; padding-bottom: 8px; }
-        .tabs a {
-            padding: 8px 14px; border-radius: 6px 6px 0 0; text-decoration: none; color: #333;
-            background: #eee; font-size: 14px;
-        }
-        .tabs a.active { background: #2563eb; color: #fff; }
-        .sub-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
-        .sub-tabs a {
-            padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 14px;
-            background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0;
-        }
-        .sub-tabs a.active { background: #0ea5e9; color: #fff; border-color: #0ea5e9; }
-        .filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; align-items: end; margin-bottom: 12px; }
-        .filters-breakdown { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 10px; }
-        .filters-breakdown .chk-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
-        label { font-size: 13px; color: #555; display: block; margin-bottom: 4px; }
-        input, select, button { padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
-        button { background: #2563eb; color: #fff; border: none; cursor: pointer; }
-        .chk { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #333; }
-        .chk input { width: auto; }
-        .error { background: #ffeaea; color: #921d1d; padding: 10px; border-radius: 6px; margin-bottom: 12px; }
-        .hint { font-size: 13px; color: #666; margin-bottom: 12px; line-height: 1.5; }
-        table { width: 100%; border-collapse: collapse; font-size: 14px; }
-        th, td { border-bottom: 1px solid #ececec; padding: 8px; text-align: left; }
-        th { background: #f9fafb; }
-        .num { text-align: right; font-variant-numeric: tabular-nums; }
-        .totals-box { background: #f0f9ff; padding: 12px; border-radius: 8px; margin-top: 12px; }
-        .muted { color: #64748b; font-size: 12px; }
-        .customer-picker { position: relative; max-width: 560px; }
-        .customer-chips { display: flex; flex-wrap: wrap; gap: 6px; min-height: 32px; margin-bottom: 8px; align-items: center; }
-        .customer-chip {
-            display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; background: #ecfdf5; border: 1px solid #6ee7b7;
-            border-radius: 999px; font-size: 13px; color: #065f46;
-        }
-        .customer-chip button {
-            border: none; background: transparent; color: #047857; cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px;
-        }
-        .customer-search-wrap { position: relative; }
-        .customer-suggestions {
-            display: none; position: absolute; left: 0; right: 0; top: 100%; z-index: 20; margin: 4px 0 0 0; padding: 0;
-            list-style: none; max-height: 220px; overflow-y: auto; background: #fff; border: 1px solid #ccc; border-radius: 6px;
-            box-shadow: 0 4px 12px rgba(0,0,0,.08);
-        }
-        .customer-suggestions.is-open { display: block; }
-        .customer-suggestions li {
-            padding: 8px 10px; cursor: pointer; font-size: 14px; border-bottom: 1px solid #f1f5f9;
-        }
-        .customer-suggestions li:hover, .customer-suggestions li.is-active { background: #ecfdf5; }
-        .customer-suggestions li.muted-suggest { cursor: default; color: #94a3b8; font-size: 13px; }
-        .export-row { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 4px; }
-        .export-row a {
-            display: inline-block; padding: 8px 12px; border-radius: 6px; background: #0f766e; color: #fff;
-            text-decoration: none; font-size: 14px;
-        }
-        .export-row a:hover { background: #115e59; }
-        .chart-wrap { margin-top: 16px; max-width: 1100px; min-height: 320px; }
-        .gov-editor-card { border:1px solid #e2e8f0; border-radius:10px; padding:14px; margin-bottom:14px; background:#fcfdff; }
-        .gov-editor-form { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; align-items:start; }
-        .gov-editor-field label { font-weight: 600; color:#334155; margin-bottom:6px; }
-        .gov-editor-field input, .gov-editor-field select { width:100%; }
-        .gov-editor-members { min-height: 168px; }
-        .gov-editor-actions { display:flex; align-items:flex-end; }
-        .gov-editor-actions button { min-width: 170px; }
-    </style>
-    @if (($mode ?? '') === 'charts' || (($filters['city_page'] ?? 'overview') === 'pie-charts'))
-        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
-    @endif
-</head>
-<body>
-<div class="container">
-    <nav class="tabs">
-        <a href="{{ route('reports.sales.index') }}">Sales report</a>
-        <a href="{{ route('reports.sales-item-average.index') }}">Sales by item average</a>
-        <a href="{{ route('reports.deliveries.index') }}">Deliveries</a>
-        <a href="{{ route('reports.invoices.index') }}">Invoices</a>
-        <a href="{{ route('reports.cities.index', request()->query()) }}" class="active">Cities</a>
-        <a href="{{ route('reports.visits.index') }}">Visits</a>
-        <a href="{{ route('reports.schema.index') }}">Schema</a>
-        <a href="{{ route('reports.customers.index') }}">Sample accounts</a>
-        <a href="{{ route('reports.identifier.index') }}">Identifier</a>
-    </nav>
+@extends('reports.layouts.app')
+@section('title', 'Cities sales report')
+@section('container-class', 'report-container--wide')
 
+@section('content')
+@php $cityPage = $filters['city_page'] ?? 'overview'; @endphp
+<header class="page-header">
     <h1>Cities sales report</h1>
-    @php $cityPage = $filters['city_page'] ?? 'overview'; @endphp
+</header>
     <nav class="sub-tabs" aria-label="Cities pages">
         <a href="{{ route('reports.cities.index', array_merge(request()->except('page'), ['city_page' => 'overview'])) }}"
            class="{{ $cityPage === 'overview' ? 'active' : '' }}">Overview</a>
@@ -98,6 +14,8 @@
            class="{{ $cityPage === 'governorate-breakdown' ? 'active' : '' }}">Governorate breakdown</a>
         <a href="{{ route('reports.cities.index', array_merge(request()->except('page'), ['city_page' => 'pie-charts'])) }}"
            class="{{ $cityPage === 'pie-charts' ? 'active' : '' }}">Pie charts</a>
+        <a href="{{ route('reports.cities.index', array_merge(request()->except('page'), ['city_page' => 'salesman-pie'])) }}"
+           class="{{ $cityPage === 'salesman-pie' ? 'active' : '' }}">Pie by salesman</a>
     </nav>
 
     <datalist id="report-city-names-datalist">
@@ -106,47 +24,6 @@
         @endforeach
     </datalist>
 
-    <div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin-bottom:14px;background:#f8fafc;">
-        <strong style="font-size:14px;">Saved governorates</strong>
-        <span class="muted" style="font-size:13px;margin-left:8px;">(local SQLite — same file as Deliveries teams)</span>
-        @if (!empty($governorateStorageError))
-            <div class="error" style="margin-top:8px;">{{ $governorateStorageError }}</div>
-        @elseif (empty($savedGovernorates))
-            <p class="muted" style="margin:8px 0 0;font-size:13px;">None saved yet. Open <strong>Governorate breakdown</strong> to add one. Governorate city can be typed (e.g. Duhok) even if it does not appear in the visits city list.</p>
-        @else
-            <ul style="margin:8px 0 0;padding-left:18px;font-size:14px;">
-                @foreach ($savedGovernorates as $savedGov)
-                    <li>
-                        <strong>{{ $savedGov->name ?? '' }}</strong>
-                        <span class="muted">— {{ $savedGov->governorate_city ?? '' }}</span>
-                        ·
-                        <a href="{{ route('reports.cities.index', array_merge(request()->except('page'), ['city_page' => 'governorate-breakdown', 'saved_governorate_id' => (int) ($savedGov->id ?? 0)])) }}">Use in breakdown</a>
-                        ·
-                        <a href="{{ route('reports.cities.index', array_merge(request()->except('page'), ['city_page' => 'pie-charts', 'saved_governorate_id' => (int) ($savedGov->id ?? 0)])) }}">Use in pie charts</a>
-                        ·
-                        <a href="{{ route('reports.cities.index', array_merge(request()->except('page'), ['city_page' => 'governorate-breakdown', 'edit_governorate_id' => (int) ($savedGov->id ?? 0)])) }}">Edit</a>
-                    </li>
-                @endforeach
-            </ul>
-        @endif
-    </div>
-
-    @if ($errorMessage)
-        <div class="error">{{ $errorMessage }}</div>
-    @endif
-    @if (session('error'))
-        <div class="error">{{ session('error') }}</div>
-    @endif
-    @if ($errors->any())
-        <div class="error">
-            @foreach ($errors->all() as $error)
-                <div>{{ $error }}</div>
-            @endforeach
-        </div>
-    @endif
-    @if (session('status'))
-        <div style="background:#ecfdf5;color:#065f46;padding:10px;border-radius:6px;margin-bottom:12px;">{{ session('status') }}</div>
-    @endif
 
     @if ($cityPage === 'overview')
     <nav class="sub-tabs" aria-label="Report view">
@@ -158,7 +35,7 @@
 
     <p class="hint">
         Store document lines for the selected dates, filtered by <strong>client city</strong> on <code>dbo.tbl_accounting_accounts</code>
-        (same column as Visits). Amount (IQD) = quantity × unit price. Category breakdowns match the Sales report; only the geography filter differs.
+        (same column as Visits). Only posted sales invoices (<code>fld_type_alias = S</code>); amount includes proportional invoice header and extra discounts (same basis as the Sales report). Category breakdowns match Sales; only the geography filter differs.
         Read-only.
     </p>
 
@@ -166,8 +43,12 @@
         <div class="error">City column is not configured or not found. Set <code>REPORTING_ACCOUNT_CITY_COLUMN</code> in <code>.env</code> or add a city field on accounts. Charts need this column.</div>
     @endif
 
-    <form id="cities-filter-form" method="GET" action="{{ route('reports.cities.index') }}" class="filters">
+    <form id="cities-filter-form" method="GET" action="{{ route('reports.cities.index') }}">
         <input type="hidden" name="panel" value="{{ $filters['panel'] ?? 'table' }}">
+        <details class="filters-panel" open>
+            <summary>Filters</summary>
+            <div class="filters-body">
+                <div class="filters-grid">
         <div>
             <label for="date_from">From</label>
             <input type="date" id="date_from" name="date_from" value="{{ $filters['date_from'] }}">
@@ -178,11 +59,11 @@
         </div>
         <div class="filters-breakdown">
             <div class="chk-row">
-                <label class="chk">
+                <label class="chk-label">
                     <input type="checkbox" name="breakdown" value="1" @checked(!empty($filters['breakdown']))>
                     Category breakdown
                 </label>
-                <label class="chk">
+                <label class="chk-label">
                     <input type="checkbox" name="breakdown_by_client" value="1" @checked(!empty($filters['breakdown_by_client']))>
                     Category breakdown based on clients
                 </label>
@@ -192,46 +73,56 @@
                 <input type="text" id="q" name="q" value="{{ $filters['q'] ?? '' }}" placeholder="e.g. صدر or wing">
             </div>
         </div>
-        <div class="view-mode-row" style="grid-column: 1 / -1;">
-            <label for="group_by_client" class="muted">View (ignored when a category mode is on)</label>
+        <div class="span-full">
+            <label for="group_by_client">View (ignored when a category mode is on)</label>
             <select id="group_by_client" name="group_by_client">
                 <option value="1" @selected($filters['group_by_client'] ?? true)>By client (account)</option>
                 <option value="0" @selected(!($filters['group_by_client'] ?? true))>Period totals only</option>
             </select>
         </div>
-        <div style="grid-column: 1 / -1;">
-            <span class="muted" style="display:block;margin-bottom:4px;">Cities (optional)</span>
+        <div class="span-full">
+            <label>Cities (optional)</label>
             <script type="application/json" id="city-options-json">@json($cityOptions ?? [])</script>
             <div class="customer-picker" id="city-picker">
                 <div class="customer-chips" id="city-chips" aria-live="polite"></div>
                 <div id="city-hidden-inputs"></div>
                 <div class="customer-search-wrap">
-                    <label for="city-search" class="muted" style="display:block;margin-bottom:4px;">Type a city name, then pick from the list</label>
-                    <input type="text" id="city-search" autocomplete="off" placeholder="Start typing a city…" style="width:100%;max-width:520px;">
+                    <label for="city-search">Search city</label>
+                    <input type="text" id="city-search" autocomplete="off" placeholder="City name…">
                     <ul class="customer-suggestions" id="city-suggestions" role="listbox" aria-label="Matching cities"></ul>
                 </div>
                 <p class="muted" style="margin-top: 8px;">Add multiple cities by searching again. Leave empty for all cities (subject to chart limit).</p>
             </div>
         </div>
         <div>
-            <label for="per_page">Rows per page</label>
-            <select id="per_page" name="per_page">
-                @foreach ([10, 25, 50, 100] as $size)
-                    <option value="{{ $size }}" @selected((int) ($filters['per_page'] ?? 25) === $size)>{{ $size }}</option>
+            <label for="salesman_ids">Salesmen (optional, multi-select)</label>
+            <select id="salesman_ids" name="salesman_ids[]" multiple size="6">
+                @foreach (($salesmanOptions ?? []) as $salesman)
+                    <option value="{{ $salesman['id'] }}" @selected(in_array($salesman['id'], $filters['salesman_ids'] ?? [], true))>{{ $salesman['name'] }}</option>
                 @endforeach
             </select>
         </div>
         <div>
-            <button type="submit">Apply</button>
+            <label for="per_page">Rows per page</label>
+            <select id="per_page" name="per_page">
+                @foreach ([10, 25, 50, 100, 250] as $size)
+                    <option value="{{ $size }}" @selected((int) ($filters['per_page'] ?? 250) === $size)>{{ $size }}</option>
+                @endforeach
+            </select>
         </div>
-        <div class="export-row">
-            <span class="muted">Export current filters:</span>
-            <a href="#" class="cities-export-link" data-export-base="{{ route('reports.cities.export.csv') }}">Export CSV</a>
-            <a href="#" class="cities-export-link" data-export-base="{{ route('reports.cities.export.pdf') }}">Export PDF</a>
-            @if (($filters['panel'] ?? 'table') === 'charts')
-                <a href="#" class="cities-export-link" data-append-chart-series="1" data-export-base="{{ route('reports.cities.export.chart-pdf') }}">Export chart PDF</a>
-            @endif
-        </div>
+                </div>
+                <div class="filters-actions">
+                    @include('reports.partials.icon-button', ['action' => 'apply', 'label' => 'Apply filters'])
+                    @include('reports.partials.filters-reset-link', ['route' => 'reports.cities.index', 'params' => ['city_page' => 'overview', 'panel' => $filters['panel'] ?? 'table']])
+                    <span class="muted">Export:</span>
+                    <a href="#" class="cities-export-link export-link" data-export-base="{{ route('reports.cities.export.csv') }}">CSV</a>
+                    <a href="#" class="cities-export-link export-link" data-export-base="{{ route('reports.cities.export.pdf') }}">PDF</a>
+                    @if (($filters['panel'] ?? 'table') === 'charts')
+                        <a href="#" class="cities-export-link export-link" data-append-chart-series="1" data-export-base="{{ route('reports.cities.export.chart-pdf') }}">Export chart PDF</a>
+                    @endif
+                </div>
+            </div>
+        </details>
     </form>
 
     <script>
@@ -558,16 +449,12 @@
         </div>
     @endif
 
-    @if ($mode === 'totals' && $totals)
-        <div class="totals-box">
-            <strong>Period totals</strong>
-            <p class="num">Quantity (pcs): {{ display_number($totals->units_sold ?? 0) }}</p>
-            <p class="num">Amount (IQD): {{ display_number($totals->amount ?? 0) }}</p>
-            <p class="num">Weight (kg): {{ display_number($totals->weight_total ?? 0) }}</p>
-        </div>
+    @if ($mode === 'totals' && !empty($grandTotals))
+        @include('reports.partials.metric-grand-totals-bar', ['grandTotals' => $grandTotals, 'grandTotalsNote' => 'Period totals (all matching filters)'])
     @endif
 
     @if ($mode === 'by_client' && $rows)
+        @include('reports.partials.metric-grand-totals-bar', ['grandTotals' => $grandTotals ?? null])
         <table>
             <thead>
             <tr>
@@ -589,11 +476,13 @@
                 </tr>
             @endforeach
             </tbody>
+            @include('reports.partials.metric-grand-totals-tfoot', ['grandTotals' => $grandTotals ?? null, 'labelColspan' => 2, 'trailingColspan' => 0])
         </table>
-        <div style="margin-top: 12px;">{{ $rows->links() }}</div>
+        @include('reports.partials.pagination', ['paginator' => $rows])
     @endif
 
     @if ($mode === 'by_category' && $rows)
+        @include('reports.partials.metric-grand-totals-bar', ['grandTotals' => $grandTotals ?? null])
         <table>
             <thead>
             <tr>
@@ -613,11 +502,13 @@
                 </tr>
             @endforeach
             </tbody>
+            @include('reports.partials.metric-grand-totals-tfoot', ['grandTotals' => $grandTotals ?? null, 'labelColspan' => 1, 'trailingColspan' => 0])
         </table>
-        <div style="margin-top: 12px;">{{ $rows->links() }}</div>
+        @include('reports.partials.pagination', ['paginator' => $rows])
     @endif
 
     @if ($mode === 'by_category_by_client' && $rows)
+        @include('reports.partials.metric-grand-totals-bar', ['grandTotals' => $grandTotals ?? null])
         <table>
             <thead>
             <tr>
@@ -641,61 +532,25 @@
                 </tr>
             @endforeach
             </tbody>
+            @include('reports.partials.metric-grand-totals-tfoot', ['grandTotals' => $grandTotals ?? null, 'labelColspan' => 3, 'trailingColspan' => 0])
         </table>
-        <div style="margin-top: 12px;">{{ $rows->links() }}</div>
+        @include('reports.partials.pagination', ['paginator' => $rows])
     @endif
     @elseif ($cityPage === 'governorate-breakdown')
         <p class="hint">
             Select one city as the governorate and other cities that belong to it. The report shows sales by item category,
             with city-by-category breakdown for the selected governorate mapping.
+            Save or edit presets under <a href="{{ route('reports.governorates.index') }}">Settings → Governorates</a>.
         </p>
-        <div class="gov-editor-card">
-            <h2 style="font-size:16px;margin:0 0 12px;">Save / edit governorates</h2>
-            <form method="POST" action="{{ route('reports.cities.governorates.save', request()->query()) }}" class="gov-editor-form">
-                @csrf
-                <input type="hidden" name="governorate_id" value="{{ !empty($editingGovernorate['id']) ? (int) $editingGovernorate['id'] : '' }}">
-                <div class="gov-editor-field">
-                    <label for="governorate_name_form">Governorate label</label>
-                    <input type="text" id="governorate_name_form" name="governorate_name" value="{{ $editingGovernorate['name'] ?? '' }}" placeholder="e.g. Erbil Governorate" required>
-                </div>
-                <div class="gov-editor-field">
-                    <label for="governorate_city_form">Governorate city</label>
-                    <input type="text" id="governorate_city_form" name="governorate_city" list="report-city-names-datalist" value="{{ $editingGovernorate['governorate_city'] ?? '' }}" placeholder="Type or pick from suggestions (e.g. Duhok)" required maxlength="200">
-                    <div class="muted" style="margin-top:4px;">Use the exact spelling stored on accounts for reporting.</div>
-                </div>
-                <div class="gov-editor-field">
-                    <label for="governorate_members_form">Member cities</label>
-                    <select id="governorate_members_form" name="governorate_members[]" multiple size="6" class="gov-editor-members">
-                        @foreach (($cityNames ?? []) as $cityName)
-                            <option value="{{ $cityName }}" @selected(in_array($cityName, $editingGovernorate['members'] ?? [], true))>{{ $cityName }}</option>
-                        @endforeach
-                    </select>
-                    <div class="muted" style="margin-top:4px;">Optional. Governorate city is always included automatically.</div>
-                </div>
-                <div class="gov-editor-actions">
-                    <button type="submit">{{ !empty($editingGovernorate) ? 'Update governorate' : 'Save governorate' }}</button>
-                </div>
-            </form>
-            @if (!empty($savedGovernorates))
-                <table style="margin-top:14px;">
-                    <thead><tr><th>Name</th><th>Governorate city</th><th class="num">Cities</th><th>Action</th></tr></thead>
-                    <tbody>
-                    @foreach (($savedGovernorates ?? []) as $savedGov)
-                        <tr>
-                            <td>{{ $savedGov->name ?? '' }}</td>
-                            <td>{{ $savedGov->governorate_city ?? '' }}</td>
-                            <td class="num">{{ (int) ($savedGov->member_count ?? 0) }}</td>
-                            <td>
-                                <a href="{{ route('reports.cities.index', array_merge(request()->query(), ['city_page' => 'governorate-breakdown', 'edit_governorate_id' => (int) ($savedGov->id ?? 0), 'saved_governorate_id' => (int) ($savedGov->id ?? 0)])) }}">Edit</a>
-                            </td>
-                        </tr>
-                    @endforeach
-                    </tbody>
-                </table>
-            @endif
-        </div>
-        <form method="GET" action="{{ route('reports.cities.index') }}" class="filters">
+        @if (!empty($governorateStorageError))
+            <div class="alert alert--error">{{ $governorateStorageError }}</div>
+        @endif
+        <form method="GET" action="{{ route('reports.cities.index') }}">
             <input type="hidden" name="city_page" value="governorate-breakdown">
+            <details class="filters-panel" open>
+                <summary>Filters</summary>
+                <div class="filters-body">
+                    <div class="filters-grid">
             <div>
                 <label for="date_from_gov">From</label>
                 <input type="date" id="date_from_gov" name="date_from" value="{{ $filters['date_from'] ?? '' }}">
@@ -735,16 +590,28 @@
                 </select>
             </div>
             <div>
-                <label for="per_page_gov">Rows per page</label>
-                <select id="per_page_gov" name="per_page">
-                    @foreach ([10, 25, 50, 100] as $size)
-                        <option value="{{ $size }}" @selected((int) ($filters['per_page'] ?? 25) === $size)>{{ $size }}</option>
+                <label for="salesman_ids_gov">Salesmen (optional, multi-select)</label>
+                <select id="salesman_ids_gov" name="salesman_ids[]" multiple size="6">
+                    @foreach (($salesmanOptions ?? []) as $salesman)
+                        <option value="{{ $salesman['id'] }}" @selected(in_array($salesman['id'], $filters['salesman_ids'] ?? [], true))>{{ $salesman['name'] }}</option>
                     @endforeach
                 </select>
             </div>
             <div>
-                <button type="submit">Apply</button>
+                <label for="per_page_gov">Rows per page</label>
+                <select id="per_page_gov" name="per_page">
+                    @foreach ([10, 25, 50, 100, 250] as $size)
+                        <option value="{{ $size }}" @selected((int) ($filters['per_page'] ?? 250) === $size)>{{ $size }}</option>
+                    @endforeach
+                </select>
             </div>
+                    </div>
+                    <div class="filters-actions">
+                        @include('reports.partials.icon-button', ['action' => 'apply', 'label' => 'Apply filters'])
+                        @include('reports.partials.filters-reset-link', ['route' => 'reports.cities.index', 'params' => ['city_page' => 'governorate-breakdown']])
+                    </div>
+                </div>
+            </details>
         </form>
 
         @if ($governorateRows)
@@ -774,104 +641,694 @@
                 @endforelse
                 </tbody>
             </table>
-            <div style="margin-top: 12px;">{{ $governorateRows->links() }}</div>
+            @include('reports.partials.pagination', ['paginator' => $governorateRows])
         @endif
-    @elseif ($cityPage === 'pie-charts')
-        <p class="hint">
-            Pie charts are based on sales amount percentage. Use city filters for scope, and choose a category
-            for the item-level chart (example: chicken).
+    @elseif ($cityPage === 'salesman-pie')
+        @php
+            $salesmanPieItems = [];
+            $salesmanPieTotal = 0.0;
+            foreach ($pieSeriesBySalesman ?? [] as $row) {
+                $amount = (float) ($row->amount ?? 0);
+                if ($amount <= 0) {
+                    continue;
+                }
+                $label = trim((string) ($row->salesman_name ?? ''));
+                if ($label === '') {
+                    $label = '(unknown)';
+                }
+                $salesmanPieItems[] = ['label' => $label, 'amount' => $amount];
+                $salesmanPieTotal += $amount;
+            }
+            $salesmanPieStats = [
+                'items' => $salesmanPieItems,
+                'total' => $salesmanPieTotal,
+                'count' => count($salesmanPieItems),
+            ];
+            $salesmanPieActiveFilters = [];
+            if (($filters['date_from'] ?? '') !== '' || ($filters['date_to'] ?? '') !== '') {
+                $salesmanPieActiveFilters[] = ($filters['date_from'] ?? '…').' → '.($filters['date_to'] ?? '…');
+            }
+            if (($filters['saved_governorate_id'] ?? '') !== '') {
+                foreach (($savedGovernorates ?? []) as $savedGov) {
+                    if ((string) ($filters['saved_governorate_id'] ?? '') === (string) (int) ($savedGov->id ?? 0)) {
+                        $salesmanPieActiveFilters[] = 'Governorate: '.($savedGov->name ?? '');
+                        break;
+                    }
+                }
+            }
+            if (! empty($filters['cities'] ?? [])) {
+                $salesmanPieActiveFilters[] = count($filters['cities']).' '.(count($filters['cities']) === 1 ? 'city' : 'cities');
+            }
+            if (($filters['exclude_category'] ?? '') !== '') {
+                $salesmanPieActiveFilters[] = 'Exclude: '.($filters['exclude_category'] ?? '');
+            }
+            if (! empty($filters['salesman_ids'] ?? [])) {
+                $salesmanPieActiveFilters[] = count($filters['salesman_ids']).' salesman filter'.(count($filters['salesman_ids']) === 1 ? '' : 's');
+            }
+            $hasSalesmanPieData = $salesmanPieStats['count'] > 0;
+        @endphp
+
+        @if (! empty($governorateStorageError ?? null))
+            <div class="alert alert--error" role="alert">{{ $governorateStorageError }}</div>
+        @endif
+
+        <p class="lab-desc">
+            Doughnut chart shows <strong>sales amount share by salesman</strong> for posted invoices in the selected period.
+            Up to <strong>50 salesmen</strong> are shown (largest amounts first). Use the breakdown table for exact values; click legend items to hide slices.
         </p>
-        <form method="GET" action="{{ route('reports.cities.index') }}" class="filters">
-            <input type="hidden" name="city_page" value="pie-charts">
-            <div>
-                <label for="date_from_pie">From</label>
-                <input type="date" id="date_from_pie" name="date_from" value="{{ $filters['date_from'] ?? '' }}">
-            </div>
-            <div>
-                <label for="date_to_pie">To</label>
-                <input type="date" id="date_to_pie" name="date_to" value="{{ $filters['date_to'] ?? '' }}">
-            </div>
-            <div>
-                <label for="saved_governorate_id_pie">Saved governorate (optional)</label>
-                <select id="saved_governorate_id_pie" name="saved_governorate_id">
-                    <option value="">No governorate preset</option>
-                    @foreach (($savedGovernorates ?? []) as $savedGov)
-                        <option value="{{ (int) ($savedGov->id ?? 0) }}" @selected((string) ($filters['saved_governorate_id'] ?? '') === (string) (int) ($savedGov->id ?? 0))>{{ $savedGov->name ?? '' }}</option>
-                    @endforeach
-                </select>
-            </div>
-            <div>
-                <label for="cities_pie">Cities (optional, multi-select)</label>
-                <select id="cities_pie" name="cities[]" multiple size="6">
-                    @foreach (($cityNames ?? []) as $cityName)
-                        <option value="{{ $cityName }}" @selected(in_array($cityName, $filters['cities'] ?? [], true))>{{ $cityName }}</option>
-                    @endforeach
-                </select>
-            </div>
-            <div>
-                <label for="pie_category">Category for item pie (optional)</label>
-                <select id="pie_category" name="pie_category">
-                    <option value="">All categories</option>
-                    @foreach (($pieCategoryOptions ?? []) as $category)
-                        <option value="{{ $category }}" @selected(($filters['pie_category'] ?? '') === $category)>{{ $category }}</option>
-                    @endforeach
-                </select>
-            </div>
-            <div>
-                <label for="exclude_category_pie">Exclude category (optional)</label>
-                <select id="exclude_category_pie" name="exclude_category">
-                    <option value="">All categories</option>
-                    @foreach (($pieCategoryOptions ?? []) as $category)
-                        <option value="{{ $category }}" @selected(($filters['exclude_category'] ?? '') === $category)>{{ $category }}</option>
-                    @endforeach
-                </select>
-            </div>
-            <div>
-                <button type="submit">Apply</button>
-            </div>
+
+        <form id="salesman-pie-filter-form" method="GET" action="{{ route('reports.cities.index') }}">
+            <input type="hidden" name="city_page" value="salesman-pie">
+            <details class="filters-panel" open>
+                <summary>Filters</summary>
+                <div class="filters-body">
+                    @include('reports.partials.quick-date-buttons')
+                    <div class="filters-grid">
+                        <div>
+                            <label for="date_from_salesman_pie">From</label>
+                            <input type="date" id="date_from_salesman_pie" name="date_from" value="{{ $filters['date_from'] ?? '' }}">
+                        </div>
+                        <div>
+                            <label for="date_to_salesman_pie">To</label>
+                            <input type="date" id="date_to_salesman_pie" name="date_to" value="{{ $filters['date_to'] ?? '' }}">
+                        </div>
+                        <div>
+                            <label for="saved_governorate_id_salesman_pie">Saved governorate (optional)</label>
+                            <select id="saved_governorate_id_salesman_pie" name="saved_governorate_id">
+                                <option value="">No governorate preset</option>
+                                @foreach (($savedGovernorates ?? []) as $savedGov)
+                                    <option value="{{ (int) ($savedGov->id ?? 0) }}" @selected((string) ($filters['saved_governorate_id'] ?? '') === (string) (int) ($savedGov->id ?? 0))>{{ $savedGov->name ?? '' }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="exclude_category_salesman_pie">Exclude category (optional)</label>
+                            <select id="exclude_category_salesman_pie" name="exclude_category">
+                                <option value="">All categories</option>
+                                @foreach (($pieCategoryOptions ?? []) as $category)
+                                    <option value="{{ $category }}" @selected(($filters['exclude_category'] ?? '') === $category)>{{ $category }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="salesman_ids_salesman_pie">Salesmen filter (optional, multi-select)</label>
+                            <select id="salesman_ids_salesman_pie" name="salesman_ids[]" multiple size="5">
+                                @foreach (($salesmanOptions ?? []) as $salesman)
+                                    <option value="{{ $salesman['id'] }}" @selected(in_array($salesman['id'], $filters['salesman_ids'] ?? [], true))>{{ $salesman['name'] }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="span-full">
+                            <label>Cities (optional)</label>
+                            @include('reports.partials.city-picker', [
+                                'pickerId' => 'salesman-pie',
+                                'cityOptions' => $cityOptions ?? [],
+                                'selectedCities' => $filters['cities'] ?? [],
+                                'note' => 'Add cities one at a time. Leave empty for all cities, or pick a saved governorate preset above.',
+                            ])
+                        </div>
+                    </div>
+                    <div class="filters-actions">
+                        @include('reports.partials.icon-button', ['action' => 'apply', 'label' => 'Apply filters'])
+                        <a class="export-link" href="{{ route('reports.cities.index', ['city_page' => 'salesman-pie']) }}">Reset filters</a>
+                    </div>
+                </div>
+            </details>
         </form>
 
-        <div class="chart-wrap">
-            <h2 style="font-size:16px;margin:16px 0 8px;">Pie chart by cities</h2>
-            <canvas id="pie-city-chart" height="120"></canvas>
-            <h2 style="font-size:16px;margin:20px 0 8px;">Pie chart by category</h2>
-            <canvas id="pie-category-chart" height="120"></canvas>
-            <h2 style="font-size:16px;margin:20px 0 8px;">Pie chart by item{{ ($filters['pie_category'] ?? '') !== '' ? ' ('.$filters['pie_category'].')' : '' }}</h2>
-            <canvas id="pie-item-chart" height="120"></canvas>
+        @if ($salesmanPieActiveFilters !== [])
+            <div class="pie-active-filters" aria-label="Active filters">
+                @foreach ($salesmanPieActiveFilters as $pill)
+                    <span class="pie-active-filters__pill">{{ $pill }}</span>
+                @endforeach
+            </div>
+        @endif
+
+        <section class="lab-card pie-summary-card" aria-label="Period summary">
+            <div class="pie-summary-card__grid">
+                <div>
+                    <p class="lab-kpi__label">Period</p>
+                    <p class="lab-kpi__value" style="font-size:1.05rem;">{{ $filters['date_from'] ?? '—' }} → {{ $filters['date_to'] ?? '—' }}</p>
+                </div>
+                <div>
+                    <p class="lab-kpi__label">Chart total</p>
+                    <p class="lab-kpi__value">{{ display_number($salesmanPieStats['total']) }}</p>
+                </div>
+                <div>
+                    <p class="lab-kpi__label">Salesmen shown</p>
+                    <p class="lab-kpi__value">{{ display_number($salesmanPieStats['count'], 0) }}</p>
+                </div>
+                <div>
+                    <p class="lab-kpi__label">Top share</p>
+                    <p class="lab-kpi__value">
+                        @if ($hasSalesmanPieData)
+                            {{ display_number(($salesmanPieStats['items'][0]['amount'] / max($salesmanPieStats['total'], 1)) * 100, 1) }}%
+                        @else
+                            —
+                        @endif
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <div class="pie-charts-grid">
+            <section class="lab-card pie-chart-card pie-chart-card--salesman" aria-labelledby="pie-card-title-salesman">
+                <header class="pie-chart-card__head">
+                    <div class="pie-chart-card__titles">
+                        <h2 class="lab-card__title" id="pie-card-title-salesman">
+                            By salesman
+                            <span class="lab-tag">Team mix</span>
+                        </h2>
+                        <p class="pie-chart-card__hint">How sales amount is distributed across salesmen for the selected cities and period (includes unassigned invoices when present).</p>
+                    </div>
+                    <div class="pie-chart-card__total">
+                        <span class="pie-chart-card__total-label">Chart total</span>
+                        <strong>{{ display_number($salesmanPieStats['total']) }}</strong>
+                        <span class="pie-chart-card__total-meta">{{ display_number($salesmanPieStats['count'], 0) }} slice{{ $salesmanPieStats['count'] === 1 ? '' : 's' }}</span>
+                    </div>
+                </header>
+                <div class="pie-chart-card__body">
+                    <div class="pie-chart-card__viz">
+                        <div class="pie-donut-wrap">
+                            <canvas id="pie-salesman-chart" aria-hidden="{{ $hasSalesmanPieData ? 'false' : 'true' }}" @if(! $hasSalesmanPieData) hidden @endif></canvas>
+                            <div id="pie-salesman-chart-empty" class="dash-chart-empty" @if($hasSalesmanPieData) hidden @endif>
+                                No sales for these filters in this period.
+                            </div>
+                        </div>
+                    </div>
+                    <div class="pie-chart-card__table-wrap">
+                        @if ($hasSalesmanPieData)
+                            <table class="lab-table pie-breakdown-table">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">#</th>
+                                        <th scope="col">Salesman</th>
+                                        <th scope="col" class="num">Amount</th>
+                                        <th scope="col" class="num">Share</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach ($salesmanPieStats['items'] as $index => $item)
+                                        @php
+                                            $share = $salesmanPieStats['total'] > 0 ? ($item['amount'] / $salesmanPieStats['total']) * 100 : 0;
+                                        @endphp
+                                        <tr>
+                                            <td class="pie-breakdown-table__rank">{{ $index + 1 }}</td>
+                                            <td>{{ $item['label'] }}</td>
+                                            <td class="num">{{ display_number($item['amount']) }}</td>
+                                            <td class="num">{{ display_number($share, 1) }}%</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                                <tfoot>
+                                    <tr class="lab-table__sum">
+                                        <td colspan="2">Total (shown slices)</td>
+                                        <td class="num">{{ display_number($salesmanPieStats['total']) }}</td>
+                                        <td class="num">100%</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        @else
+                            <p class="muted pie-breakdown-empty">Adjust dates or filters, then apply to load a breakdown table.</p>
+                        @endif
+                    </div>
+                </div>
+            </section>
         </div>
+
         <script>
         (function () {
             if (typeof Chart === 'undefined') return;
-            var cityRows = @json($pieSeriesByCity ?? []);
-            var categoryRows = @json($pieSeriesByCategory ?? []);
-            var itemRows = @json($pieSeriesByItem ?? []);
+
+            var palette = ['#6366f1', '#14b8a6', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4', '#84cc16', '#f97316', '#0ea5e9', '#a855f7'];
+            var rows = @json($pieSeriesBySalesman ?? []);
+            var chartTotal = @json($salesmanPieStats['total']);
+
+            var doughnutCenterPlugin = {
+                id: 'doughnutCenterText',
+                beforeDraw: function (chart) {
+                    var total = chart.config.options.plugins.doughnutCenterText.total;
+                    if (!total || total <= 0) return;
+                    var ctx = chart.ctx;
+                    var meta = chart.getDatasetMeta(0);
+                    if (!meta || !meta.data || !meta.data[0]) return;
+                    var arc = meta.data[0];
+                    var x = arc.x;
+                    var y = arc.y;
+                    ctx.save();
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillStyle = '#64748b';
+                    ctx.font = '600 11px system-ui, sans-serif';
+                    ctx.fillText('Total', x, y - 8);
+                    ctx.fillStyle = '#0f172a';
+                    ctx.font = '700 14px system-ui, sans-serif';
+                    ctx.fillText(total, x, y + 10);
+                    ctx.restore();
+                }
+            };
+            Chart.register(doughnutCenterPlugin);
+
+            function fmtAmount(n) {
+                return Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
+            }
+
+            var labels = [];
+            var values = [];
+            (rows || []).forEach(function (r) {
+                var amount = parseFloat(r.amount || 0);
+                if (!isFinite(amount) || amount <= 0) return;
+                var label = String(r.salesman_name || '').trim();
+                if (!label) label = '(unknown)';
+                labels.push(label);
+                values.push(amount);
+            });
+
+            var canvas = document.getElementById('pie-salesman-chart');
+            var emptyEl = document.getElementById('pie-salesman-chart-empty');
+            if (!canvas) return;
+            var hasData = labels.length > 0;
+            if (emptyEl) emptyEl.hidden = hasData;
+            canvas.hidden = !hasData;
+            if (!hasData) return;
+
+            var colors = labels.map(function (_, i) { return palette[i % palette.length]; });
+            new Chart(canvas, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: colors,
+                        borderColor: '#fff',
+                        borderWidth: 2,
+                        hoverOffset: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '58%',
+                    layout: { padding: 4 },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'bottom',
+                            labels: {
+                                boxWidth: 10,
+                                boxHeight: 10,
+                                padding: 10,
+                                font: { size: 11 },
+                                usePointStyle: true
+                            }
+                        },
+                        doughnutCenterText: {
+                            total: fmtAmount(chartTotal)
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function (ctx) {
+                                    var arr = ctx.dataset.data || [];
+                                    var total = arr.reduce(function (a, b) { return a + b; }, 0);
+                                    var value = Number(ctx.parsed || 0);
+                                    var pct = total > 0 ? ((value / total) * 100) : 0;
+                                    return (ctx.label || '') + ': ' + fmtAmount(value) + ' (' + pct.toFixed(1) + '%)';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        })();
+        </script>
+        @include('reports.partials.quick-date-buttons-script', [
+            'formId' => 'salesman-pie-filter-form',
+            'fromId' => 'date_from_salesman_pie',
+            'toId' => 'date_to_salesman_pie',
+        ])
+        @include('reports.partials.city-picker-script', [
+            'pickerId' => 'salesman-pie',
+            'selectedCities' => $filters['cities'] ?? [],
+        ])
+    @elseif ($cityPage === 'pie-charts')
+        @php
+            $pieStatsFromRows = static function (array $rows, string $labelKey): array {
+                $items = [];
+                $total = 0.0;
+                foreach ($rows as $row) {
+                    $amount = (float) ($row->amount ?? 0);
+                    if ($amount <= 0) {
+                        continue;
+                    }
+                    $label = trim((string) ($row->{$labelKey} ?? ''));
+                    if ($label === '') {
+                        $label = '(unknown)';
+                    }
+                    $items[] = ['label' => $label, 'amount' => $amount];
+                    $total += $amount;
+                }
+
+                return ['items' => $items, 'total' => $total, 'count' => count($items)];
+            };
+            $pieCityStats = $pieStatsFromRows($pieSeriesByCity ?? [], 'city_name');
+            $pieCategoryStats = $pieStatsFromRows($pieSeriesByCategory ?? [], 'item_category');
+            $pieItemStats = $pieStatsFromRows($pieSeriesByItem ?? [], 'item_name');
+            $pieCharts = [
+                [
+                    'slug' => 'city',
+                    'title' => 'By city',
+                    'tag' => 'Geography',
+                    'hint' => 'Share of sales amount across client cities (top 50 by amount).',
+                    'labelKey' => 'city_name',
+                    'rows' => $pieSeriesByCity ?? [],
+                    'stats' => $pieCityStats,
+                ],
+                [
+                    'slug' => 'category',
+                    'title' => 'By category',
+                    'tag' => 'Product mix',
+                    'hint' => 'How sales amount splits across item categories in the selected scope.',
+                    'labelKey' => 'item_category',
+                    'rows' => $pieSeriesByCategory ?? [],
+                    'stats' => $pieCategoryStats,
+                ],
+                [
+                    'slug' => 'item',
+                    'title' => 'By item',
+                    'tag' => 'SKU mix',
+                    'hint' => ($filters['pie_category'] ?? '') !== ''
+                        ? 'Items within category “'.($filters['pie_category'] ?? '').'”.'
+                        : 'Top items across all categories — pick a category filter to focus one product line.',
+                    'labelKey' => 'item_name',
+                    'rows' => $pieSeriesByItem ?? [],
+                    'stats' => $pieItemStats,
+                ],
+            ];
+            $pieChartsJs = array_map(
+                static fn (array $chart): array => [
+                    'slug' => $chart['slug'],
+                    'labelKey' => $chart['labelKey'],
+                    'rows' => $chart['rows'],
+                    'total' => $chart['stats']['total'],
+                ],
+                $pieCharts
+            );
+            $pieActiveFilters = [];
+            if (($filters['date_from'] ?? '') !== '' || ($filters['date_to'] ?? '') !== '') {
+                $pieActiveFilters[] = ($filters['date_from'] ?? '…').' → '.($filters['date_to'] ?? '…');
+            }
+            if (($filters['saved_governorate_id'] ?? '') !== '') {
+                foreach (($savedGovernorates ?? []) as $savedGov) {
+                    if ((string) ($filters['saved_governorate_id'] ?? '') === (string) (int) ($savedGov->id ?? 0)) {
+                        $pieActiveFilters[] = 'Governorate: '.($savedGov->name ?? '');
+                        break;
+                    }
+                }
+            }
+            if (! empty($filters['cities'] ?? [])) {
+                $pieActiveFilters[] = count($filters['cities']).' '.(count($filters['cities']) === 1 ? 'city' : 'cities');
+            }
+            if (($filters['pie_category'] ?? '') !== '') {
+                $pieActiveFilters[] = 'Item category: '.($filters['pie_category'] ?? '');
+            }
+            if (($filters['exclude_category'] ?? '') !== '') {
+                $pieActiveFilters[] = 'Exclude: '.($filters['exclude_category'] ?? '');
+            }
+            if (! empty($filters['salesman_ids'] ?? [])) {
+                $pieActiveFilters[] = count($filters['salesman_ids']).' salesman filter'.(count($filters['salesman_ids']) === 1 ? '' : 's');
+            }
+        @endphp
+
+        @if (! empty($governorateStorageError ?? null))
+            <div class="alert alert--error" role="alert">{{ $governorateStorageError }}</div>
+        @endif
+
+        <p class="lab-desc">
+            Doughnut charts show <strong>sales amount share</strong> for posted invoices in the selected period.
+            Each chart lists up to <strong>50 slices</strong> (largest amounts first). Use the breakdown table beside each chart for exact values; click legend items to hide slices.
+        </p>
+
+        <form id="pie-charts-filter-form" method="GET" action="{{ route('reports.cities.index') }}">
+            <input type="hidden" name="city_page" value="pie-charts">
+            <details class="filters-panel" open>
+                <summary>Filters</summary>
+                <div class="filters-body">
+                    @include('reports.partials.quick-date-buttons')
+                    <div class="filters-grid">
+                        <div>
+                            <label for="date_from_pie">From</label>
+                            <input type="date" id="date_from_pie" name="date_from" value="{{ $filters['date_from'] ?? '' }}">
+                        </div>
+                        <div>
+                            <label for="date_to_pie">To</label>
+                            <input type="date" id="date_to_pie" name="date_to" value="{{ $filters['date_to'] ?? '' }}">
+                        </div>
+                        <div>
+                            <label for="saved_governorate_id_pie">Saved governorate (optional)</label>
+                            <select id="saved_governorate_id_pie" name="saved_governorate_id">
+                                <option value="">No governorate preset</option>
+                                @foreach (($savedGovernorates ?? []) as $savedGov)
+                                    <option value="{{ (int) ($savedGov->id ?? 0) }}" @selected((string) ($filters['saved_governorate_id'] ?? '') === (string) (int) ($savedGov->id ?? 0))>{{ $savedGov->name ?? '' }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="pie_category">Category for item chart (optional)</label>
+                            <select id="pie_category" name="pie_category">
+                                <option value="">All categories</option>
+                                @foreach (($pieCategoryOptions ?? []) as $category)
+                                    <option value="{{ $category }}" @selected(($filters['pie_category'] ?? '') === $category)>{{ $category }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="exclude_category_pie">Exclude category (optional)</label>
+                            <select id="exclude_category_pie" name="exclude_category">
+                                <option value="">All categories</option>
+                                @foreach (($pieCategoryOptions ?? []) as $category)
+                                    <option value="{{ $category }}" @selected(($filters['exclude_category'] ?? '') === $category)>{{ $category }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="salesman_ids_pie">Salesmen (optional, multi-select)</label>
+                            <select id="salesman_ids_pie" name="salesman_ids[]" multiple size="5">
+                                @foreach (($salesmanOptions ?? []) as $salesman)
+                                    <option value="{{ $salesman['id'] }}" @selected(in_array($salesman['id'], $filters['salesman_ids'] ?? [], true))>{{ $salesman['name'] }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="span-full">
+                            <label>Cities (optional)</label>
+                            @include('reports.partials.city-picker', [
+                                'pickerId' => 'pie',
+                                'cityOptions' => $cityOptions ?? [],
+                                'selectedCities' => $filters['cities'] ?? [],
+                                'note' => 'Add cities one at a time. Leave empty for all cities, or pick a saved governorate preset above.',
+                            ])
+                        </div>
+                    </div>
+                    <div class="filters-actions">
+                        @include('reports.partials.icon-button', ['action' => 'apply', 'label' => 'Apply filters'])
+                        <a class="export-link" href="{{ route('reports.cities.index', ['city_page' => 'pie-charts']) }}">Reset filters</a>
+                    </div>
+                </div>
+            </details>
+        </form>
+
+        @if ($pieActiveFilters !== [])
+            <div class="pie-active-filters" aria-label="Active filters">
+                @foreach ($pieActiveFilters as $pill)
+                    <span class="pie-active-filters__pill">{{ $pill }}</span>
+                @endforeach
+            </div>
+        @endif
+
+        <section class="lab-card pie-summary-card" aria-label="Period summary">
+            <div class="pie-summary-card__grid">
+                <div>
+                    <p class="lab-kpi__label">Period</p>
+                    <p class="lab-kpi__value" style="font-size:1.05rem;">{{ $filters['date_from'] ?? '—' }} → {{ $filters['date_to'] ?? '—' }}</p>
+                </div>
+                <div>
+                    <p class="lab-kpi__label">City chart total</p>
+                    <p class="lab-kpi__value">{{ display_number($pieCityStats['total']) }}</p>
+                </div>
+                <div>
+                    <p class="lab-kpi__label">Categories tracked</p>
+                    <p class="lab-kpi__value">{{ display_number($pieCategoryStats['count'], 0) }}</p>
+                </div>
+                <div>
+                    <p class="lab-kpi__label">Items tracked</p>
+                    <p class="lab-kpi__value">{{ display_number($pieItemStats['count'], 0) }}</p>
+                </div>
+            </div>
+        </section>
+
+        <div class="pie-charts-grid">
+            @foreach ($pieCharts as $chart)
+                @php
+                    $stats = $chart['stats'];
+                    $hasPieData = $stats['count'] > 0;
+                @endphp
+                <section class="lab-card pie-chart-card" aria-labelledby="pie-card-title-{{ $chart['slug'] }}">
+                    <header class="pie-chart-card__head">
+                        <div class="pie-chart-card__titles">
+                            <h2 class="lab-card__title" id="pie-card-title-{{ $chart['slug'] }}">
+                                {{ $chart['title'] }}
+                                <span class="lab-tag">{{ $chart['tag'] }}</span>
+                            </h2>
+                            <p class="pie-chart-card__hint">{{ $chart['hint'] }}</p>
+                        </div>
+                        <div class="pie-chart-card__total">
+                            <span class="pie-chart-card__total-label">Chart total</span>
+                            <strong>{{ display_number($stats['total']) }}</strong>
+                            <span class="pie-chart-card__total-meta">{{ display_number($stats['count'], 0) }} slice{{ $stats['count'] === 1 ? '' : 's' }}</span>
+                        </div>
+                    </header>
+                    <div class="pie-chart-card__body">
+                        <div class="pie-chart-card__viz">
+                            <div class="pie-donut-wrap">
+                                <canvas id="pie-{{ $chart['slug'] }}-chart" aria-hidden="{{ $hasPieData ? 'false' : 'true' }}" @if(! $hasPieData) hidden @endif></canvas>
+                                <div id="pie-{{ $chart['slug'] }}-chart-empty" class="dash-chart-empty" @if($hasPieData) hidden @endif>
+                                    No sales for these filters in this period.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="pie-chart-card__table-wrap">
+                            @if ($hasPieData)
+                                <table class="lab-table pie-breakdown-table">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">#</th>
+                                            <th scope="col">Name</th>
+                                            <th scope="col" class="num">Amount</th>
+                                            <th scope="col" class="num">Share</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach ($stats['items'] as $index => $item)
+                                            @php
+                                                $share = $stats['total'] > 0 ? ($item['amount'] / $stats['total']) * 100 : 0;
+                                            @endphp
+                                            <tr>
+                                                <td class="pie-breakdown-table__rank">{{ $index + 1 }}</td>
+                                                <td>{{ $item['label'] }}</td>
+                                                <td class="num">{{ display_number($item['amount']) }}</td>
+                                                <td class="num">{{ display_number($share, 1) }}%</td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                    <tfoot>
+                                        <tr class="lab-table__sum">
+                                            <td colspan="2">Total (shown slices)</td>
+                                            <td class="num">{{ display_number($stats['total']) }}</td>
+                                            <td class="num">100%</td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            @else
+                                <p class="muted pie-breakdown-empty">Adjust dates or filters, then apply to load a breakdown table.</p>
+                            @endif
+                        </div>
+                    </div>
+                </section>
+            @endforeach
+        </div>
+
+        <script>
+        (function () {
+            if (typeof Chart === 'undefined') return;
+
+            var palette = ['#6366f1', '#14b8a6', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4', '#84cc16', '#f97316', '#0ea5e9', '#a855f7'];
+            var charts = @json($pieChartsJs);
+
+            var doughnutCenterPlugin = {
+                id: 'doughnutCenterText',
+                beforeDraw: function (chart) {
+                    var total = chart.config.options.plugins.doughnutCenterText.total;
+                    if (!total || total <= 0) return;
+                    var ctx = chart.ctx;
+                    var meta = chart.getDatasetMeta(0);
+                    if (!meta || !meta.data || !meta.data[0]) return;
+                    var arc = meta.data[0];
+                    var x = arc.x;
+                    var y = arc.y;
+                    ctx.save();
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillStyle = '#64748b';
+                    ctx.font = '600 11px system-ui, sans-serif';
+                    ctx.fillText('Total', x, y - 8);
+                    ctx.fillStyle = '#0f172a';
+                    ctx.font = '700 14px system-ui, sans-serif';
+                    ctx.fillText(total, x, y + 10);
+                    ctx.restore();
+                }
+            };
+            Chart.register(doughnutCenterPlugin);
+
+            function fmtAmount(n) {
+                return Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
+            }
+
             function buildData(rows, labelKey) {
                 var labels = [];
                 var values = [];
                 (rows || []).forEach(function (r) {
                     var amount = parseFloat(r.amount || 0);
                     if (!isFinite(amount) || amount <= 0) return;
-                    labels.push(String(r[labelKey] || ''));
+                    var label = String(r[labelKey] || '').trim();
+                    if (!label) label = '(unknown)';
+                    labels.push(label);
                     values.push(amount);
                 });
                 return { labels: labels, values: values };
             }
-            function makePie(canvasId, rows, labelKey, title) {
-                var el = document.getElementById(canvasId);
-                if (!el) return;
-                var data = buildData(rows, labelKey);
-                if (!data.labels.length) return;
-                new Chart(el, {
-                    type: 'pie',
+
+            charts.forEach(function (cfg) {
+                var canvas = document.getElementById('pie-' + cfg.slug + '-chart');
+                var emptyEl = document.getElementById('pie-' + cfg.slug + '-chart-empty');
+                if (!canvas) return;
+                var data = buildData(cfg.rows, cfg.labelKey);
+                var hasData = data.labels.length > 0;
+                if (emptyEl) emptyEl.hidden = hasData;
+                canvas.hidden = !hasData;
+                if (!hasData) return;
+
+                var colors = data.labels.map(function (_, i) { return palette[i % palette.length]; });
+                new Chart(canvas, {
+                    type: 'doughnut',
                     data: {
                         labels: data.labels,
                         datasets: [{
-                            data: data.values
+                            data: data.values,
+                            backgroundColor: colors,
+                            borderColor: '#fff',
+                            borderWidth: 2,
+                            hoverOffset: 6
                         }]
                     },
                     options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        cutout: '58%',
+                        layout: { padding: 4 },
                         plugins: {
-                            title: { display: false, text: title },
+                            legend: {
+                                display: true,
+                                position: 'bottom',
+                                labels: {
+                                    boxWidth: 10,
+                                    boxHeight: 10,
+                                    padding: 10,
+                                    font: { size: 11 },
+                                    usePointStyle: true
+                                }
+                            },
+                            doughnutCenterText: {
+                                total: fmtAmount(cfg.total)
+                            },
                             tooltip: {
                                 callbacks: {
                                     label: function (ctx) {
@@ -879,20 +1336,196 @@
                                         var total = arr.reduce(function (a, b) { return a + b; }, 0);
                                         var value = Number(ctx.parsed || 0);
                                         var pct = total > 0 ? ((value / total) * 100) : 0;
-                                        return ctx.label + ': ' + value.toLocaleString() + ' (' + pct.toFixed(2) + '%)';
+                                        return (ctx.label || '') + ': ' + fmtAmount(value) + ' (' + pct.toFixed(1) + '%)';
                                     }
                                 }
                             }
                         }
                     }
                 });
-            }
-            makePie('pie-city-chart', cityRows, 'city_name', 'City share');
-            makePie('pie-category-chart', categoryRows, 'item_category', 'Category share');
-            makePie('pie-item-chart', itemRows, 'item_name', 'Item share');
+            });
         })();
         </script>
+        @include('reports.partials.quick-date-buttons-script', [
+            'formId' => 'pie-charts-filter-form',
+            'fromId' => 'date_from_pie',
+            'toId' => 'date_to_pie',
+        ])
+        @include('reports.partials.city-picker-script', [
+            'pickerId' => 'pie',
+            'selectedCities' => $filters['cities'] ?? [],
+        ])
     @endif
-</div>
-</body>
-</html>
+@endsection
+
+@push('styles')
+<style>
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th, td { border-bottom: 1px solid #ececec; padding: 8px; text-align: left; }
+        th { background: #f9fafb; }
+        .num { text-align: right; font-variant-numeric: tabular-nums; }
+        .totals-box { background: #f0f9ff; padding: 12px; border-radius: 8px; margin-top: 12px; }
+        .customer-suggestions li:hover, .customer-suggestions li.is-active { background: #ecfdf5; }
+        .customer-suggestions li.muted-suggest { cursor: default; color: #94a3b8; font-size: 12px; }
+        .chart-wrap { margin-top: 16px; max-width: 1100px; min-height: 320px; }
+        .pie-quick-dates {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px dashed var(--rp-border, #e2e8f0);
+        }
+        .pie-quick-dates__label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--rp-muted, #64748b);
+            margin-right: 4px;
+        }
+        .pie-quick-date-btn {
+            border: 1px solid var(--rp-border, #e2e8f0);
+            background: #f8fafc;
+            color: #334155;
+            border-radius: 999px;
+            padding: 5px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .pie-quick-date-btn:hover {
+            background: #eef2ff;
+            border-color: #c7d2fe;
+            color: #4338ca;
+        }
+        .pie-city-picker-note { margin-top: 8px; font-size: 12px; }
+        .pie-active-filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 12px 0 4px;
+        }
+        .pie-active-filters__pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: #eef2ff;
+            border: 1px solid #c7d2fe;
+            color: #3730a3;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .pie-summary-card {
+            margin-top: 12px;
+            border-top: 3px solid #6366f1;
+        }
+        .pie-summary-card__grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px 20px;
+        }
+        .pie-charts-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+            margin-top: 16px;
+        }
+        .pie-chart-card {
+            border-top: 3px solid #14b8a6;
+            overflow: hidden;
+        }
+        .pie-chart-card:nth-child(2) { border-top-color: #6366f1; }
+        .pie-chart-card:nth-child(3) { border-top-color: #f59e0b; }
+        .pie-chart-card--salesman { border-top-color: #ec4899; }
+        .pie-chart-card__head {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            gap: 12px 20px;
+            margin-bottom: 14px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--rp-border, #e2e8f0);
+        }
+        .pie-chart-card__titles { flex: 1 1 240px; min-width: 0; }
+        .pie-chart-card__hint {
+            margin: 6px 0 0;
+            font-size: 12px;
+            color: var(--rp-muted, #64748b);
+            line-height: 1.5;
+        }
+        .pie-chart-card__total {
+            text-align: right;
+            flex: 0 0 auto;
+        }
+        .pie-chart-card__total-label {
+            display: block;
+            font-size: 11px;
+            color: var(--rp-muted, #64748b);
+            margin-bottom: 2px;
+        }
+        .pie-chart-card__total strong {
+            display: block;
+            font-size: 1.35rem;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: -0.02em;
+        }
+        .pie-chart-card__total-meta {
+            display: block;
+            margin-top: 2px;
+            font-size: 11px;
+            color: var(--rp-muted, #64748b);
+        }
+        .pie-chart-card__body {
+            display: grid;
+            grid-template-columns: minmax(220px, 340px) minmax(0, 1fr);
+            gap: 16px 20px;
+            align-items: start;
+        }
+        @media (max-width: 900px) {
+            .pie-chart-card__body { grid-template-columns: 1fr; }
+        }
+        .pie-donut-wrap {
+            position: relative;
+            min-height: 260px;
+            max-height: 320px;
+        }
+        .pie-donut-wrap canvas {
+            width: 100% !important;
+            height: 100% !important;
+            max-height: 300px;
+        }
+        .pie-chart-card__table-wrap {
+            min-width: 0;
+            max-height: 320px;
+            overflow: auto;
+            border: 1px solid var(--rp-border, #e2e8f0);
+            border-radius: 8px;
+        }
+        .pie-breakdown-table { margin: 0; font-size: 12px; }
+        .pie-breakdown-table th,
+        .pie-breakdown-table td { padding: 7px 10px; }
+        .pie-breakdown-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background: #f8fafc;
+        }
+        .pie-breakdown-table__rank {
+            width: 2rem;
+            color: var(--rp-muted, #64748b);
+            font-variant-numeric: tabular-nums;
+        }
+        .pie-breakdown-empty {
+            padding: 16px;
+            font-size: 13px;
+            margin: 0;
+        }
+</style>
+@endpush
+
+@push('head')
+    @if (($mode ?? '') === 'charts' || in_array(($filters['city_page'] ?? 'overview'), ['pie-charts', 'salesman-pie'], true))
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+    @endif
+@endpush

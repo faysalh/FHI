@@ -1,128 +1,36 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sales &amp; reporting schema</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 16px;
-            background-color: #f5f5f5;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: #fff;
-            border-radius: 8px;
-            padding: 16px;
-        }
-        .toolbar {
-            display: grid;
-            grid-template-columns: 1fr 1fr auto auto;
-            gap: 8px;
-            margin-bottom: 16px;
-            align-items: end;
-        }
-        .toolbar input[type="search"] {
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 6px;
-            width: 100%;
-            box-sizing: border-box;
-        }
-        .search-hits { margin-bottom: 16px; }
-        .search-hits table { font-size: 13px; }
-        .search-hits td { word-break: break-word; }
-        select, button {
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 6px;
-        }
-        .summary {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
-            margin-bottom: 16px;
-        }
-        .panel {
-            border: 1px solid #ececec;
-            border-radius: 8px;
-            padding: 12px;
-            background: #fff;
-            overflow-x: auto;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        th, td {
-            border-bottom: 1px solid #ececec;
-            padding: 8px;
-            text-align: left;
-            font-size: 14px;
-            vertical-align: top;
-        }
-        .error {
-            background: #ffeaea;
-            color: #921d1d;
-            padding: 10px;
-            border-radius: 6px;
-            margin-bottom: 10px;
-        }
-        .muted {
-            color: #666;
-            font-size: 13px;
-        }
-        .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-        @media (max-width: 900px) {
-            .summary, .toolbar {
-                grid-template-columns: 1fr;
-            }
-        }
-        .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; border-bottom: 1px solid #ddd; padding-bottom: 8px; }
-        .tabs a {
-            padding: 8px 14px; border-radius: 6px 6px 0 0; text-decoration: none; color: #333;
-            background: #eee; font-size: 14px;
-        }
-        .tabs a.active { background: #2563eb; color: #fff; }
-    </style>
-</head>
-<body>
-<div class="container">
-    <nav class="tabs">
-        <a href="{{ route('reports.sales.index') }}">Sales report</a>
-        <a href="{{ route('reports.sales-item-average.index') }}">Sales by item average</a>
-        <a href="{{ route('reports.deliveries.index') }}">Deliveries</a>
-        <a href="{{ route('reports.invoices.index') }}">Invoices</a>
-        <a href="{{ route('reports.cities.index') }}">Cities</a>
-        <a href="{{ route('reports.visits.index') }}">Visits</a>
-        <a href="{{ route('reports.schema.index') }}" class="active">Schema</a>
-        <a href="{{ route('reports.customers.index') }}">Sample accounts</a>
-        <a href="{{ route('reports.identifier.index') }}">Identifier</a>
-    </nav>
-    <h1>Sales &amp; reporting schema</h1>
-    <p class="muted">Read-only preview of customer, account, document, and sales-related tables (with data). With <strong>Search fields</strong>, only browsable tables that match appear in the list; column lists, field search results, and sample rows are limited to what matches the query.</p>
+@extends('reports.layouts.app')
+@section('title', 'Sales & reporting schema')
 
-    @if (!empty($commonColumnNames))
-        <div class="panel" style="margin-bottom: 16px;">
+@section('content')
+<header class="page-header"><h1>Sales &amp; reporting schema</h1>
+    </header>@php
+        $activeView = $viewMode ?? 'browse';
+        $queryBase = request()->query();
+        $selectedConstraint = trim((string) ($filters['constraint'] ?? 'invoices_client_id_foreign'));
+    @endphp
+    <div class="subtabs">
+        <a href="{{ route('reports.schema.index', array_merge($queryBase, ['view' => 'browse'])) }}" class="{{ $activeView === 'browse' ? 'active' : '' }}">Table browser</a>
+        <a href="{{ route('reports.schema.index', array_merge($queryBase, ['view' => 'diagram'])) }}" class="{{ $activeView === 'diagram' ? 'active' : '' }}">Relations diagram</a>
+        <a href="{{ route('reports.schema.index', array_merge($queryBase, ['view' => 'constraint-breakdown', 'constraint' => $selectedConstraint])) }}" class="{{ $activeView === 'constraint-breakdown' ? 'active' : '' }}">Constraint breakdown</a>
+    </div>
+    <p class="muted">Read-only preview of customer, account, document, and sales-related tables (with data). Search can find field names or values in the selected table; exact value matches are shown first.</p>
+
+    @if ($activeView === 'browse' && !empty($commonColumnNames))
+        <div class="panel panel-spaced">
             <h2>Column names common to all browsable tables</h2>
             <p class="muted">Exact name intersection across {{ count($tables) }} table(s). Useful for cross-table joins or consistent filters.</p>
             <p><code>{{ implode(', ', $commonColumnNames) }}</code></p>
         </div>
-    @elseif (count($tables) > 0)
-        <div class="panel" style="margin-bottom: 16px;">
+    @elseif ($activeView === 'browse' && count($tables) > 0)
+        <div class="panel panel-spaced">
             <h2>Column names common to all browsable tables</h2>
             <p class="muted">No single column name appears in every table (intersection is empty). Tables use different field sets; compare per domain or join keys manually.</p>
         </div>
     @endif
 
-    @if ($errorMessage)
-        <div class="error">{{ $errorMessage }}</div>
-    @endif
-
+    @if ($activeView === 'browse')
     <form method="GET" action="{{ route('reports.schema.index') }}" class="toolbar">
+        <input type="hidden" name="view" value="browse">
         <label style="margin:0;">
             <span class="muted" style="display:block;margin-bottom:4px;font-weight:600;">Table</span>
             <select name="table" @if (count($tables) === 0) disabled @endif>
@@ -136,8 +44,8 @@
             </select>
         </label>
         <label style="margin:0;">
-            <span class="muted" style="display:block;margin-bottom:4px;font-weight:600;">Search fields (dbo)</span>
-            <input type="search" name="q" value="{{ $searchQueryInput ?? '' }}" placeholder="e.g. sales_man, fld_account_id_ref" autocomplete="off">
+            <span class="muted" style="display:block;margin-bottom:4px;font-weight:600;">Search fields or values</span>
+            <input type="search" name="q" value="{{ $searchQueryInput ?? '' }}" placeholder="e.g. 50745, sales_man, fld_account_id_ref" autocomplete="off">
         </label>
         <label style="margin:0;">
             <span class="muted" style="display:block;margin-bottom:4px;font-weight:600;">Sample size</span>
@@ -147,7 +55,7 @@
                 @endforeach
             </select>
         </label>
-        <button type="submit">Load / search</button>
+        @include('reports.partials.icon-button', ['action' => 'load', 'label' => 'Load / search schema'])
     </form>
 
     @if (strlen(trim($searchQueryInput ?? '')) > 0 && !empty($searchHits))
@@ -176,7 +84,7 @@
             </div>
         </div>
     @elseif (strlen(trim($searchQueryInput ?? '')) > 0)
-        <div class="panel search-hits muted">No columns or tables matched your search (<strong>{{ $searchQueryInput }}</strong>) in <code>dbo</code>. Try shorter words or one term at a time.</div>
+        <div class="panel search-hits muted">No column or table names matched your search (<strong>{{ $searchQueryInput }}</strong>) in <code>dbo</code>. Sample rows for the selected table are still filtered by value matches.</div>
     @endif
 
     @if (strlen(trim($searchQueryInput ?? '')) > 0 && !empty($searchHits) && count($tables) === 0)
@@ -193,8 +101,8 @@
                 <div><strong>Table:</strong> {{ $selectedTable['table'] }}</div>
                 <div><strong>Full name:</strong> {{ $selectedTable['full_name'] }}</div>
                 <div><strong>Browsable tables (shown in list):</strong> {{ count($tables) }}</div>
-                <div><strong>Column count:</strong> {{ count($columns) }}@if (strlen(trim($searchQueryInput ?? '')) > 0) <span class="muted">(matching search)</span>@endif</div>
-                <div><strong>Sample rows:</strong> {{ $rows?->total() ?? 0 }}@if (strlen(trim($searchQueryInput ?? '')) > 0) <span class="muted">(matching search in text columns)</span>@endif</div>
+                <div><strong>Column count:</strong> {{ count($columns) }}@if (strlen(trim($searchQueryInput ?? '')) > 0 && !empty($searchHits)) <span class="muted">(matching field search)</span>@endif</div>
+                <div><strong>Sample rows:</strong> {{ $rows?->total() ?? 0 }}@if (strlen(trim($searchQueryInput ?? '')) > 0) <span class="muted">(matching value search)</span>@endif</div>
             </div>
 
             <div class="panel">
@@ -262,11 +170,137 @@
                 </table>
 
                 <div style="margin-top: 12px;">
-                    {{ $rows?->links() }}
+                    @if($rows) @include('reports.partials.pagination', ['paginator' => $rows]) @endif
                 </div>
             @endif
         </div>
     @endif
-</div>
-</body>
-</html>
+    @elseif ($activeView === 'diagram')
+        <div class="panel panel-spaced">
+            <h2>How to read this diagram</h2>
+            <p class="muted">Each line means <code>ParentTable.ParentColumn -&gt; ReferencedTable.ReferencedColumn</code>. This comes from foreign key metadata only and does not modify the database.</p>
+        </div>
+
+        <div class="panel panel-spaced">
+            <h2>Relation map (text diagram)</h2>
+            @if (!empty($relationDiagramLines))
+                <div class="diagram-box">
+@foreach ($relationDiagramLines as $line)
+{{ $line }}
+@endforeach
+                </div>
+            @else
+                <p class="muted">No foreign key relations were found for the currently browsable tables.</p>
+            @endif
+        </div>
+
+        <div class="panel">
+            <h2>Relation details</h2>
+            @if (!empty($relations))
+                <table>
+                    <thead>
+                    <tr>
+                        <th>Constraint</th>
+                        <th>Parent</th>
+                        <th>Referenced</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach ($relations as $relation)
+                        <tr>
+                            <td><code>{{ $relation['constraint_name'] }}</code></td>
+                            <td><code>{{ $relation['schema'] }}.{{ $relation['parent_table'] }}.{{ $relation['parent_column'] }}</code></td>
+                            <td><code>{{ $relation['schema'] }}.{{ $relation['referenced_table'] }}.{{ $relation['referenced_column'] }}</code></td>
+                        </tr>
+                    @endforeach
+                    </tbody>
+                </table>
+            @else
+                <p class="muted">No relation rows available.</p>
+            @endif
+        </div>
+    @else
+        @php
+            $matchingRows = array_values(array_filter(
+                $relations ?? [],
+                static fn (array $relation): bool => strcasecmp($relation['constraint_name'] ?? '', $selectedConstraint) === 0
+            ));
+            $fallbackRows = array_values(array_filter(
+                $relations ?? [],
+                static fn (array $relation): bool => str_contains(
+                    strtolower((string) ($relation['constraint_name'] ?? '')),
+                    strtolower($selectedConstraint)
+                )
+            ));
+        @endphp
+        <div class="panel panel-spaced">
+            <h2>Foreign key explanation</h2>
+            <form method="GET" action="{{ route('reports.schema.index') }}" class="toolbar" style="grid-template-columns: 1fr auto;">
+                <input type="hidden" name="view" value="constraint-breakdown">
+                <label style="margin:0;">
+                    <span class="muted" style="display:block;margin-bottom:4px;font-weight:600;">Constraint name</span>
+                    <input type="search" name="constraint" value="{{ $selectedConstraint }}" placeholder="e.g. invoices_client_id_foreign" autocomplete="off">
+                </label>
+                @include('reports.partials.icon-button', ['action' => 'explain', 'label' => 'Explain constraint'])
+            </form>
+            <p class="muted">This tab explains one FK constraint at a time from the read-only relation metadata.</p>
+        </div>
+
+        @if (!empty($matchingRows))
+            @php $first = $matchingRows[0]; @endphp
+            <div class="panel panel-spaced">
+                <h2>{{ $selectedConstraint }}</h2>
+                <p><strong>What it means:</strong> every value in <code>{{ $first['schema'] }}.{{ $first['parent_table'] }}.{{ $first['parent_column'] }}</code> must exist in <code>{{ $first['schema'] }}.{{ $first['referenced_table'] }}.{{ $first['referenced_column'] }}</code>.</p>
+                <p><strong>Why this exists:</strong> it enforces referential integrity so child records cannot point to non-existing parent records.</p>
+                <p><strong>Join path:</strong> <code>{{ $first['schema'] }}.{{ $first['parent_table'] }}</code> joins to <code>{{ $first['schema'] }}.{{ $first['referenced_table'] }}</code> using those key columns.</p>
+            </div>
+            <div class="panel">
+                <h2>Constraint column mapping</h2>
+                <table>
+                    <thead>
+                    <tr>
+                        <th>Constraint</th>
+                        <th>Parent (child side)</th>
+                        <th>Referenced (parent side)</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach ($matchingRows as $relation)
+                        <tr>
+                            <td><code>{{ $relation['constraint_name'] }}</code></td>
+                            <td><code>{{ $relation['schema'] }}.{{ $relation['parent_table'] }}.{{ $relation['parent_column'] }}</code></td>
+                            <td><code>{{ $relation['schema'] }}.{{ $relation['referenced_table'] }}.{{ $relation['referenced_column'] }}</code></td>
+                        </tr>
+                    @endforeach
+                    </tbody>
+                </table>
+            </div>
+        @else
+            <div class="panel">
+                <h2>No exact constraint match</h2>
+                <p class="muted">Could not find <code>{{ $selectedConstraint }}</code> in the currently loaded relation set.</p>
+                @if (!empty($fallbackRows))
+                    <p class="muted">Closest matches:</p>
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>Constraint</th>
+                            <th>Parent</th>
+                            <th>Referenced</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach ($fallbackRows as $relation)
+                            <tr>
+                                <td><code>{{ $relation['constraint_name'] }}</code></td>
+                                <td><code>{{ $relation['schema'] }}.{{ $relation['parent_table'] }}.{{ $relation['parent_column'] }}</code></td>
+                                <td><code>{{ $relation['schema'] }}.{{ $relation['referenced_table'] }}.{{ $relation['referenced_column'] }}</code></td>
+                            </tr>
+                        @endforeach
+                        </tbody>
+                    </table>
+                @endif
+            </div>
+        @endif
+    @endif
+@endsection

@@ -297,21 +297,21 @@ class SchemaExplorerRepository
         if ($driver === 'sqlsrv') {
             /** @var array<int, object{COLUMN_NAME:string, DATA_TYPE:string, IS_NULLABLE:string, CHARACTER_MAXIMUM_LENGTH:int|null}> $rows */
             $rows = DB::select(
-                "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH
+                'SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH
                  FROM INFORMATION_SCHEMA.COLUMNS
                  WHERE TABLE_SCHEMA = ?
                     AND TABLE_NAME = ?
-                 ORDER BY ORDINAL_POSITION",
+                 ORDER BY ORDINAL_POSITION',
                 [$schema, $table]
             );
         } elseif ($driver === 'mysql') {
             /** @var array<int, object{COLUMN_NAME:string, DATA_TYPE:string, IS_NULLABLE:string, CHARACTER_MAXIMUM_LENGTH:int|null}> $rows */
             $rows = DB::select(
-                "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH
+                'SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH
                  FROM INFORMATION_SCHEMA.COLUMNS
                  WHERE TABLE_SCHEMA = ?
                     AND TABLE_NAME = ?
-                 ORDER BY ORDINAL_POSITION",
+                 ORDER BY ORDINAL_POSITION',
                 [$schema, $table]
             );
         } else {
@@ -422,11 +422,15 @@ class SchemaExplorerRepository
 
         if ($tokens !== []) {
             $columns = $this->getColumns($schema, $table);
-            // Include uniqueidentifier so sample-row search matches partial GUIDs (e.g. 2D2A670B vs full UUID).
-            $textTypes = ['varchar', 'nvarchar', 'char', 'nchar', 'text', 'ntext', 'longtext', 'mediumtext', 'uniqueidentifier'];
+            // Include common numeric/date scalar types so value search (e.g. invoice/document numbers) works too.
+            $searchableTypes = [
+                'varchar', 'nvarchar', 'char', 'nchar', 'text', 'ntext', 'longtext', 'mediumtext', 'uniqueidentifier',
+                'int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney',
+                'date', 'datetime', 'datetime2', 'smalldatetime', 'time',
+            ];
             $textCols = array_values(array_filter(
                 $columns,
-                static fn (array $c): bool => in_array(strtolower($c['data_type']), $textTypes, true)
+                static fn (array $c): bool => in_array(strtolower($c['data_type']), $searchableTypes, true)
             ));
 
             if ($textCols === []) {
@@ -446,10 +450,199 @@ class SchemaExplorerRepository
                         }
                     });
                 }
+
+                $this->orderSearchMatchesFirst($query, $textCols, $tokens, $driver);
             }
         }
 
         return $query->paginate($perPage)->withQueryString();
+    }
+
+    /**
+     * Put exact value matches before broad substring matches so document numbers are easy to find.
+     *
+     * @param  array<int, array{name:string, data_type:string, is_nullable:string, max_length:int|null}>  $columns
+     * @param  list<string>  $tokens
+     */
+    private function orderSearchMatchesFirst(Builder $query, array $columns, array $tokens, string $driver): void
+    {
+        if ($columns === [] || $tokens === []) {
+            return;
+        }
+
+        $exactChecks = [];
+        $likeChecks = [];
+        $bindings = [];
+
+        foreach ($tokens as $token) {
+            foreach ($columns as $column) {
+                $name = (string) $column['name'];
+                $cast = $driver === 'sqlsrv'
+                    ? 'CAST(['.str_replace(']', ']]', $name).'] AS NVARCHAR(MAX))'
+                    : 'CAST(`'.str_replace('`', '``', $name).'` AS CHAR(16383))';
+
+                $exactChecks[] = $cast.' = ?';
+                $bindings[] = $token;
+            }
+        }
+
+        foreach ($tokens as $token) {
+            $pattern = '%'.$this->escapeLikePattern($token).'%';
+            foreach ($columns as $column) {
+                $name = (string) $column['name'];
+                $cast = $driver === 'sqlsrv'
+                    ? 'CAST(['.str_replace(']', ']]', $name).'] AS NVARCHAR(MAX))'
+                    : 'CAST(`'.str_replace('`', '``', $name).'` AS CHAR(16383))';
+
+                $likeChecks[] = $driver === 'sqlsrv'
+                    ? $cast.' LIKE ? ESCAPE N\'\\\''
+                    : 'LOWER('.$cast.') LIKE LOWER(?)';
+                $bindings[] = $pattern;
+            }
+        }
+
+        $query->orderByRaw(
+            'CASE WHEN '.implode(' OR ', $exactChecks).' THEN 0 WHEN '.implode(' OR ', $likeChecks).' THEN 1 ELSE 2 END',
+            $bindings
+        );
+    }
+
+    /**
+     * Read-only foreign-key relations between browsable business tables.
+     *
+     * @param  array<int, array{schema:string, table:string, full_name:string, column_count:int, row_count:int}>  $tables
+     * @return list<array{
+     *   constraint_name:string,
+     *   schema:string,
+     *   parent_table:string,
+     *   parent_column:string,
+     *   referenced_table:string,
+     *   referenced_column:string
+     * }>
+     */
+    public function listForeignKeyRelations(array $tables): array
+    {
+        if ($tables === []) {
+            return [];
+        }
+
+        $allowedFullNames = array_fill_keys(
+            array_map(static fn (array $table): string => strtolower($table['full_name']), $tables),
+            true
+        );
+
+        $driver = DB::getDriverName();
+        if ($driver === 'sqlsrv') {
+            /** @var array<int, object{
+             *   constraint_name:string,
+             *   schema_name:string,
+             *   parent_table:string,
+             *   parent_column:string,
+             *   referenced_table:string,
+             *   referenced_column:string
+             * }> $rows */
+            $rows = DB::select(
+                "SELECT
+                    fk.name AS constraint_name,
+                    sch_parent.name AS schema_name,
+                    t_parent.name AS parent_table,
+                    c_parent.name AS parent_column,
+                    t_ref.name AS referenced_table,
+                    c_ref.name AS referenced_column
+                 FROM sys.foreign_key_columns fkc
+                 INNER JOIN sys.foreign_keys fk ON fk.object_id = fkc.constraint_object_id
+                 INNER JOIN sys.tables t_parent ON t_parent.object_id = fkc.parent_object_id
+                 INNER JOIN sys.schemas sch_parent ON sch_parent.schema_id = t_parent.schema_id
+                 INNER JOIN sys.columns c_parent ON c_parent.object_id = fkc.parent_object_id AND c_parent.column_id = fkc.parent_column_id
+                 INNER JOIN sys.tables t_ref ON t_ref.object_id = fkc.referenced_object_id
+                 INNER JOIN sys.columns c_ref ON c_ref.object_id = fkc.referenced_object_id AND c_ref.column_id = fkc.referenced_column_id
+                 WHERE sch_parent.name = N'dbo'
+                 ORDER BY t_parent.name, fk.name, fkc.constraint_column_id"
+            );
+
+            $mapped = array_map(static fn (object $row): array => [
+                'constraint_name' => (string) $row->constraint_name,
+                'schema' => (string) $row->schema_name,
+                'parent_table' => (string) $row->parent_table,
+                'parent_column' => (string) $row->parent_column,
+                'referenced_table' => (string) $row->referenced_table,
+                'referenced_column' => (string) $row->referenced_column,
+            ], $rows);
+
+            return $this->filterRelationsByBrowsableTables($mapped, $allowedFullNames);
+        }
+
+        if ($driver === 'mysql') {
+            $database = (string) DB::getDatabaseName();
+            /** @var array<int, object{
+             *   constraint_name:string,
+             *   schema_name:string,
+             *   parent_table:string,
+             *   parent_column:string,
+             *   referenced_table:string,
+             *   referenced_column:string
+             * }> $rows */
+            $rows = DB::select(
+                'SELECT
+                    k.CONSTRAINT_NAME AS constraint_name,
+                    k.TABLE_SCHEMA AS schema_name,
+                    k.TABLE_NAME AS parent_table,
+                    k.COLUMN_NAME AS parent_column,
+                    k.REFERENCED_TABLE_NAME AS referenced_table,
+                    k.REFERENCED_COLUMN_NAME AS referenced_column
+                 FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE k
+                 WHERE k.TABLE_SCHEMA = ?
+                   AND k.REFERENCED_TABLE_NAME IS NOT NULL
+                   AND k.REFERENCED_COLUMN_NAME IS NOT NULL
+                 ORDER BY k.TABLE_NAME, k.CONSTRAINT_NAME, k.ORDINAL_POSITION',
+                [$database]
+            );
+
+            $mapped = array_map(static fn (object $row): array => [
+                'constraint_name' => (string) $row->constraint_name,
+                'schema' => (string) $row->schema_name,
+                'parent_table' => (string) $row->parent_table,
+                'parent_column' => (string) $row->parent_column,
+                'referenced_table' => (string) $row->referenced_table,
+                'referenced_column' => (string) $row->referenced_column,
+            ], $rows);
+
+            return $this->filterRelationsByBrowsableTables($mapped, $allowedFullNames);
+        }
+
+        throw new RuntimeException('Unsupported database driver for schema browsing.');
+    }
+
+    /**
+     * @param  list<array{
+     *   constraint_name:string,
+     *   schema:string,
+     *   parent_table:string,
+     *   parent_column:string,
+     *   referenced_table:string,
+     *   referenced_column:string
+     * }>  $relations
+     * @param  array<string, bool>  $allowedFullNames
+     * @return list<array{
+     *   constraint_name:string,
+     *   schema:string,
+     *   parent_table:string,
+     *   parent_column:string,
+     *   referenced_table:string,
+     *   referenced_column:string
+     * }>
+     */
+    private function filterRelationsByBrowsableTables(array $relations, array $allowedFullNames): array
+    {
+        return array_values(array_filter(
+            $relations,
+            static function (array $relation) use ($allowedFullNames): bool {
+                $parentFullName = strtolower($relation['schema'].'.'.$relation['parent_table']);
+                $referencedFullName = strtolower($relation['schema'].'.'.$relation['referenced_table']);
+
+                return isset($allowedFullNames[$parentFullName]) && isset($allowedFullNames[$referencedFullName]);
+            }
+        ));
     }
 
     /**

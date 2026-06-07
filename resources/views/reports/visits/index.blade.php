@@ -1,69 +1,24 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Visits report</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 16px; background: #f5f5f5; }
-        .container { max-width: 1200px; margin: 0 auto; background: #fff; border-radius: 8px; padding: 16px; }
-        .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; border-bottom: 1px solid #ddd; padding-bottom: 8px; }
-        .tabs a {
-            padding: 8px 14px; border-radius: 6px 6px 0 0; text-decoration: none; color: #333;
-            background: #eee; font-size: 14px;
-        }
-        .tabs a.active { background: #2563eb; color: #fff; }
-        .filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; align-items: end; margin-bottom: 16px; }
-        label { font-size: 13px; color: #555; display: block; margin-bottom: 4px; }
-        input, select, button { padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
-        select[multiple] { min-height: 120px; }
-        button { background: #2563eb; color: #fff; border: none; cursor: pointer; }
-        .error { background: #ffeaea; color: #921d1d; padding: 10px; border-radius: 6px; margin-bottom: 12px; }
-        .hint { font-size: 13px; color: #666; margin: 0 0 16px 0; line-height: 1.5; }
-        table { width: 100%; border-collapse: collapse; font-size: 14px; }
-        th, td { border-bottom: 1px solid #ececec; padding: 8px; text-align: left; }
-        th { background: #f9fafb; }
-        .badge { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; }
-        .badge-yes { background: #dcfce7; color: #166534; }
-        .badge-no { background: #fee2e2; color: #991b1b; }
-        .exports { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
-        .exports a {
-            padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; text-decoration: none; color: #1e40af; font-size: 14px; background: #f8fafc;
-        }
-        .exports a:hover { background: #e0e7ff; }
-    </style>
-</head>
-<body>
-<div class="container">
-    <nav class="tabs">
-        <a href="{{ route('reports.sales.index') }}">Sales report</a>
-        <a href="{{ route('reports.sales-item-average.index') }}">Sales by item average</a>
-        <a href="{{ route('reports.deliveries.index') }}">Deliveries</a>
-        <a href="{{ route('reports.invoices.index') }}">Invoices</a>
-        <a href="{{ route('reports.cities.index') }}">Cities</a>
-        <a href="{{ route('reports.visits.index', request()->query()) }}" class="active">Visits</a>
-        <a href="{{ route('reports.schema.index') }}">Schema</a>
-        <a href="{{ route('reports.customers.index') }}">Sample accounts</a>
-        <a href="{{ route('reports.identifier.index') }}">Identifier</a>
-    </nav>
+@extends('reports.layouts.app')
+@section('title', 'Visits report')
 
-    <h1>Visits report</h1>
-    <p class="hint">
+@section('content')
+@php
+    use App\Support\VisitsReportRowValues;
+@endphp
+<header class="page-header"><h1>Visits report</h1></header>
+<p class="hint">
         <strong>Clients</strong> and <strong>salesmen</strong> follow the <a href="{{ route('reports.identifier.index') }}">Identifier</a> rules.
         A client is <strong>visited</strong> in a period if there is at least one non-cancelled store document line with a title date in that period for that account.
         If your date range spans <strong>more than one calendar month</strong>, you get one column per month (visit in that month only). Otherwise a single <strong>Visit status</strong> column is used.
         Leave <strong>salesman</strong> empty to list all clients (with city filters applied). Leave <strong>cities</strong> unselected to include all cities.
-        City is read from the first matching column on <code>dbo.tbl_accounting_accounts</code> (see <code>config/reporting.php</code> and optional <code>REPORTING_ACCOUNT_CITY_COLUMN</code> in <code>.env</code>).
     </p>
 
-    @if ($errorMessage)
-        <div class="error">{{ $errorMessage }}</div>
-    @endif
-    @if (session('error'))
-        <div class="error">{{ session('error') }}</div>
-    @endif
-
-    <form method="get" action="{{ route('reports.visits.index') }}" class="filters">
+    <form id="visits-filter-form" method="get" action="{{ route('reports.visits.index') }}">
+        <details class="filters-panel" open>
+            <summary>Filters</summary>
+            <div class="filters-body">
+                @include('reports.partials.quick-date-buttons')
+                <div class="filters-grid">
         <div>
             <label for="date_from">From</label>
             <input type="date" id="date_from" name="date_from" value="{{ $filters['date_from'] }}">
@@ -81,37 +36,82 @@
                 @endforeach
             </select>
         </div>
-        <div>
-            <label for="cities">Cities (optional, multi-select)</label>
-            <select id="cities" name="cities[]" multiple size="8">
-                @foreach ($cityOptions as $city)
-                    <option value="{{ $city }}" @selected(in_array($city, $filters['cities'] ?? [], true))>{{ $city }}</option>
-                @endforeach
-            </select>
+        <div class="span-full">
+            <label>Cities (optional)</label>
+            @include('reports.partials.city-picker', [
+                'pickerId' => 'visits',
+                'cityOptions' => $cityOptionsForPicker ?? [],
+                'selectedCities' => $filters['cities'] ?? [],
+            ])
         </div>
         <div>
             <label for="per_page">Rows per page</label>
             <select id="per_page" name="per_page">
-                @foreach ([10, 25, 50, 100] as $size)
-                    <option value="{{ $size }}" @selected((int) ($filters['per_page'] ?? 25) === $size)>{{ $size }}</option>
+                @foreach ([10, 25, 50, 100, 250] as $size)
+                    <option value="{{ $size }}" @selected((int) ($filters['per_page'] ?? 250) === $size)>{{ $size }}</option>
                 @endforeach
             </select>
         </div>
-        <div>
-            <button type="submit">Apply</button>
+        <div class="filter-checkbox">
+            <label>
+                <input type="checkbox" name="show_month_sales" value="1" @checked($filters['show_month_sales'] ?? false)>
+                Show monthly sales per client
+            </label>
+            <p class="field-help">Adds a sales total column next to each visit month (posted sales invoices <code>S</code> only, discount-aware amount, same basis as the Sales report).</p>
         </div>
+        <div class="filter-checkbox">
+            <label>
+                <input type="checkbox" name="sort_by_city" value="1" @checked($filters['sort_by_city'] ?? false)>
+                Group by city (A–Z), not visited first per city
+            </label>
+            <p class="field-help">When enabled, the table and exports list cities alphabetically, show not-visited clients before visited within each city, and PDF/CSV include visited / not-visited totals per city.</p>
+        </div>
+                </div>
+                <div class="filters-actions">
+                    @include('reports.partials.icon-button', ['action' => 'apply', 'label' => 'Apply filters'])
+                    @include('reports.partials.filters-reset-link', ['route' => 'reports.visits.index'])
+                    <span class="muted">Export:</span>
+                    <a href="#" class="visits-export-link export-link" data-export-base="{{ route('reports.visits.export.pdf') }}" title="PDF includes up to {{ \App\Repositories\VisitsReportRepository::MAX_PDF_EXPORT_ROWS }} clients; use CSV for larger exports">PDF</a>
+                    <a href="#" class="visits-export-link export-link" data-export-base="{{ route('reports.visits.export.csv') }}">CSV</a>
+                </div>
+            </div>
+        </details>
     </form>
 
-    @if (! $errorMessage)
-        <div class="exports">
-            <span style="font-size:14px;color:#555;">Exports use current filters:</span>
-            <a href="{{ route('reports.visits.export.pdf', request()->query()) }}">Export PDF</a>
-            <a href="{{ route('reports.visits.export.csv', request()->query()) }}">Export CSV</a>
-        </div>
+    @include('reports.partials.city-picker-script', ['pickerId' => 'visits', 'selectedCities' => $filters['cities'] ?? []])
+    @include('reports.partials.quick-date-buttons-script', ['formId' => 'visits-filter-form'])
+    @include('reports.partials.export-from-form-script', ['formId' => 'visits-filter-form', 'linkClass' => 'visits-export-link'])
 
+    @if (! $errorMessage)
+        @php
+            $showMonthSales = (bool) ($filters['show_month_sales'] ?? false);
+            $monthColCount = ($multiMonth ?? false)
+                ? count($monthSegments ?? []) * ($showMonthSales ? 2 : 1)
+                : ($showMonthSales ? 2 : 1);
+            $emptyColspan = 5 + $monthColCount;
+        @endphp
         <table>
             <thead>
+            @if (($multiMonth ?? false) && $showMonthSales)
             <tr>
+                <th rowspan="2">#</th>
+                <th rowspan="2">Client code</th>
+                <th rowspan="2">Client name</th>
+                <th rowspan="2">City</th>
+                <th rowspan="2">Salesman</th>
+                @foreach ($monthSegments ?? [] as $seg)
+                    <th colspan="2">{{ $seg['label'] }}</th>
+                @endforeach
+            </tr>
+            <tr>
+                @foreach ($monthSegments ?? [] as $seg)
+                    <th>Visit</th>
+                    <th>Sales</th>
+                @endforeach
+            </tr>
+            @else
+            <tr>
+                <th>#</th>
                 <th>Client code</th>
                 <th>Client name</th>
                 <th>City</th>
@@ -119,18 +119,23 @@
                 @if ($multiMonth ?? false)
                     @foreach ($monthSegments ?? [] as $seg)
                         <th>{{ $seg['label'] }}</th>
+                        @if ($showMonthSales)
+                            <th>{{ $seg['label'] }} — sales</th>
+                        @endif
                     @endforeach
                 @else
                     <th>Visit status</th>
+                    @if ($showMonthSales)
+                        <th>Sales</th>
+                    @endif
                 @endif
             </tr>
+            @endif
             </thead>
             <tbody>
-            @php
-                $emptyColspan = ($multiMonth ?? false) ? (4 + count($monthSegments ?? [])) : 5;
-            @endphp
             @forelse ($rows as $row)
                 <tr>
+                    <td>{{ ($rows->currentPage() - 1) * $rows->perPage() + $loop->iteration }}</td>
                     <td>{{ $row->client_code }}</td>
                     <td>{{ $row->client_name }}</td>
                     <td>{{ $row->city }}</td>
@@ -139,7 +144,7 @@
                         @foreach ($monthSegments ?? [] as $seg)
                             @php
                                 $alias = $seg['sql_alias'];
-                                $hit = isset($row->{$alias}) ? (int) $row->{$alias} === 1 : (isset($row->{strtolower($alias)}) ? (int) $row->{strtolower($alias)} === 1 : false);
+                                $hit = VisitsReportRowValues::readMonthFlag($row, $alias);
                             @endphp
                             <td>
                                 @if ($hit)
@@ -148,6 +153,9 @@
                                     <span class="badge badge-no">Not visited</span>
                                 @endif
                             </td>
+                            @if ($showMonthSales)
+                                <td class="num">{{ display_number(VisitsReportRowValues::readSalesAmount($row, (string) $seg['sales_sql_alias'])) }}</td>
+                            @endif
                         @endforeach
                     @else
                         <td>
@@ -157,6 +165,9 @@
                                 <span class="badge badge-no">Not visited</span>
                             @endif
                         </td>
+                        @if ($showMonthSales)
+                            <td class="num">{{ display_number(VisitsReportRowValues::readSalesAmount($row, 'month_sales')) }}</td>
+                        @endif
                     @endif
                 </tr>
             @empty
@@ -166,8 +177,21 @@
             @endforelse
             </tbody>
         </table>
-        <div style="margin-top: 12px;">{{ $rows->links() }}</div>
+        @include('reports.partials.pagination', ['paginator' => $rows])
     @endif
-</div>
-</body>
-</html>
+@endsection
+
+@push('styles')
+<style>
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th, td { border-bottom: 1px solid #ececec; padding: 8px; text-align: left; }
+        th { background: #f9fafb; }
+        td.num { text-align: right; white-space: nowrap; }
+        .badge { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+        .badge-yes { background: #dcfce7; color: #166534; }
+        .badge-no { background: #fee2e2; color: #991b1b; }
+        .filter-checkbox label { display: flex; align-items: flex-start; gap: 8px; font-weight: 600; }
+        .filter-checkbox input { margin-top: 3px; }
+</style>
+@endpush
+

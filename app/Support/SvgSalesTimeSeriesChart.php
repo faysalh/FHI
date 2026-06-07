@@ -266,11 +266,7 @@ final class SvgSalesTimeSeriesChart
 
     private static function fmtNum(float $v): string
     {
-        if (abs($v - round($v)) < 1e-6) {
-            return (string) (int) round($v);
-        }
-
-        return number_format($v, 2, '.', ',');
+        return NumberDisplay::format($v);
     }
 
     private static function formatDate(object $r): string

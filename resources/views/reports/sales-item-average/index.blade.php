@@ -1,87 +1,23 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sales by item average</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 16px; background: #f5f5f5; }
-        .container { max-width: 1200px; margin: 0 auto; background: #fff; border-radius: 8px; padding: 16px; }
-        .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; border-bottom: 1px solid #ddd; padding-bottom: 8px; }
-        .tabs a { padding: 8px 14px; border-radius: 6px 6px 0 0; text-decoration: none; color: #333; background: #eee; font-size: 14px; }
-        .tabs a.active { background: #2563eb; color: #fff; }
-        .filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; align-items: end; margin-bottom: 12px; }
-        label { font-size: 13px; color: #555; display: block; margin-bottom: 4px; }
-        input, select, button { padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
-        button { background: #2563eb; color: #fff; border: none; cursor: pointer; }
-        .error { background: #ffeaea; color: #921d1d; padding: 10px; border-radius: 6px; margin-bottom: 12px; }
-        .hint { font-size: 13px; color: #666; margin-bottom: 12px; line-height: 1.5; }
-        table { width: 100%; border-collapse: collapse; font-size: 14px; }
-        th, td { border-bottom: 1px solid #ececec; padding: 8px; text-align: left; }
-        th { background: #f9fafb; }
-        .num { text-align: right; font-variant-numeric: tabular-nums; }
-        .muted { color: #64748b; font-size: 12px; }
-        .customer-picker { position: relative; max-width: 560px; }
-        .customer-chips { display: flex; flex-wrap: wrap; gap: 6px; min-height: 32px; margin-bottom: 8px; align-items: center; }
-        .customer-chip {
-            display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; background: #e0f2fe; border: 1px solid #7dd3fc;
-            border-radius: 999px; font-size: 13px; color: #0c4a6e;
-        }
-        .customer-chip button {
-            border: none; background: transparent; color: #0369a1; cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px;
-        }
-        .customer-chip button:hover { color: #0c4a6e; }
-        .customer-search-wrap { position: relative; }
-        .customer-suggestions {
-            display: none; position: absolute; left: 0; right: 0; top: 100%; z-index: 20; margin: 4px 0 0 0; padding: 0;
-            list-style: none; max-height: 220px; overflow-y: auto; background: #fff; border: 1px solid #ccc; border-radius: 6px;
-            box-shadow: 0 4px 12px rgba(0,0,0,.08);
-        }
-        .customer-suggestions.is-open { display: block; }
-        .customer-suggestions li { padding: 8px 10px; cursor: pointer; font-size: 14px; border-bottom: 1px solid #f1f5f9; }
-        .customer-suggestions li:hover, .customer-suggestions li.is-active { background: #eff6ff; }
-        .customer-suggestions li.muted-suggest { cursor: default; color: #94a3b8; font-size: 13px; }
-        .export-row { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 4px; }
-        .export-row a { display: inline-block; padding: 8px 12px; border-radius: 6px; background: #0f766e; color: #fff; text-decoration: none; font-size: 14px; }
-        .export-row a:hover { background: #115e59; }
-        .drilldown-trigger { cursor: pointer; color: #1d4ed8; text-decoration: underline; }
-        .drilldown-row td { background: #f8fafc; }
-        .drilldown-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        .drilldown-table th, .drilldown-table td { border: 1px solid #e2e8f0; padding: 6px; }
-        .drilldown-loading { color: #64748b; font-size: 12px; padding: 6px 0; }
-    </style>
-</head>
-<body>
-<div class="container">
-    <nav class="tabs">
-        <a href="{{ route('reports.sales.index') }}">Sales report</a>
-        <a href="{{ route('reports.sales-item-average.index', request()->query()) }}" class="active">Sales by item average</a>
-        <a href="{{ route('reports.deliveries.index') }}">Deliveries</a>
-        <a href="{{ route('reports.invoices.index') }}">Invoices</a>
-        <a href="{{ route('reports.cities.index') }}">Cities</a>
-        <a href="{{ route('reports.visits.index') }}">Visits</a>
-        <a href="{{ route('reports.schema.index') }}">Schema</a>
-        <a href="{{ route('reports.customers.index') }}">Sample accounts</a>
-        <a href="{{ route('reports.identifier.index') }}">Identifier</a>
-    </nav>
+@extends('reports.layouts.app')
+@section('title', 'Sales by item average')
 
-    <h1>Sales by item average</h1>
-    <p class="hint">
+@section('content')
+<header class="page-header"><h1>Sales by item average</h1></header>
+<p class="hint">
         First level shows <strong>categories</strong> (from <code>fld_description</code>). Click a category to drill down to
         <strong>item names</strong> (from <code>fld_item_name</code>) with the same columns.
-        If <strong>working days</strong> is set (&gt; 0), average columns are shown:
-        each total divided by working days (example: 10 units over 2 days = 5/day), and
-        balance coverage is calculated as current balance / avg quantity per day.
+        Quantity, amount, and weight use posted sales invoices (<code>S</code>) and the same discount-aware amount as the Sales report.
+        If <strong>From</strong> and <strong>To</strong> are set, average columns use business days in that range
+        (Fridays and holidays from <a href="{{ route('reports.holidays.index') }}">Settings → Holidays</a> excluded, same as Dashboard lab).
+        Balance coverage is current balance ÷ avg quantity per business day.
     </p>
 
-    @if ($errorMessage)
-        <div class="error">{{ $errorMessage }}</div>
-    @endif
-    @if (session('error'))
-        <div class="error">{{ session('error') }}</div>
-    @endif
-
-    <form id="sales-item-average-filter-form" method="GET" action="{{ route('reports.sales-item-average.index') }}" class="filters">
+    <form id="sales-item-average-filter-form" method="GET" action="{{ route('reports.sales-item-average.index') }}">
+        <details class="filters-panel" open>
+            <summary>Filters</summary>
+            <div class="filters-body">
+                @include('reports.partials.quick-date-buttons')
+                <div class="filters-grid">
         <div>
             <label for="date_from">From</label>
             <input type="date" id="date_from" name="date_from" value="{{ $filters['date_from'] }}">
@@ -105,204 +41,58 @@
                 @endforeach
             </select>
         </div>
-        <div style="grid-column: 1 / -1;">
-            <span class="muted" style="display:block;margin-bottom:4px;">Cities (optional)</span>
-            <script type="application/json" id="city-options-json">@json($cityOptions ?? [])</script>
-            <div class="customer-picker" id="city-picker">
-                <div class="customer-chips" id="city-chips" aria-live="polite"></div>
-                <div id="city-hidden-inputs"></div>
-                <div class="customer-search-wrap">
-                    <label for="city-search" class="muted" style="display:block;margin-bottom:4px;">Type a city name, then pick from the list</label>
-                    <input type="text" id="city-search" autocomplete="off" placeholder="Start typing a city..." style="width:100%;max-width:520px;" @disabled(!($hasCityColumn ?? false))>
-                    <ul class="customer-suggestions" id="city-suggestions" role="listbox" aria-label="Matching cities"></ul>
-                </div>
-                @if (!($hasCityColumn ?? false))
-                    <p class="muted" style="margin-top: 8px;">City filtering is unavailable because no city column could be resolved on accounts.</p>
-                @else
-                    <p class="muted" style="margin-top: 8px;">Add multiple cities by searching again. Leave empty for all cities.</p>
-                @endif
-            </div>
+        <div class="span-full">
+            <label>Cities (optional)</label>
+            @include('reports.partials.city-picker', [
+                'pickerId' => 'sia',
+                'cityOptions' => $cityOptions ?? [],
+                'selectedCities' => $filters['cities'] ?? [],
+                'note' => ($hasCityColumn ?? false)
+                    ? 'Add multiple cities by searching again. Leave empty for all cities.'
+                    : 'City filtering is unavailable because no city column could be resolved on accounts.',
+                'disabled' => ! ($hasCityColumn ?? false),
+            ])
         </div>
         <div>
-            <label for="working_days">Working days (optional)</label>
-            <input type="number" id="working_days" name="working_days" min="0" max="400" value="{{ (int) ($filters['working_days'] ?? 0) }}">
+            <label>Business days in range</label>
+            <p class="working-days-display">{{ display_number($filters['working_days'] ?? 0) }}</p>
+            <p class="muted" style="margin:4px 0 0;font-size:12px;">Auto-calculated from dates (excludes Fri + holidays).</p>
         </div>
         <div>
             <label for="per_page">Rows per page</label>
             <select id="per_page" name="per_page">
-                @foreach ([10, 25, 50, 100] as $size)
-                    <option value="{{ $size }}" @selected((int) ($filters['per_page'] ?? 25) === $size)>{{ $size }}</option>
+                @foreach ([10, 25, 50, 100, 250] as $size)
+                    <option value="{{ $size }}" @selected((int) ($filters['per_page'] ?? 250) === $size)>{{ $size }}</option>
                 @endforeach
             </select>
         </div>
-        <div>
-            <button type="submit">Apply</button>
-        </div>
-        <div class="export-row">
-            <span class="muted">Export current filters:</span>
-            <a href="#" class="sales-item-average-export-link" data-export-base="{{ route('reports.sales-item-average.export.csv') }}">Export CSV</a>
-            <a href="#" class="sales-item-average-export-link" data-export-base="{{ route('reports.sales-item-average.export.pdf') }}">Export PDF</a>
-        </div>
+                </div>
+                <div class="filters-actions">
+                    @include('reports.partials.icon-button', ['action' => 'apply', 'label' => 'Apply filters'])
+                    @include('reports.partials.filters-reset-link', ['route' => 'reports.sales-item-average.index'])
+                    <span class="muted">Export:</span>
+                    <a href="#" class="sales-item-average-export-link export-link" data-export-base="{{ route('reports.sales-item-average.export.csv') }}">CSV</a>
+                    <a href="#" class="sales-item-average-export-link export-link" data-export-base="{{ route('reports.sales-item-average.export.pdf') }}">PDF</a>
+                </div>
+            </div>
+        </details>
     </form>
 
-    <script>
-    (function () {
-        var form = document.getElementById('sales-item-average-filter-form');
-        if (!form) return;
-        var root = document.getElementById('city-picker');
-        var jsonEl = document.getElementById('city-options-json');
-        var allCities = [];
-        try { allCities = JSON.parse(jsonEl ? (jsonEl.textContent || '[]') : '[]'); } catch (e) { allCities = []; }
-        var selectedIds = new Set();
-        var chipsEl = document.getElementById('city-chips');
-        var hiddenEl = document.getElementById('city-hidden-inputs');
-        var searchInput = document.getElementById('city-search');
-        var listEl = document.getElementById('city-suggestions');
-        var initialIds = @json($filters['cities'] ?? []);
-        var byId = {};
-        allCities.forEach(function (c) { if (c && c.id) byId[c.id] = c.name || c.id; });
-
-        function renderChips() {
-            if (!chipsEl || !hiddenEl) return;
-            chipsEl.innerHTML = '';
-            hiddenEl.innerHTML = '';
-            selectedIds.forEach(function (id) {
-                var name = byId[id] || id;
-                var chip = document.createElement('span');
-                chip.className = 'customer-chip';
-                chip.setAttribute('data-id', id);
-                var label = document.createElement('span');
-                label.textContent = name;
-                var rm = document.createElement('button');
-                rm.type = 'button';
-                rm.setAttribute('aria-label', 'Remove ' + name);
-                rm.textContent = 'x';
-                rm.addEventListener('click', function () {
-                    selectedIds.delete(id);
-                    renderChips();
-                    if (searchInput) searchInput.focus();
-                });
-                chip.appendChild(label);
-                chip.appendChild(rm);
-                chipsEl.appendChild(chip);
-
-                var hi = document.createElement('input');
-                hi.type = 'hidden';
-                hi.name = 'cities[]';
-                hi.value = id;
-                hiddenEl.appendChild(hi);
-            });
-        }
-
-        function closeSuggestions() {
-            if (!listEl) return;
-            listEl.classList.remove('is-open');
-            listEl.innerHTML = '';
-        }
-
-        function highlightActive(activeIndex) {
-            if (!listEl) return;
-            var items = listEl.querySelectorAll('li:not(.muted-suggest)');
-            items.forEach(function (li, i) { li.classList.toggle('is-active', i === activeIndex); });
-        }
-
-        function showSuggestions(matches, activeIndex) {
-            if (!listEl) return;
-            listEl.innerHTML = '';
-            if (matches.length === 0) {
-                var li = document.createElement('li');
-                li.className = 'muted-suggest';
-                li.textContent = 'No matching cities. Try another spelling.';
-                listEl.appendChild(li);
-            } else {
-                matches.forEach(function (c) {
-                    var li = document.createElement('li');
-                    li.setAttribute('role', 'option');
-                    li.textContent = c.name;
-                    li.addEventListener('mousedown', function (e) { e.preventDefault(); });
-                    li.addEventListener('click', function () {
-                        selectedIds.add(c.id);
-                        renderChips();
-                        if (searchInput) searchInput.value = '';
-                        closeSuggestions();
-                        if (searchInput) searchInput.focus();
-                    });
-                    listEl.appendChild(li);
-                });
-            }
-            listEl.classList.add('is-open');
-            highlightActive(activeIndex);
-        }
-
-        function filterCities(q) {
-            var needle = (q || '').trim().toLowerCase();
-            if (needle === '') return [];
-            var out = [];
-            for (var i = 0; i < allCities.length; i++) {
-                var c = allCities[i];
-                if (!c || !c.id || selectedIds.has(c.id)) continue;
-                var name = (c.name || '').toLowerCase();
-                if (name.indexOf(needle) !== -1) {
-                    out.push(c);
-                    if (out.length >= 50) break;
-                }
-            }
-            return out;
-        }
-
-        initialIds.forEach(function (id) { if (id) selectedIds.add(id); });
-        renderChips();
-
-        if (searchInput && listEl) {
-            var activeIndex = -1;
-            searchInput.addEventListener('input', function () {
-                var q = searchInput.value;
-                if (q.trim() === '') {
-                    closeSuggestions();
-                    return;
-                }
-                var matches = filterCities(q);
-                activeIndex = matches.length ? 0 : -1;
-                showSuggestions(matches, activeIndex);
-            });
-            searchInput.addEventListener('keydown', function (e) {
-                var items = listEl.querySelectorAll('li:not(.muted-suggest)');
-                if (!listEl.classList.contains('is-open') || items.length === 0) return;
-                if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    activeIndex = Math.min(activeIndex + 1, items.length - 1);
-                    highlightActive(activeIndex);
-                } else if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    activeIndex = Math.max(activeIndex - 1, 0);
-                    highlightActive(activeIndex);
-                } else if (e.key === 'Enter') {
-                    if (activeIndex >= 0 && items[activeIndex]) {
-                        e.preventDefault();
-                        items[activeIndex].click();
-                    }
-                } else if (e.key === 'Escape') {
-                    closeSuggestions();
-                }
-            });
-            document.addEventListener('click', function (e) {
-                if (root && !root.contains(e.target)) closeSuggestions();
-            });
-        }
-
-        document.querySelectorAll('a.sales-item-average-export-link').forEach(function (a) {
-            a.addEventListener('click', function (e) {
-                e.preventDefault();
-                var base = a.getAttribute('data-export-base');
-                if (!base) return;
-                var params = new URLSearchParams(new FormData(form));
-                window.location.href = base + (base.indexOf('?') >= 0 ? '&' : '?') + params.toString();
-            });
-        });
-    })();
-    </script>
+    @include('reports.partials.city-picker-script', [
+        'pickerId' => 'sia',
+        'selectedCities' => $filters['cities'] ?? [],
+    ])
+    @include('reports.partials.quick-date-buttons-script', ['formId' => 'sales-item-average-filter-form'])
+    @include('reports.partials.export-from-form-script', ['formId' => 'sales-item-average-filter-form', 'linkClass' => 'sales-item-average-export-link'])
 
     @if ($rows)
+        @if (!empty($grandTotals))
+            @include('reports.partials.metric-grand-totals-bar', [
+                'grandTotals' => $grandTotals,
+                'showAmount' => false,
+                'showWeight' => false,
+            ])
+        @endif
         <table>
             <thead>
             <tr>
@@ -339,8 +129,17 @@
                 </tr>
             @endforeach
             </tbody>
+            @if (!empty($grandTotals))
+                @include('reports.partials.metric-grand-totals-tfoot', [
+                    'grandTotals' => $grandTotals,
+                    'labelColspan' => 1,
+                    'trailingColspan' => $workingDaysDivisor ? 2 : 0,
+                    'showAmount' => false,
+                    'showWeight' => false,
+                ])
+            @endif
         </table>
-        <div style="margin-top: 12px;">{{ $rows->links() }}</div>
+        @include('reports.partials.pagination', ['paginator' => $rows])
     @endif
 
     <script>
@@ -357,7 +156,7 @@
 
         function fmt(n) {
             if (n === null || n === undefined || isNaN(n)) return '0';
-            return new Intl.NumberFormat('en-US', { maximumFractionDigits: 6 }).format(Number(n));
+            return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(Number(n));
         }
         function esc(s) {
             return String(s || '').replace(/[&<>"']/g, function (c) {
@@ -450,6 +249,5 @@
         });
     })();
     </script>
-</div>
-</body>
-</html>
+@endsection
+

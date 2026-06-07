@@ -18,8 +18,14 @@
 /public/storage
 /storage/*.key
 /storage/pail
+/database/damages-local.sqlite
+/database/reports-users.sqlite
+/storage/app/sqlite-backups/
 /vendor
 _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+/dist/
+/installer/assets/php/
+/installer/assets/*.msi

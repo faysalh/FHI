@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Repositories\SchemaExplorerRepository;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -13,8 +14,7 @@ class SchemaExplorerService
 {
     public function __construct(
         private readonly SchemaExplorerRepository $repository
-    ) {
-    }
+    ) {}
 
     /**
      * @param  array{table?: string|null, per_page?: int|null, q?: string|null}  $filters
@@ -22,11 +22,21 @@ class SchemaExplorerService
      *   tables: array<int, array{schema:string, table:string, full_name:string, column_count:int, row_count:int}>,
      *   selected_table: array{schema:string, table:string, full_name:string}|null,
      *   columns: array<int, array{name:string, data_type:string, is_nullable:string, max_length:int|null}>,
-     *   rows: \Illuminate\Contracts\Pagination\LengthAwarePaginator|null,
+     *   rows: LengthAwarePaginator|null,
      *   common_column_names: array<int, string>,
      *   search_query: string,
      *   search_query_input: string,
-     *   search_hits: list<array{schema: string, table: string, full_name: string, column: string, data_type: string}>
+     *   search_hits: list<array{schema: string, table: string, full_name: string, column: string, data_type: string}>,
+     *   view: string,
+     *   relations: list<array{
+     *     constraint_name:string,
+     *     schema:string,
+     *     parent_table:string,
+     *     parent_column:string,
+     *     referenced_table:string,
+     *     referenced_column:string
+     *   }>,
+     *   relation_diagram_lines: list<string>
      * }
      */
     public function browse(array $filters, Request $request): array
@@ -35,6 +45,7 @@ class SchemaExplorerService
             $allBrowsableTables = $this->repository->listTables();
             $searchQueryInput = isset($filters['q']) ? (string) $filters['q'] : '';
             $searchQuery = trim($searchQueryInput);
+            $view = (string) ($filters['view'] ?? 'browse');
             $searchHits = [];
 
             $tables = $allBrowsableTables;
@@ -72,7 +83,7 @@ class SchemaExplorerService
             $rows = null;
             if ($selected !== null) {
                 $columns = $this->repository->getColumns($selected['schema'], $selected['table']);
-                if ($searchQuery !== '') {
+                if ($searchQuery !== '' && $searchHits !== []) {
                     $columns = $this->filterColumnsBySearchQuery($columns, $searchQuery);
                 }
                 $rows = $this->repository->getSampleRows(
@@ -83,6 +94,9 @@ class SchemaExplorerService
                 );
             }
 
+            $relations = $this->repository->listForeignKeyRelations($allBrowsableTables);
+            $relationDiagramLines = $this->buildRelationDiagramLines($relations);
+
             return [
                 'tables' => $tables,
                 'selected_table' => $selected,
@@ -92,6 +106,9 @@ class SchemaExplorerService
                 'search_query' => $searchQuery,
                 'search_query_input' => $searchQueryInput,
                 'search_hits' => $searchHitsDisplay,
+                'view' => $view,
+                'relations' => $relations,
+                'relation_diagram_lines' => $relationDiagramLines,
             ];
         } catch (Throwable $exception) {
             Log::error('Schema browser failed.', [
@@ -130,5 +147,34 @@ class SchemaExplorerService
 
             return true;
         }));
+    }
+
+    /**
+     * @param  list<array{
+     *   constraint_name:string,
+     *   schema:string,
+     *   parent_table:string,
+     *   parent_column:string,
+     *   referenced_table:string,
+     *   referenced_column:string
+     * }>  $relations
+     * @return list<string>
+     */
+    private function buildRelationDiagramLines(array $relations): array
+    {
+        $lines = [];
+        foreach ($relations as $relation) {
+            $parent = $relation['schema'].'.'.$relation['parent_table'];
+            $ref = $relation['schema'].'.'.$relation['referenced_table'];
+            $lines[] = sprintf(
+                '%s.%s --> %s.%s',
+                $parent,
+                $relation['parent_column'],
+                $ref,
+                $relation['referenced_column']
+            );
+        }
+
+        return $lines;
     }
 }

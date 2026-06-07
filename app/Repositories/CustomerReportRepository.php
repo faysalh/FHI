@@ -58,6 +58,25 @@ class CustomerReportRepository
     }
 
     /**
+     * @param  array{q?: string|null, city?: string|null, per_page?: int|null}  $filters
+     * @return array{table: string, column_map: array<string, string>, rows: list<object>}
+     */
+    public function getCustomerRowsForExport(array $filters, int $maxRows = 10000): array
+    {
+        [$table, $columnMap] = $this->discoverSchema();
+        $query = DB::table($table);
+        $this->applySelects($query, $columnMap);
+        $this->applyFilters($query, $filters, $columnMap);
+        $this->applySort($query, $columnMap);
+
+        return [
+            'table' => $table,
+            'column_map' => $columnMap,
+            'rows' => $query->limit(max(1, min(50000, $maxRows)))->get()->all(),
+        ];
+    }
+
+    /**
      * @return array{0: string, 1: array<string, string>}
      */
     public function discoverSchema(): array

@@ -73,6 +73,46 @@ class DeliveriesTeamSqliteService
         );
     }
 
+    public function updateDriver(int $personId, string $fullName, string $carNumber, string $carModel): void
+    {
+        $this->ensureSchema();
+        $this->assertPersonType($personId, 'driver');
+
+        DB::connection(self::CONNECTION)->update(
+            'UPDATE '.self::PEOPLE_TABLE.'
+             SET full_name = ?, car_number = ?, car_model = ?
+             WHERE id = ? AND person_type = ?',
+            [$fullName, $carNumber !== '' ? $carNumber : null, $carModel !== '' ? $carModel : null, $personId, 'driver']
+        );
+    }
+
+    public function updateCompanion(int $personId, string $fullName): void
+    {
+        $this->ensureSchema();
+        $this->assertPersonType($personId, 'companion');
+
+        DB::connection(self::CONNECTION)->update(
+            'UPDATE '.self::PEOPLE_TABLE.'
+             SET full_name = ?
+             WHERE id = ? AND person_type = ?',
+            [$fullName, $personId, 'companion']
+        );
+    }
+
+    public function deleteDriver(int $personId): void
+    {
+        $this->ensureSchema();
+        $this->assertPersonType($personId, 'driver');
+        $this->deletePersonAndRelatedTeams($personId);
+    }
+
+    public function deleteCompanion(int $personId): void
+    {
+        $this->ensureSchema();
+        $this->assertPersonType($personId, 'companion');
+        $this->deletePersonAndRelatedTeams($personId);
+    }
+
     public function addDailyTeam(string $teamDate, int $driverId, int $companionId): void
     {
         $this->ensureSchema();
@@ -81,6 +121,23 @@ class DeliveriesTeamSqliteService
             'INSERT INTO '.self::DAILY_TEAMS_TABLE.' (team_date, driver_person_id, companion_person_id, created_at)
              VALUES (?, ?, ?, ?)',
             [$teamDate, $driverId, $companionId, now()->toDateTimeString()]
+        );
+    }
+
+    public function deleteDailyTeam(int $teamId): void
+    {
+        $this->ensureSchema();
+        if ($teamId <= 0) {
+            return;
+        }
+
+        DB::connection(self::CONNECTION)->delete(
+            'DELETE FROM '.self::INVOICE_ASSIGNMENTS_TABLE.' WHERE team_id = ?',
+            [$teamId]
+        );
+        DB::connection(self::CONNECTION)->delete(
+            'DELETE FROM '.self::DAILY_TEAMS_TABLE.' WHERE id = ?',
+            [$teamId]
         );
     }
 
@@ -133,6 +190,26 @@ class DeliveriesTeamSqliteService
         }
 
         return $grouped;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function invoiceIdsForTeam(int $teamId): array
+    {
+        $this->ensureSchema();
+
+        $rows = DB::connection(self::CONNECTION)->select(
+            'SELECT DISTINCT invoice_id
+             FROM '.self::INVOICE_ASSIGNMENTS_TABLE.'
+             WHERE team_id = ?',
+            [$teamId]
+        );
+
+        return array_values(array_map(
+            static fn (object $row): string => (string) ($row->invoice_id ?? ''),
+            array_filter($rows, static fn (object $row): bool => trim((string) ($row->invoice_id ?? '')) !== '')
+        ));
     }
 
     /**
@@ -224,6 +301,33 @@ class DeliveriesTeamSqliteService
         );
     }
 
+    public function clearTeamAssignments(int $teamId): int
+    {
+        $this->ensureSchema();
+
+        return DB::connection(self::CONNECTION)->delete(
+            'DELETE FROM '.self::INVOICE_ASSIGNMENTS_TABLE.' WHERE team_id = ?',
+            [$teamId]
+        );
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function listAllAssignedInvoiceIds(): array
+    {
+        $this->ensureSchema();
+
+        $rows = DB::connection(self::CONNECTION)->select(
+            'SELECT DISTINCT invoice_id FROM '.self::INVOICE_ASSIGNMENTS_TABLE
+        );
+
+        return array_values(array_filter(array_map(
+            static fn (object $row): string => trim((string) ($row->invoice_id ?? '')),
+            $rows
+        )));
+    }
+
     public function teamLabel(object $row): string
     {
         $driver = trim((string) ($row->driver_name ?? ''));
@@ -245,6 +349,44 @@ class DeliveriesTeamSqliteService
         }
 
         return trim(implode(' ', $parts));
+    }
+
+    private function assertPersonType(int $personId, string $expectedType): void
+    {
+        if ($personId <= 0) {
+            throw new \InvalidArgumentException('Invalid person id.');
+        }
+
+        $row = DB::connection(self::CONNECTION)->selectOne(
+            'SELECT id, person_type FROM '.self::PEOPLE_TABLE.' WHERE id = ? LIMIT 1',
+            [$personId]
+        );
+
+        if ($row === null) {
+            throw new \InvalidArgumentException('Person not found.');
+        }
+
+        if ((string) ($row->person_type ?? '') !== $expectedType) {
+            throw new \InvalidArgumentException('Person type mismatch.');
+        }
+    }
+
+    private function deletePersonAndRelatedTeams(int $personId): void
+    {
+        $teamRows = DB::connection(self::CONNECTION)->select(
+            'SELECT id FROM '.self::DAILY_TEAMS_TABLE.'
+             WHERE driver_person_id = ? OR companion_person_id = ?',
+            [$personId, $personId]
+        );
+
+        foreach ($teamRows as $teamRow) {
+            $this->deleteDailyTeam((int) ($teamRow->id ?? 0));
+        }
+
+        DB::connection(self::CONNECTION)->delete(
+            'DELETE FROM '.self::PEOPLE_TABLE.' WHERE id = ?',
+            [$personId]
+        );
     }
 
     private function ensureSchema(): void

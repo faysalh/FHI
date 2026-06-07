@@ -16,11 +16,14 @@ class SalesReportExport implements FromCollection, WithCustomCsvSettings, WithHe
 {
     /**
      * @param  Collection<int, stdClass>|array<int, stdClass>  $rows
-     * @param  'totals'|'by_client'|'by_category'|'by_category_by_client'  $mode
+     * @param  'totals'|'by_client'|'by_category'|'by_category_items'|'by_category_by_client'  $mode
      */
     public function __construct(
         private readonly Collection|array $rows,
-        private readonly string $mode
+        private readonly string $mode,
+        private readonly bool $includeQuantity = true,
+        private readonly bool $includeAmount = true,
+        private readonly bool $includeWeight = true,
     ) {
     }
 
@@ -46,11 +49,14 @@ class SalesReportExport implements FromCollection, WithCustomCsvSettings, WithHe
      */
     public function headings(): array
     {
+        $metrics = $this->metricHeadings();
+
         return match ($this->mode) {
-            'totals' => ['Quantity (pcs)', 'Amount (IQD)', 'Weight (kg)'],
-            'by_client' => ['Client code', 'Client name', 'Quantity (pcs)', 'Amount (IQD)', 'Weight (kg)'],
-            'by_category' => ['Category (item description)', 'Quantity (pcs)', 'Amount (IQD)', 'Weight (kg)'],
-            'by_category_by_client' => ['Client code', 'Client name', 'Category (item description)', 'Quantity (pcs)', 'Amount (IQD)', 'Weight (kg)'],
+            'totals' => $metrics,
+            'by_client' => array_merge(['Client code', 'Client name'], $metrics),
+            'by_category' => array_merge(['Category (item description)'], $metrics),
+            'by_category_items' => array_merge(['Category (item description)', 'Item name'], $metrics),
+            'by_category_by_client' => array_merge(['Client code', 'Client name', 'Category (item description)'], $metrics),
             default => [],
         };
     }
@@ -61,34 +67,65 @@ class SalesReportExport implements FromCollection, WithCustomCsvSettings, WithHe
      */
     public function map($row): array
     {
+        $metrics = $this->metricValues($row);
+
         return match ($this->mode) {
-            'totals' => [
-                NumberDisplay::format($row->units_sold ?? null),
-                NumberDisplay::format($row->amount ?? null),
-                NumberDisplay::format($row->weight_total ?? null),
-            ],
-            'by_client' => [
+            'totals' => $metrics,
+            'by_client' => array_merge([
                 (string) ($row->client_code ?? ''),
                 (string) ($row->client_name ?? ''),
-                NumberDisplay::format($row->units_sold ?? null),
-                NumberDisplay::format($row->amount ?? null),
-                NumberDisplay::format($row->weight_total ?? null),
-            ],
-            'by_category' => [
+            ], $metrics),
+            'by_category' => array_merge([
                 (string) ($row->chicken_category ?? ''),
-                NumberDisplay::format($row->units_sold ?? null),
-                NumberDisplay::format($row->amount ?? null),
-                NumberDisplay::format($row->weight_total ?? null),
-            ],
-            'by_category_by_client' => [
+            ], $metrics),
+            'by_category_items' => array_merge([
+                (string) ($row->chicken_category ?? ''),
+                (string) ($row->item_name ?? ''),
+            ], $metrics),
+            'by_category_by_client' => array_merge([
                 (string) ($row->client_code ?? ''),
                 (string) ($row->client_name ?? ''),
                 (string) ($row->chicken_category ?? ''),
-                NumberDisplay::format($row->units_sold ?? null),
-                NumberDisplay::format($row->amount ?? null),
-                NumberDisplay::format($row->weight_total ?? null),
-            ],
+            ], $metrics),
             default => [],
         };
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function metricHeadings(): array
+    {
+        $headings = [];
+        if ($this->includeQuantity) {
+            $headings[] = 'Quantity (pcs)';
+        }
+        if ($this->includeAmount) {
+            $headings[] = 'Amount (IQD)';
+        }
+        if ($this->includeWeight) {
+            $headings[] = 'Weight (kg)';
+        }
+
+        return $headings;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function metricValues(stdClass $row): array
+    {
+        $values = [];
+        if ($this->includeQuantity) {
+            $values[] = NumberDisplay::format($row->units_sold ?? null);
+        }
+        if ($this->includeAmount) {
+            $values[] = NumberDisplay::format($row->amount ?? null);
+        }
+        if ($this->includeWeight) {
+            $values[] = NumberDisplay::format($row->weight_total ?? null);
+        }
+
+        return $values;
     }
 }

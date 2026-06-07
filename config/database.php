@@ -56,6 +56,42 @@ return [
             'transaction_mode' => 'DEFERRED',
         ],
 
+        'damages_sqlite' => [
+            'driver' => 'sqlite',
+            'url' => null,
+            'database' => env('DAMAGES_SQLITE_DATABASE', database_path('damages-local.sqlite')),
+            'prefix' => '',
+            'foreign_key_constraints' => true,
+            'busy_timeout' => null,
+            'journal_mode' => null,
+            'synchronous' => null,
+            'transaction_mode' => 'DEFERRED',
+        ],
+
+        'reports_users_sqlite' => [
+            'driver' => 'sqlite',
+            'url' => null,
+            'database' => env('REPORTS_USERS_SQLITE_DATABASE', database_path('reports-users.sqlite')),
+            'prefix' => '',
+            'foreign_key_constraints' => true,
+            'busy_timeout' => null,
+            'journal_mode' => null,
+            'synchronous' => null,
+            'transaction_mode' => 'DEFERRED',
+        ],
+
+        'operations_tasks_sqlite' => [
+            'driver' => 'sqlite',
+            'url' => null,
+            'database' => env('OPERATIONS_TASKS_SQLITE_DATABASE', database_path('operations-tasks.sqlite')),
+            'prefix' => '',
+            'foreign_key_constraints' => true,
+            'busy_timeout' => null,
+            'journal_mode' => null,
+            'synchronous' => null,
+            'transaction_mode' => 'DEFERRED',
+        ],
+
         'mysql' => [
             'driver' => 'mysql',
             'url' => env('DB_URL'),

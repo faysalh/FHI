@@ -36,6 +36,7 @@ class SalesByItemAverageReportTest extends TestCase
         $repo->shouldReceive('normalizeCities')->andReturn([]);
         $repo->shouldReceive('getCategoryOptions')->andReturn(['Fresh Chicken', '(uncategorized)']);
         $repo->shouldReceive('getReport')->once()->andReturn($paginator);
+        $repo->shouldReceive('getGrandTotals')->once()->andReturn(null);
         $visits = Mockery::mock(VisitsReportRepository::class);
         $visits->shouldReceive('getCityOptions')->andReturn([]);
         $visits->shouldReceive('getAccountCityColumnName')->andReturn('fld_city');
@@ -43,11 +44,12 @@ class SalesByItemAverageReportTest extends TestCase
         $this->app->instance(SalesByItemAverageReportRepository::class, $repo);
         $this->app->instance(VisitsReportRepository::class, $visits);
 
-        $response = $this->get('/reports/sales-item-average?date_from=2026-04-01&date_to=2026-04-19&working_days=2');
+        $response = $this->get('/reports/sales-item-average?date_from=2026-04-01&date_to=2026-04-19');
 
         $response->assertOk();
         $response->assertSee('Sales by item average');
         $response->assertSee('Fresh Chicken');
+        $response->assertSee('Business days in range');
         $response->assertSee('Avg quantity / day (pcs)');
     }
 
@@ -97,7 +99,7 @@ class SalesByItemAverageReportTest extends TestCase
         $this->app->instance(SalesByItemAverageReportRepository::class, $repo);
         $this->app->instance(VisitsReportRepository::class, $visits);
 
-        $response = $this->get('/reports/sales-item-average/export/pdf?date_from=2026-04-01&date_to=2026-04-19&working_days=2');
+        $response = $this->get('/reports/sales-item-average/export/pdf?date_from=2026-04-01&date_to=2026-04-19');
 
         $response->assertOk();
         $response->assertHeader('content-type', 'application/pdf');

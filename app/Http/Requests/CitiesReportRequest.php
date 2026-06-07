@@ -36,7 +36,7 @@ class CitiesReportRequest extends FormRequest
             }
         }
         if (! $this->filled('per_page')) {
-            $this->merge(['per_page' => 25]);
+            $this->merge(['per_page' => 250]);
         }
         if (! $this->filled('page')) {
             $this->merge(['page' => 1]);
@@ -49,6 +49,15 @@ class CitiesReportRequest extends FormRequest
             $this->merge(['cities' => array_values(array_filter(array_map('strval', $raw)))]);
         } else {
             $this->merge(['cities' => []]);
+        }
+        if ($this->has('salesman_ids')) {
+            $rawSalesmen = $this->input('salesman_ids');
+            if (! is_array($rawSalesmen)) {
+                $rawSalesmen = $rawSalesmen !== null && $rawSalesmen !== '' ? [(string) $rawSalesmen] : [];
+            }
+            $this->merge(['salesman_ids' => array_values(array_filter(array_map('strval', $rawSalesmen)))]);
+        } else {
+            $this->merge(['salesman_ids' => []]);
         }
         if ($this->has('governorate_members')) {
             $rawMembers = $this->input('governorate_members');
@@ -73,7 +82,7 @@ class CitiesReportRequest extends FormRequest
             'breakdown_by_client' => $this->boolean('breakdown_by_client'),
             'q' => $this->input('q') !== null ? (string) $this->input('q') : '',
             'panel' => in_array($this->input('panel'), ['table', 'charts'], true) ? $this->input('panel') : 'table',
-            'city_page' => in_array($this->input('city_page'), ['overview', 'governorate-breakdown', 'pie-charts'], true)
+            'city_page' => in_array($this->input('city_page'), ['overview', 'governorate-breakdown', 'pie-charts', 'salesman-pie'], true)
                 ? (string) $this->input('city_page')
                 : 'overview',
             'governorate_city' => $this->input('governorate_city') !== null ? trim((string) $this->input('governorate_city')) : '',
@@ -91,19 +100,21 @@ class CitiesReportRequest extends FormRequest
             'date_from' => ['required', 'date'],
             'date_to' => ['required', 'date', 'after_or_equal:date_from'],
             'group_by_client' => ['sometimes', 'boolean'],
-            'per_page' => ['sometimes', 'integer', 'in:10,25,50,100'],
+            'per_page' => ['sometimes', 'integer', 'in:10,25,50,100,250'],
             'page' => ['sometimes', 'integer', 'min:1'],
             'breakdown' => ['boolean'],
             'breakdown_by_client' => ['boolean'],
             'q' => ['nullable', 'string', 'max:200'],
             'cities' => ['sometimes', 'array', 'max:500'],
             'cities.*' => ['string', 'max:200'],
+            'salesman_ids' => ['sometimes', 'array', 'max:500'],
+            'salesman_ids.*' => ['string', 'max:100'],
             'governorate_members' => ['sometimes', 'array', 'max:500'],
             'governorate_members.*' => ['string', 'max:200'],
             'panel' => ['sometimes', 'in:table,charts'],
             'chart_show' => ['sometimes', 'array', 'max:10'],
             'chart_show.*' => ['string', 'in:amount,units_sold,weight_total,customer_count,invoice_count'],
-            'city_page' => ['sometimes', 'in:overview,governorate-breakdown,pie-charts'],
+            'city_page' => ['sometimes', 'in:overview,governorate-breakdown,pie-charts,salesman-pie'],
             'governorate_city' => ['nullable', 'string', 'max:200'],
             'pie_category' => ['nullable', 'string', 'max:500'],
             'exclude_category' => ['nullable', 'string', 'max:500'],

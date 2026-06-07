@@ -1,5 +1,24 @@
 @php
     use App\Support\ArabicPdfText as Ar;
+
+    $meta = 'Period: '.$dateFrom.' — '.$dateTo;
+    if ($q !== '') {
+        $meta .= ' | Item filter: '.$q;
+    }
+    if (! empty($category ?? '')) {
+        $meta .= ' | Category drilldown: '.$category;
+    }
+    if (($includeItemBreakdown ?? false) === true) {
+        $meta .= ' | Layout: categorized item breakdown';
+    }
+    if (! empty($cities ?? [])) {
+        $meta .= ' | Cities: '.implode('; ', $cities);
+    } else {
+        $meta .= ' | Cities: all';
+    }
+    if ($workingDays > 0) {
+        $meta .= ' | Business days (Fri + holidays excluded): '.$workingDays;
+    }
 @endphp
 <!DOCTYPE html>
 <html lang="ar">
@@ -7,41 +26,15 @@
     <meta charset="UTF-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
     <title>Sales by item average</title>
-    <style>
-        body { font-family: DejaVu Sans, Arial, sans-serif; font-size: 10px; margin: 12px; direction: ltr; unicode-bidi: normal; }
-        h1 { font-size: 14px; margin: 0 0 8px 0; }
-        .meta { font-size: 9px; color: #444; margin-bottom: 12px; }
-        table { width: 100%; border-collapse: collapse; direction: ltr; table-layout: fixed; }
-        th, td { border: 1px solid #ccc; padding: 3px 4px; text-align: left; word-wrap: break-word; }
-        th { background: #f0f0f0; font-size: 9px; }
-        td.num { text-align: right; }
-    </style>
+    <style>@include('reports.partials.pdf-styles')</style>
 </head>
 <body>
-    @php
-        $meta = 'Period: '.$dateFrom.' — '.$dateTo;
-        if ($q !== '') {
-            $meta .= ' | Item filter: '.$q;
-        }
-        if (! empty($category ?? '')) {
-            $meta .= ' | Category drilldown: '.$category;
-        }
-        if (($includeItemBreakdown ?? false) === true) {
-            $meta .= ' | Layout: categorized item breakdown';
-        }
-        if (! empty($cities ?? [])) {
-            $meta .= ' | Cities: '.implode('; ', $cities);
-        } else {
-            $meta .= ' | Cities: all';
-        }
-        if ($workingDays > 0) {
-            $meta .= ' | Working days: '.$workingDays;
-        } else {
-            $meta .= ' | Working days: not set';
-        }
-    @endphp
-    <h1>{{ Ar::glyphsKeepLatinDigits('Sales by item average') }}</h1>
-    <div class="meta">{{ Ar::glyphsKeepLatinDigits($meta) }}</div>
+    @include('reports.partials.pdf-branding-header')
+    @include('reports.partials.pdf-title-block', [
+        'title' => 'Sales by item average',
+        'meta' => $meta,
+        'glyphsKeepLatinDigits' => true,
+    ])
     <table>
         <thead>
         <tr>
@@ -79,5 +72,6 @@
         @endforeach
         </tbody>
     </table>
+    @include('reports.partials.pdf-footer')
 </body>
 </html>

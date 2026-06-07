@@ -23,6 +23,8 @@ class SchemaBrowserRequest extends FormRequest
             'q' => ['nullable', 'string', 'max:200'],
             'per_page' => ['nullable', 'integer', 'in:10,20,50'],
             'page' => ['nullable', 'integer', 'min:1'],
+            'view' => ['nullable', 'string', 'in:browse,diagram,constraint-breakdown'],
+            'constraint' => ['nullable', 'string', 'max:255'],
         ];
     }
 }

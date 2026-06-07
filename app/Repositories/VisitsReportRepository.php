@@ -17,6 +17,9 @@ class VisitsReportRepository
 
     private const MAX_EXPORT_ROWS = 10000;
 
+    /** DomPDF exhausts typical 128M memory well before {@see MAX_EXPORT_ROWS} on wide visit grids. */
+    public const MAX_PDF_EXPORT_ROWS = 400;
+
     private static bool $cityColumnResolved = false;
 
     private static ?string $cityColumn = null;
@@ -146,7 +149,7 @@ class VisitsReportRepository
     /**
      * Calendar months touched by [dateFrom, dateTo], with intersection bounds for sales/visit checks.
      *
-     * @return list<array{key: string, label: string, label_en: string, from: string, to: string, sql_alias: string}>
+     * @return list<array{key: string, label: string, label_en: string, from: string, to: string, sql_alias: string, sales_sql_alias: string}>
      */
     public function monthSegmentsInRange(string $dateFrom, string $dateTo): array
     {
@@ -163,6 +166,7 @@ class VisitsReportRepository
                 'from' => $dateFrom,
                 'to' => $dateTo,
                 'sql_alias' => 'visit_'.str_replace('-', '_', $key),
+                'sales_sql_alias' => 'sales_'.str_replace('-', '_', $key),
             ]];
         }
 
@@ -182,6 +186,7 @@ class VisitsReportRepository
                     'from' => $segStart->toDateString(),
                     'to' => $segEnd->toDateString(),
                     'sql_alias' => 'visit_'.str_replace('-', '_', $key),
+                    'sales_sql_alias' => 'sales_'.str_replace('-', '_', $key),
                 ];
             }
             $cursor->addMonth();
@@ -197,6 +202,7 @@ class VisitsReportRepository
                 'from' => $dateFrom,
                 'to' => $dateTo,
                 'sql_alias' => 'visit_'.str_replace('-', '_', $key),
+                'sales_sql_alias' => 'sales_'.str_replace('-', '_', $key),
             ]];
         }
 
@@ -219,7 +225,9 @@ class VisitsReportRepository
         array $cities,
         ?string $salesmanAccountId,
         int $page,
-        int $perPage
+        int $perPage,
+        bool $sortByCity = false,
+        bool $includeMonthSales = false
     ): LengthAwarePaginator {
         $perPage = max(1, min(100, $perPage));
         $page = max(1, $page);
@@ -227,7 +235,7 @@ class VisitsReportRepository
 
         try {
             $count = $this->countVisits($cities, $salesmanAccountId);
-            $items = $this->selectVisitsPage($dateFrom, $dateTo, $cities, $salesmanAccountId, $offset, $perPage);
+            $items = $this->selectVisitsPage($dateFrom, $dateTo, $cities, $salesmanAccountId, $offset, $perPage, $sortByCity, $includeMonthSales);
         } catch (Throwable $e) {
             Log::error('visits.report_failed', ['message' => $e->getMessage()]);
             throw $e;
@@ -249,9 +257,34 @@ class VisitsReportRepository
         string $dateFrom,
         string $dateTo,
         array $cities,
-        ?string $salesmanAccountId
+        ?string $salesmanAccountId,
+        bool $sortByCity = false,
+        bool $includeMonthSales = false
     ): array {
-        return $this->selectVisitsPage($dateFrom, $dateTo, $cities, $salesmanAccountId, 0, self::MAX_EXPORT_ROWS);
+        return $this->selectVisitsPage($dateFrom, $dateTo, $cities, $salesmanAccountId, 0, self::MAX_EXPORT_ROWS, $sortByCity, $includeMonthSales);
+    }
+
+    /**
+     * @return list<stdClass>
+     */
+    public function getVisitsForPdfExport(
+        string $dateFrom,
+        string $dateTo,
+        array $cities,
+        ?string $salesmanAccountId,
+        bool $sortByCity = false,
+        bool $includeMonthSales = false
+    ): array {
+        return $this->selectVisitsPage(
+            $dateFrom,
+            $dateTo,
+            $cities,
+            $salesmanAccountId,
+            0,
+            self::MAX_PDF_EXPORT_ROWS,
+            $sortByCity,
+            $includeMonthSales
+        );
     }
 
     /**
@@ -264,9 +297,11 @@ class VisitsReportRepository
         array $cities,
         ?string $salesmanAccountId,
         int $offset,
-        int $limit
+        int $limit,
+        bool $sortByCity = false,
+        bool $includeMonthSales = false
     ): array {
-        [$sql, $bindings] = $this->buildSelectSql($dateFrom, $dateTo, $cities, $salesmanAccountId, $offset, $limit);
+        [$sql, $bindings] = $this->buildSelectSql($dateFrom, $dateTo, $cities, $salesmanAccountId, $offset, $limit, $sortByCity, $includeMonthSales);
 
         /** @var list<stdClass> $rows */
         $rows = DB::select($sql, $bindings);
@@ -306,7 +341,9 @@ class VisitsReportRepository
         array $cities,
         ?string $salesmanAccountId,
         int $offset,
-        int $limit
+        int $limit,
+        bool $sortByCity = false,
+        bool $includeMonthSales = false
     ): array {
         $cityCol = $this->resolveAccountCityColumn();
 
@@ -315,31 +352,20 @@ class VisitsReportRepository
         $segments = $this->monthSegmentsInRange($dateFrom, $dateTo);
         $multiMonth = count($segments) > 1;
 
-        if (! $multiMonth) {
-            $seg = $segments[0];
-            $visitColumnSql = 'CASE WHEN '.$this->visitExistsSubqueryForRange($seg['from'], $seg['to']).' THEN 1 ELSE 0 END AS visited';
-        } else {
-            $parts = [];
-            foreach ($segments as $seg) {
-                $alias = $seg['sql_alias'];
-                $parts[] = 'CASE WHEN '.$this->visitExistsSubqueryForRange($seg['from'], $seg['to']).' THEN 1 ELSE 0 END AS ['.$alias.']';
-            }
-            $visitColumnSql = implode(",\n                ", $parts);
-        }
+        $visitColumnSql = $this->buildVisitAndSalesColumnSql($segments, $multiMonth, $includeMonthSales);
 
         $cityExpr = $cityCol === null
             ? "N'' AS city"
             : 'LTRIM(RTRIM(CAST(c.'.$this->bracketColumn($cityCol).' AS NVARCHAR(500)))) AS city';
 
-        $orderBy = $cityCol === null
-            ? 'COALESCE(c.fld_account_name, N\'\')'
-            : 'city, COALESCE(c.fld_account_name, N\'\')';
+        $orderBy = $this->buildOrderByClause($segments, $multiMonth, $cityCol !== null, $sortByCity);
 
         $sql = "
             SELECT
                 COALESCE(c.fld_account_code, N'') AS client_code,
                 COALESCE(c.fld_account_name, N'') AS client_name,
                 {$cityExpr},
+                COALESCE(ad.account_address, N'') AS client_address,
                 COALESCE(s.fld_account_name, N'') AS salesman_name,
                 CAST(c.fld_account_id AS NVARCHAR(50)) AS client_account_id,
                 {$visitColumnSql}
@@ -353,6 +379,49 @@ class VisitsReportRepository
         $bindings = $whereBindings;
 
         return [$sql, $bindings];
+    }
+
+    /**
+     * @param  list<array{key: string, label: string, label_en?: string, from: string, to: string, sql_alias: string}>  $segments
+     */
+    private function buildOrderByClause(array $segments, bool $multiMonth, bool $hasCityColumn, bool $sortByCity): string
+    {
+        $nameOrder = 'COALESCE(c.fld_account_name, N\'\')';
+
+        if (! $sortByCity) {
+            return $hasCityColumn
+                ? 'city, '.$nameOrder
+                : $nameOrder;
+        }
+
+        $visitSort = $this->visitSortExpression($segments);
+
+        if ($hasCityColumn) {
+            return 'city, '.$visitSort.', '.$nameOrder;
+        }
+
+        return $visitSort.', '.$nameOrder;
+    }
+
+    /**
+     * @param  list<array{key: string, label: string, label_en?: string, from: string, to: string, sql_alias: string}>  $segments
+     */
+    private function visitSortExpression(array $segments): string
+    {
+        $parts = [];
+        foreach ($segments as $seg) {
+            $parts[] = '('.$this->visitExistsSubqueryForRange($seg['from'], $seg['to']).')';
+        }
+
+        if ($parts === []) {
+            return '0';
+        }
+
+        if (count($parts) === 1) {
+            return 'CASE WHEN '.$parts[0].' THEN 1 ELSE 0 END';
+        }
+
+        return 'CASE WHEN ('.implode(' OR ', $parts).') THEN 1 ELSE 0 END';
     }
 
     /**
@@ -378,6 +447,40 @@ class VisitsReportRepository
             )';
     }
 
+    /**
+     * @param  list<array{key: string, label: string, label_en?: string, from: string, to: string, sql_alias: string, sales_sql_alias: string}>  $segments
+     */
+    private function buildVisitAndSalesColumnSql(array $segments, bool $multiMonth, bool $includeMonthSales): string
+    {
+        $parts = [];
+
+        if (! $multiMonth) {
+            $seg = $segments[0];
+            $parts[] = 'CASE WHEN '.$this->visitExistsSubqueryForRange($seg['from'], $seg['to']).' THEN 1 ELSE 0 END AS visited';
+            if ($includeMonthSales) {
+                $parts[] = $this->clientSalesScalarSubqueryForRange($seg['from'], $seg['to']).' AS month_sales';
+            }
+
+            return implode(",\n                ", $parts);
+        }
+
+        foreach ($segments as $seg) {
+            $alias = (string) $seg['sql_alias'];
+            $parts[] = 'CASE WHEN '.$this->visitExistsSubqueryForRange($seg['from'], $seg['to']).' THEN 1 ELSE 0 END AS ['.$alias.']';
+            if ($includeMonthSales) {
+                $salesAlias = (string) ($seg['sales_sql_alias'] ?? '');
+                $parts[] = $this->clientSalesScalarSubqueryForRange($seg['from'], $seg['to']).' AS ['.$salesAlias.']';
+            }
+        }
+
+        return implode(",\n                ", $parts);
+    }
+
+    private function clientSalesScalarSubqueryForRange(string $from, string $to): string
+    {
+        return (new \App\Support\SalesDocumentMetricsSql)->clientPostedSalesAmountSubquerySql($from, $to);
+    }
+
     private function assertIsoDateLiteral(string $date): string
     {
         if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
@@ -401,6 +504,14 @@ class VisitsReportRepository
             INNER JOIN '.self::ACCOUNTS.' AS s
                 ON s.fld_account_id = c.fld_sales_man_id_ref
                 AND s.fld_parent_account_id_ref = CAST(? AS UNIQUEIDENTIFIER)
+            LEFT JOIN (
+                SELECT
+                    fld_account_id_ref,
+                    MAX(LTRIM(RTRIM(CAST(COALESCE(fld_account_address, N\'\') AS NVARCHAR(500))))) AS account_address
+                FROM dbo.tbl_accounting_account_details
+                GROUP BY fld_account_id_ref
+            ) AS ad
+                ON ad.fld_account_id_ref = c.fld_account_id
         ';
 
         $bindings = [$guid];

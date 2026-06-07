@@ -33,9 +33,12 @@ class VisitsReportTest extends TestCase
                     'sql_alias' => 'visit_2026_04',
                 ],
             ]);
-        $mock->shouldReceive('paginateVisits')->once()->andReturn(
-            new LengthAwarePaginator([], 0, 25, 1, ['path' => '/reports/visits'])
-        );
+        $mock->shouldReceive('paginateVisits')
+            ->once()
+            ->with(Mockery::type('string'), Mockery::type('string'), Mockery::type('array'), Mockery::any(), Mockery::type('int'), Mockery::type('int'), false, false)
+            ->andReturn(
+                new LengthAwarePaginator([], 0, 25, 1, ['path' => '/reports/visits'])
+            );
         $mock->shouldReceive('getSalesmanOptions')->once()->andReturn([]);
         $mock->shouldReceive('getCityOptions')->once()->andReturn(['اربيل', 'عقرة']);
 
@@ -45,6 +48,32 @@ class VisitsReportTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('Visits report', false);
-        $response->assertSee('Identifier', false);
+        $response->assertSee('Group by city', false);
+    }
+
+    public function test_visits_report_accepts_sort_by_city_filter(): void
+    {
+        $mock = Mockery::mock(VisitsReportRepository::class);
+        $mock->shouldReceive('monthSegmentsInRange')->once()->andReturn([
+            [
+                'key' => '2026-04',
+                'label' => 'April 2026',
+                'label_en' => 'April 2026',
+                'from' => '2026-04-01',
+                'to' => '2026-04-30',
+                'sql_alias' => 'visit_2026_04',
+            ],
+        ]);
+        $mock->shouldReceive('paginateVisits')
+            ->once()
+            ->with(Mockery::type('string'), Mockery::type('string'), Mockery::type('array'), Mockery::any(), Mockery::type('int'), Mockery::type('int'), true, false)
+            ->andReturn(new LengthAwarePaginator([], 0, 25, 1, ['path' => '/reports/visits']));
+        $mock->shouldReceive('getSalesmanOptions')->once()->andReturn([]);
+        $mock->shouldReceive('getCityOptions')->once()->andReturn([]);
+
+        $this->app->instance(VisitsReportRepository::class, $mock);
+
+        $this->get(route('reports.visits.index', ['sort_by_city' => '1']))
+            ->assertOk();
     }
 }

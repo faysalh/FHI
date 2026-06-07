@@ -4,21 +4,21 @@ declare(strict_types=1);
 
 namespace App\Repositories;
 
+use App\Repositories\Concerns\UsesPostedSalesDocumentMetrics;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use stdClass;
-use Throwable;
 
 class CitiesReportRepository
 {
+    use UsesPostedSalesDocumentMetrics;
+
     private const MAX_EXPORT_ROWS = 10000;
 
     public function __construct(
         private readonly VisitsReportRepository $visits
-    ) {
-    }
+    ) {}
 
     /**
      * @param  list<string>|null  $cities
@@ -54,6 +54,49 @@ class CitiesReportRepository
     }
 
     /**
+     * @param  list<string>|null  $salesmanIds
+     * @return list<string>
+     */
+    public function normalizeSalesmanIds(?array $salesmanIds): array
+    {
+        if ($salesmanIds === null || $salesmanIds === []) {
+            return [];
+        }
+        $out = [];
+        foreach ($salesmanIds as $id) {
+            if (! is_string($id)) {
+                continue;
+            }
+            $id = trim($id);
+            if ($id === '') {
+                continue;
+            }
+            if (preg_match('/^[0-9A-Fa-f-]{36}$/', $id)) {
+                $out[] = $id;
+            }
+        }
+
+        return array_values(array_unique($out));
+    }
+
+    /**
+     * @param  list<string>  $normalizedSalesmanIds
+     * @return array{0: string, 1: list<string>}
+     */
+    private function salesmanWhereClause(array $normalizedSalesmanIds): array
+    {
+        if ($normalizedSalesmanIds === []) {
+            return ['', []];
+        }
+        $placeholders = implode(',', array_fill(0, count($normalizedSalesmanIds), 'CAST(? AS UNIQUEIDENTIFIER)'));
+
+        return [
+            ' AND a.fld_sales_man_id_ref IN ('.$placeholders.') ',
+            $normalizedSalesmanIds,
+        ];
+    }
+
+    /**
      * Read-only sales aggregates from store document lines.
      *
      * Amount: quantity × unit price (line extension before tax/discount complexity).
@@ -68,22 +111,22 @@ class CitiesReportRepository
         bool $groupByClient,
         int $page,
         int $perPage,
-        array $cities = []
+        array $cities = [],
+        array $salesmanIds = []
     ): LengthAwarePaginator|array {
-        $weightSub = '
-            SELECT fld_item_id_ref, MAX(CAST(fld_weight AS float)) AS fld_weight
-            FROM dbo.tbl_store_item_setting
-            GROUP BY fld_item_id_ref
-        ';
+        extract($this->postedSalesQueryContext('s'));
 
         $cityIds = $this->normalizeCities($cities);
         [$citySql, $cityBindings] = $this->cityAccountWhereClause($cityIds);
-        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings);
+        $salesmanIds = $this->normalizeSalesmanIds($salesmanIds);
+        [$salesmanSql, $salesmanBindings] = $this->salesmanWhereClause($salesmanIds);
+        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings, $salesmanBindings);
 
         $baseFrom = "
             FROM dbo.tbl_store_document_detail AS d
             INNER JOIN dbo.tbl_store_document_titles AS t
                 ON t.fld_store_document_title_id = d.fld_store_document_title_id_ref
+            {$invoiceJoin}
             LEFT JOIN dbo.tbl_accounting_accounts AS a
                 ON a.fld_account_id = t.fld_account_id_ref
             LEFT JOIN ({$weightSub}) AS s
@@ -92,21 +135,17 @@ class CitiesReportRepository
               AND CAST(t.fld_store_document_title_date AS date) <= CAST(? AS date)
               AND ISNULL(t.fld_is_cancelled, 0) = 0
               AND ISNULL(d.fld_is_cancelled, 0) = 0
+              {$postedSalesScopeSql}
               {$citySql}
+              {$salesmanSql}
         ";
 
         if (! $groupByClient) {
             $sql = "
                 SELECT
-                    SUM(CAST(d.fld_store_document_quantity AS decimal(24, 6))) AS units_sold,
-                    SUM(
-                        CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                        * CAST(d.fld_store_document_unit_price AS decimal(24, 6))
-                    ) AS amount,
-                    SUM(
-                        CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                        * CAST(COALESCE(s.fld_weight, 0) AS float)
-                    ) AS weight_total
+                    SUM({$lineQtyExpr}) AS units_sold,
+                    SUM({$lineAmountExpr}) AS amount,
+                    SUM({$lineWeightExpr}) AS weight_total
                 {$baseFrom}
             ";
 
@@ -138,15 +177,9 @@ class CitiesReportRepository
             SELECT
                 COALESCE(a.fld_account_code, N'') AS client_code,
                 COALESCE(a.fld_account_name, t.fld_person_name, N'(no account)') AS client_name,
-                SUM(CAST(d.fld_store_document_quantity AS decimal(24, 6))) AS units_sold,
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(d.fld_store_document_unit_price AS decimal(24, 6))
-                ) AS amount,
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(COALESCE(s.fld_weight, 0) AS float)
-                ) AS weight_total
+                SUM({$lineQtyExpr}) AS units_sold,
+                SUM({$lineAmountExpr}) AS amount,
+                SUM({$lineWeightExpr}) AS weight_total
             {$baseFrom}
             GROUP BY
                 a.fld_account_id,
@@ -169,6 +202,82 @@ class CitiesReportRepository
     }
 
     /**
+     * Grand totals across all matching document lines (full filter set, not current page).
+     *
+     * @param  list<string>  $cities
+     * @param  list<string>  $salesmanIds
+     */
+    public function getMetricGrandTotals(
+        string $dateFrom,
+        string $dateTo,
+        array $cities = [],
+        array $salesmanIds = [],
+        ?string $searchDescription = null
+    ): stdClass {
+        if (DB::getDriverName() !== 'sqlsrv') {
+            throw new RuntimeException('Cities report requires SQL Server (sqlsrv).');
+        }
+
+        extract($this->postedSalesQueryContext('s'));
+
+        $cityIds = $this->normalizeCities($cities);
+        [$citySql, $cityBindings] = $this->cityAccountWhereClause($cityIds);
+        $salesmanIds = $this->normalizeSalesmanIds($salesmanIds);
+        [$salesmanSql, $salesmanBindings] = $this->salesmanWhereClause($salesmanIds);
+        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings, $salesmanBindings);
+
+        $itemsJoin = '';
+        $searchSql = '';
+        $q = trim((string) ($searchDescription ?? ''));
+        if ($q !== '') {
+            $itemsTable = (string) config('reporting.store_items_table', 'dbo.tbl_store_items');
+            $pkCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_pk_column', 'fld_item_id'));
+            $descCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_description_column', 'fld_description'));
+            $itemsJoin = "
+            LEFT JOIN {$itemsTable} AS i
+                ON i.{$pkCol} = d.fld_item_id_ref";
+            $searchSql = ' AND LTRIM(RTRIM(CAST(COALESCE(i.'.$descCol.', N\'\') AS NVARCHAR(500)))) LIKE ? ESCAPE N\'\\\' ';
+            $bindings[] = '%'.$this->escapeLikePattern($q).'%';
+        }
+
+        $baseFrom = "
+            FROM dbo.tbl_store_document_detail AS d
+            INNER JOIN dbo.tbl_store_document_titles AS t
+                ON t.fld_store_document_title_id = d.fld_store_document_title_id_ref
+            {$invoiceJoin}
+            LEFT JOIN dbo.tbl_accounting_accounts AS a
+                ON a.fld_account_id = t.fld_account_id_ref
+            {$itemsJoin}
+            LEFT JOIN ({$weightSub}) AS s
+                ON s.fld_item_id_ref = d.fld_item_id_ref
+            WHERE CAST(t.fld_store_document_title_date AS date) >= CAST(? AS date)
+              AND CAST(t.fld_store_document_title_date AS date) <= CAST(? AS date)
+              AND ISNULL(t.fld_is_cancelled, 0) = 0
+              AND ISNULL(d.fld_is_cancelled, 0) = 0
+              {$postedSalesScopeSql}
+              {$citySql}
+              {$salesmanSql}
+              {$searchSql}
+        ";
+
+        $sql = "
+            SELECT
+                COALESCE(SUM({$lineQtyExpr}), 0) AS units_sold,
+                COALESCE(SUM({$lineAmountExpr}), 0) AS amount,
+                COALESCE(SUM({$lineWeightExpr}), 0) AS weight_total
+            {$baseFrom}
+        ";
+
+        $row = DB::selectOne($sql, $bindings);
+
+        return $row ?? (object) [
+            'units_sold' => 0,
+            'amount' => 0,
+            'weight_total' => 0,
+        ];
+    }
+
+    /**
      * Sales by store item description (chicken category). SQL Server only.
      *
      * @param  list<string>  $cities
@@ -180,11 +289,14 @@ class CitiesReportRepository
         ?string $searchDescription,
         int $page,
         int $perPage,
-        array $cities = []
+        array $cities = [],
+        array $salesmanIds = []
     ): LengthAwarePaginator {
         if (DB::getDriverName() !== 'sqlsrv') {
             throw new RuntimeException('Category breakdown requires SQL Server (sqlsrv).');
         }
+
+        extract($this->postedSalesQueryContext('w'));
 
         $perPage = max(1, min(100, $perPage));
         $page = max(1, $page);
@@ -193,17 +305,13 @@ class CitiesReportRepository
         $pkCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_pk_column', 'fld_item_id'));
         $descCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_description_column', 'fld_description'));
 
-        $weightSub = '
-            SELECT fld_item_id_ref, MAX(CAST(fld_weight AS float)) AS fld_weight
-            FROM dbo.tbl_store_item_setting
-            GROUP BY fld_item_id_ref
-        ';
-
         $categoryExpr = 'COALESCE(NULLIF(LTRIM(RTRIM(CAST(i.'.$descCol.' AS NVARCHAR(500)))), N\'\'), N\'(uncategorized)\')';
 
         $cityIds = $this->normalizeCities($cities);
         [$citySql, $cityBindings] = $this->cityAccountWhereClause($cityIds);
-        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings);
+        $salesmanIds = $this->normalizeSalesmanIds($salesmanIds);
+        [$salesmanSql, $salesmanBindings] = $this->salesmanWhereClause($salesmanIds);
+        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings, $salesmanBindings);
 
         $searchSql = '';
         $q = trim((string) ($searchDescription ?? ''));
@@ -216,6 +324,7 @@ class CitiesReportRepository
             FROM dbo.tbl_store_document_detail AS d
             INNER JOIN dbo.tbl_store_document_titles AS t
                 ON t.fld_store_document_title_id = d.fld_store_document_title_id_ref
+            {$invoiceJoin}
             LEFT JOIN dbo.tbl_accounting_accounts AS a
                 ON a.fld_account_id = t.fld_account_id_ref
             LEFT JOIN {$itemsTable} AS i
@@ -226,7 +335,9 @@ class CitiesReportRepository
               AND CAST(t.fld_store_document_title_date AS date) <= CAST(? AS date)
               AND ISNULL(t.fld_is_cancelled, 0) = 0
               AND ISNULL(d.fld_is_cancelled, 0) = 0
+              {$postedSalesScopeSql}
               {$citySql}
+              {$salesmanSql}
               {$searchSql}
         ";
 
@@ -244,15 +355,9 @@ class CitiesReportRepository
         $dataSql = "
             SELECT
                 {$categoryExpr} AS chicken_category,
-                SUM(CAST(d.fld_store_document_quantity AS decimal(24, 6))) AS units_sold,
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(d.fld_store_document_unit_price AS decimal(24, 6))
-                ) AS amount,
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(COALESCE(w.fld_weight, 0) AS float)
-                ) AS weight_total
+                SUM({$lineQtyExpr}) AS units_sold,
+                SUM({$lineAmountExpr}) AS amount,
+                SUM({$lineWeightExpr}) AS weight_total
             {$baseFrom}
             GROUP BY {$categoryExpr}
             ORDER BY amount DESC
@@ -282,11 +387,14 @@ class CitiesReportRepository
         ?string $searchDescription,
         int $page,
         int $perPage,
-        array $cities = []
+        array $cities = [],
+        array $salesmanIds = []
     ): LengthAwarePaginator {
         if (DB::getDriverName() !== 'sqlsrv') {
             throw new RuntimeException('Category breakdown based on clients requires SQL Server (sqlsrv).');
         }
+
+        extract($this->postedSalesQueryContext('w'));
 
         $perPage = max(1, min(100, $perPage));
         $page = max(1, $page);
@@ -295,17 +403,13 @@ class CitiesReportRepository
         $pkCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_pk_column', 'fld_item_id'));
         $descCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_description_column', 'fld_description'));
 
-        $weightSub = '
-            SELECT fld_item_id_ref, MAX(CAST(fld_weight AS float)) AS fld_weight
-            FROM dbo.tbl_store_item_setting
-            GROUP BY fld_item_id_ref
-        ';
-
         $categoryExpr = 'COALESCE(NULLIF(LTRIM(RTRIM(CAST(i.'.$descCol.' AS NVARCHAR(500)))), N\'\'), N\'(uncategorized)\')';
 
         $cityIds = $this->normalizeCities($cities);
         [$citySql, $cityBindings] = $this->cityAccountWhereClause($cityIds);
-        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings);
+        $salesmanIds = $this->normalizeSalesmanIds($salesmanIds);
+        [$salesmanSql, $salesmanBindings] = $this->salesmanWhereClause($salesmanIds);
+        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings, $salesmanBindings);
 
         $searchSql = '';
         $q = trim((string) ($searchDescription ?? ''));
@@ -318,6 +422,7 @@ class CitiesReportRepository
             FROM dbo.tbl_store_document_detail AS d
             INNER JOIN dbo.tbl_store_document_titles AS t
                 ON t.fld_store_document_title_id = d.fld_store_document_title_id_ref
+            {$invoiceJoin}
             LEFT JOIN dbo.tbl_accounting_accounts AS a
                 ON a.fld_account_id = t.fld_account_id_ref
             LEFT JOIN {$itemsTable} AS i
@@ -328,7 +433,9 @@ class CitiesReportRepository
               AND CAST(t.fld_store_document_title_date AS date) <= CAST(? AS date)
               AND ISNULL(t.fld_is_cancelled, 0) = 0
               AND ISNULL(d.fld_is_cancelled, 0) = 0
+              {$postedSalesScopeSql}
               {$citySql}
+              {$salesmanSql}
               {$searchSql}
         ";
 
@@ -355,15 +462,9 @@ class CitiesReportRepository
                 COALESCE(a.fld_account_code, N'') AS client_code,
                 COALESCE(a.fld_account_name, t.fld_person_name, N'(no account)') AS client_name,
                 {$categoryExpr} AS chicken_category,
-                SUM(CAST(d.fld_store_document_quantity AS decimal(24, 6))) AS units_sold,
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(d.fld_store_document_unit_price AS decimal(24, 6))
-                ) AS amount,
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(COALESCE(w.fld_weight, 0) AS float)
-                ) AS weight_total
+                SUM({$lineQtyExpr}) AS units_sold,
+                SUM({$lineAmountExpr}) AS amount,
+                SUM({$lineWeightExpr}) AS weight_total
             {$baseFrom}
             GROUP BY
                 a.fld_account_id,
@@ -396,22 +497,22 @@ class CitiesReportRepository
         string $dateFrom,
         string $dateTo,
         bool $groupByClient,
-        array $cities
+        array $cities,
+        array $salesmanIds = []
     ): array {
-        $weightSub = '
-            SELECT fld_item_id_ref, MAX(CAST(fld_weight AS float)) AS fld_weight
-            FROM dbo.tbl_store_item_setting
-            GROUP BY fld_item_id_ref
-        ';
+        extract($this->postedSalesQueryContext('s'));
 
         $cityIds = $this->normalizeCities($cities);
         [$citySql, $cityBindings] = $this->cityAccountWhereClause($cityIds);
-        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings);
+        $salesmanIds = $this->normalizeSalesmanIds($salesmanIds);
+        [$salesmanSql, $salesmanBindings] = $this->salesmanWhereClause($salesmanIds);
+        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings, $salesmanBindings);
 
         $baseFrom = "
             FROM dbo.tbl_store_document_detail AS d
             INNER JOIN dbo.tbl_store_document_titles AS t
                 ON t.fld_store_document_title_id = d.fld_store_document_title_id_ref
+            {$invoiceJoin}
             LEFT JOIN dbo.tbl_accounting_accounts AS a
                 ON a.fld_account_id = t.fld_account_id_ref
             LEFT JOIN ({$weightSub}) AS s
@@ -420,7 +521,9 @@ class CitiesReportRepository
               AND CAST(t.fld_store_document_title_date AS date) <= CAST(? AS date)
               AND ISNULL(t.fld_is_cancelled, 0) = 0
               AND ISNULL(d.fld_is_cancelled, 0) = 0
+              {$postedSalesScopeSql}
               {$citySql}
+              {$salesmanSql}
         ";
 
         $limit = self::MAX_EXPORT_ROWS;
@@ -428,15 +531,9 @@ class CitiesReportRepository
         if (! $groupByClient) {
             $sql = "
                 SELECT
-                    SUM(CAST(d.fld_store_document_quantity AS decimal(24, 6))) AS units_sold,
-                    SUM(
-                        CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                        * CAST(d.fld_store_document_unit_price AS decimal(24, 6))
-                    ) AS amount,
-                    SUM(
-                        CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                        * CAST(COALESCE(s.fld_weight, 0) AS float)
-                    ) AS weight_total
+                    SUM({$lineQtyExpr}) AS units_sold,
+                    SUM({$lineAmountExpr}) AS amount,
+                    SUM({$lineWeightExpr}) AS weight_total
                 {$baseFrom}
             ";
 
@@ -453,15 +550,9 @@ class CitiesReportRepository
             SELECT
                 COALESCE(a.fld_account_code, N'') AS client_code,
                 COALESCE(a.fld_account_name, t.fld_person_name, N'(no account)') AS client_name,
-                SUM(CAST(d.fld_store_document_quantity AS decimal(24, 6))) AS units_sold,
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(d.fld_store_document_unit_price AS decimal(24, 6))
-                ) AS amount,
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(COALESCE(s.fld_weight, 0) AS float)
-                ) AS weight_total
+                SUM({$lineQtyExpr}) AS units_sold,
+                SUM({$lineAmountExpr}) AS amount,
+                SUM({$lineWeightExpr}) AS weight_total
             {$baseFrom}
             GROUP BY
                 a.fld_account_id,
@@ -483,27 +574,26 @@ class CitiesReportRepository
         string $dateFrom,
         string $dateTo,
         ?string $searchDescription,
-        array $cities
+        array $cities,
+        array $salesmanIds = []
     ): array {
         if (DB::getDriverName() !== 'sqlsrv') {
             throw new RuntimeException('Category breakdown requires SQL Server (sqlsrv).');
         }
 
+        extract($this->postedSalesQueryContext('w'));
+
         $itemsTable = (string) config('reporting.store_items_table', 'dbo.tbl_store_items');
         $pkCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_pk_column', 'fld_item_id'));
         $descCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_description_column', 'fld_description'));
-
-        $weightSub = '
-            SELECT fld_item_id_ref, MAX(CAST(fld_weight AS float)) AS fld_weight
-            FROM dbo.tbl_store_item_setting
-            GROUP BY fld_item_id_ref
-        ';
 
         $categoryExpr = 'COALESCE(NULLIF(LTRIM(RTRIM(CAST(i.'.$descCol.' AS NVARCHAR(500)))), N\'\'), N\'(uncategorized)\')';
 
         $cityIds = $this->normalizeCities($cities);
         [$citySql, $cityBindings] = $this->cityAccountWhereClause($cityIds);
-        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings);
+        $salesmanIds = $this->normalizeSalesmanIds($salesmanIds);
+        [$salesmanSql, $salesmanBindings] = $this->salesmanWhereClause($salesmanIds);
+        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings, $salesmanBindings);
 
         $searchSql = '';
         $q = trim((string) ($searchDescription ?? ''));
@@ -516,6 +606,7 @@ class CitiesReportRepository
             FROM dbo.tbl_store_document_detail AS d
             INNER JOIN dbo.tbl_store_document_titles AS t
                 ON t.fld_store_document_title_id = d.fld_store_document_title_id_ref
+            {$invoiceJoin}
             LEFT JOIN dbo.tbl_accounting_accounts AS a
                 ON a.fld_account_id = t.fld_account_id_ref
             LEFT JOIN {$itemsTable} AS i
@@ -526,7 +617,9 @@ class CitiesReportRepository
               AND CAST(t.fld_store_document_title_date AS date) <= CAST(? AS date)
               AND ISNULL(t.fld_is_cancelled, 0) = 0
               AND ISNULL(d.fld_is_cancelled, 0) = 0
+              {$postedSalesScopeSql}
               {$citySql}
+              {$salesmanSql}
               {$searchSql}
         ";
 
@@ -535,15 +628,9 @@ class CitiesReportRepository
         $dataSql = "
             SELECT
                 {$categoryExpr} AS chicken_category,
-                SUM(CAST(d.fld_store_document_quantity AS decimal(24, 6))) AS units_sold,
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(d.fld_store_document_unit_price AS decimal(24, 6))
-                ) AS amount,
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(COALESCE(w.fld_weight, 0) AS float)
-                ) AS weight_total
+                SUM({$lineQtyExpr}) AS units_sold,
+                SUM({$lineAmountExpr}) AS amount,
+                SUM({$lineWeightExpr}) AS weight_total
             {$baseFrom}
             GROUP BY {$categoryExpr}
             ORDER BY amount DESC
@@ -561,27 +648,26 @@ class CitiesReportRepository
         string $dateFrom,
         string $dateTo,
         ?string $searchDescription,
-        array $cities
+        array $cities,
+        array $salesmanIds = []
     ): array {
         if (DB::getDriverName() !== 'sqlsrv') {
             throw new RuntimeException('Category breakdown based on clients requires SQL Server (sqlsrv).');
         }
 
+        extract($this->postedSalesQueryContext('w'));
+
         $itemsTable = (string) config('reporting.store_items_table', 'dbo.tbl_store_items');
         $pkCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_pk_column', 'fld_item_id'));
         $descCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_description_column', 'fld_description'));
-
-        $weightSub = '
-            SELECT fld_item_id_ref, MAX(CAST(fld_weight AS float)) AS fld_weight
-            FROM dbo.tbl_store_item_setting
-            GROUP BY fld_item_id_ref
-        ';
 
         $categoryExpr = 'COALESCE(NULLIF(LTRIM(RTRIM(CAST(i.'.$descCol.' AS NVARCHAR(500)))), N\'\'), N\'(uncategorized)\')';
 
         $cityIds = $this->normalizeCities($cities);
         [$citySql, $cityBindings] = $this->cityAccountWhereClause($cityIds);
-        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings);
+        $salesmanIds = $this->normalizeSalesmanIds($salesmanIds);
+        [$salesmanSql, $salesmanBindings] = $this->salesmanWhereClause($salesmanIds);
+        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings, $salesmanBindings);
 
         $searchSql = '';
         $q = trim((string) ($searchDescription ?? ''));
@@ -594,6 +680,7 @@ class CitiesReportRepository
             FROM dbo.tbl_store_document_detail AS d
             INNER JOIN dbo.tbl_store_document_titles AS t
                 ON t.fld_store_document_title_id = d.fld_store_document_title_id_ref
+            {$invoiceJoin}
             LEFT JOIN dbo.tbl_accounting_accounts AS a
                 ON a.fld_account_id = t.fld_account_id_ref
             LEFT JOIN {$itemsTable} AS i
@@ -604,7 +691,9 @@ class CitiesReportRepository
               AND CAST(t.fld_store_document_title_date AS date) <= CAST(? AS date)
               AND ISNULL(t.fld_is_cancelled, 0) = 0
               AND ISNULL(d.fld_is_cancelled, 0) = 0
+              {$postedSalesScopeSql}
               {$citySql}
+              {$salesmanSql}
               {$searchSql}
         ";
 
@@ -615,15 +704,9 @@ class CitiesReportRepository
                 COALESCE(a.fld_account_code, N'') AS client_code,
                 COALESCE(a.fld_account_name, t.fld_person_name, N'(no account)') AS client_name,
                 {$categoryExpr} AS chicken_category,
-                SUM(CAST(d.fld_store_document_quantity AS decimal(24, 6))) AS units_sold,
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(d.fld_store_document_unit_price AS decimal(24, 6))
-                ) AS amount,
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(COALESCE(w.fld_weight, 0) AS float)
-                ) AS weight_total
+                SUM({$lineQtyExpr}) AS units_sold,
+                SUM({$lineAmountExpr}) AS amount,
+                SUM({$lineWeightExpr}) AS weight_total
             {$baseFrom}
             GROUP BY
                 a.fld_account_id,
@@ -642,28 +725,27 @@ class CitiesReportRepository
      * Daily sales totals for time-series charts (amount, quantity, weight, customers, invoices). One row per calendar day in range.
      *
      * @param  list<string>  $cities
-     * @return list<stdClass>  sale_date, units_sold, amount, weight_total, customer_count, invoice_count
+     * @return list<stdClass> sale_date, units_sold, amount, weight_total, customer_count, invoice_count
      */
-    public function getSalesOverTimeChartSeries(string $dateFrom, string $dateTo, array $cities): array
+    public function getSalesOverTimeChartSeries(string $dateFrom, string $dateTo, array $cities, array $salesmanIds = []): array
     {
         if (DB::getDriverName() !== 'sqlsrv') {
             return [];
         }
 
-        $weightSub = '
-            SELECT fld_item_id_ref, MAX(CAST(fld_weight AS float)) AS fld_weight
-            FROM dbo.tbl_store_item_setting
-            GROUP BY fld_item_id_ref
-        ';
+        extract($this->postedSalesQueryContext('s'));
 
         $cityIds = $this->normalizeCities($cities);
         [$citySql, $cityBindings] = $this->cityAccountWhereClause($cityIds);
-        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings);
+        $salesmanIds = $this->normalizeSalesmanIds($salesmanIds);
+        [$salesmanSql, $salesmanBindings] = $this->salesmanWhereClause($salesmanIds);
+        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings, $salesmanBindings);
 
         $baseFrom = "
             FROM dbo.tbl_store_document_detail AS d
             INNER JOIN dbo.tbl_store_document_titles AS t
                 ON t.fld_store_document_title_id = d.fld_store_document_title_id_ref
+            {$invoiceJoin}
             LEFT JOIN dbo.tbl_accounting_accounts AS a
                 ON a.fld_account_id = t.fld_account_id_ref
             LEFT JOIN ({$weightSub}) AS s
@@ -672,21 +754,17 @@ class CitiesReportRepository
               AND CAST(t.fld_store_document_title_date AS date) <= CAST(? AS date)
               AND ISNULL(t.fld_is_cancelled, 0) = 0
               AND ISNULL(d.fld_is_cancelled, 0) = 0
+              {$postedSalesScopeSql}
               {$citySql}
+              {$salesmanSql}
         ";
 
         $sql = "
             SELECT
                 CAST(t.fld_store_document_title_date AS date) AS sale_date,
-                SUM(CAST(d.fld_store_document_quantity AS decimal(24, 6))) AS units_sold,
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(d.fld_store_document_unit_price AS decimal(24, 6))
-                ) AS amount,
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(COALESCE(s.fld_weight, 0) AS float)
-                ) AS weight_total,
+                SUM({$lineQtyExpr}) AS units_sold,
+                SUM({$lineAmountExpr}) AS amount,
+                SUM({$lineWeightExpr}) AS weight_total,
                 COUNT(DISTINCT t.fld_account_id_ref) AS customer_count,
                 COUNT(DISTINCT t.fld_store_document_title_id) AS invoice_count
             {$baseFrom}
@@ -708,7 +786,8 @@ class CitiesReportRepository
         array $memberCities,
         ?string $excludeCategory,
         int $page,
-        int $perPage
+        int $perPage,
+        array $salesmanIds = []
     ): LengthAwarePaginator {
         if (DB::getDriverName() !== 'sqlsrv') {
             throw new RuntimeException('Governorate category breakdown requires SQL Server (sqlsrv).');
@@ -730,6 +809,8 @@ class CitiesReportRepository
             ]);
         }
 
+        extract($this->postedSalesQueryContext('w'));
+
         $itemsTable = (string) config('reporting.store_items_table', 'dbo.tbl_store_items');
         $pkCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_pk_column', 'fld_item_id'));
         $descCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_description_column', 'fld_description'));
@@ -737,7 +818,9 @@ class CitiesReportRepository
         $categoryExpr = 'COALESCE(NULLIF(LTRIM(RTRIM(CAST(i.'.$descCol.' AS NVARCHAR(500)))), N\'\'), N\'(uncategorized)\')';
         $excludeSql = '';
         [$citySql, $cityBindings] = $this->cityAccountWhereClause($targetCities);
-        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings);
+        $salesmanIds = $this->normalizeSalesmanIds($salesmanIds);
+        [$salesmanSql, $salesmanBindings] = $this->salesmanWhereClause($salesmanIds);
+        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings, $salesmanBindings);
         $excluded = trim((string) ($excludeCategory ?? ''));
         if ($excluded !== '') {
             $excludeSql = " AND {$categoryExpr} <> ? ";
@@ -748,21 +831,20 @@ class CitiesReportRepository
             FROM dbo.tbl_store_document_detail AS d
             INNER JOIN dbo.tbl_store_document_titles AS t
                 ON t.fld_store_document_title_id = d.fld_store_document_title_id_ref
+            {$invoiceJoin}
             LEFT JOIN dbo.tbl_accounting_accounts AS a
                 ON a.fld_account_id = t.fld_account_id_ref
             LEFT JOIN {$itemsTable} AS i
                 ON i.{$pkCol} = d.fld_item_id_ref
-            LEFT JOIN (
-                SELECT fld_item_id_ref, MAX(CAST(fld_weight AS float)) AS fld_weight
-                FROM dbo.tbl_store_item_setting
-                GROUP BY fld_item_id_ref
-            ) AS w
+            LEFT JOIN ({$weightSub}) AS w
                 ON w.fld_item_id_ref = d.fld_item_id_ref
             WHERE CAST(t.fld_store_document_title_date AS date) >= CAST(? AS date)
               AND CAST(t.fld_store_document_title_date AS date) <= CAST(? AS date)
               AND ISNULL(t.fld_is_cancelled, 0) = 0
               AND ISNULL(d.fld_is_cancelled, 0) = 0
+              {$postedSalesScopeSql}
               {$citySql}
+              {$salesmanSql}
               {$excludeSql}
         ";
 
@@ -780,15 +862,9 @@ class CitiesReportRepository
             SELECT
                 {$cityExpr} AS city_name,
                 {$categoryExpr} AS item_category,
-                SUM(CAST(d.fld_store_document_quantity AS decimal(24, 6))) AS units_sold,
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(d.fld_store_document_unit_price AS decimal(24, 6))
-                ) AS amount,
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(COALESCE(w.fld_weight, 0) AS float)
-                ) AS weight_total
+                SUM({$lineQtyExpr}) AS units_sold,
+                SUM({$lineAmountExpr}) AS amount,
+                SUM({$lineWeightExpr}) AS weight_total
             {$baseFrom}
             GROUP BY {$cityExpr}, {$categoryExpr}
             ORDER BY city_name ASC, amount DESC
@@ -809,12 +885,13 @@ class CitiesReportRepository
      * @param  list<string>  $cities
      * @return list<stdClass>
      */
-    public function getPieByCitySeries(string $dateFrom, string $dateTo, array $cities, ?string $excludeCategory): array
+    public function getPieByCitySeries(string $dateFrom, string $dateTo, array $cities, ?string $excludeCategory, array $salesmanIds = []): array
     {
         return $this->pieByDimension(
             $dateFrom,
             $dateTo,
             $cities,
+            $salesmanIds,
             $this->cityExprSql(),
             'city_name',
             $this->itemsJoinSql(),
@@ -826,7 +903,63 @@ class CitiesReportRepository
      * @param  list<string>  $cities
      * @return list<stdClass>
      */
-    public function getPieByCategorySeries(string $dateFrom, string $dateTo, array $cities, ?string $excludeCategory): array
+    public function getPieBySalesmanSeries(
+        string $dateFrom,
+        string $dateTo,
+        array $cities,
+        ?string $excludeCategory,
+        array $salesmanIds = []
+    ): array {
+        if (DB::getDriverName() !== 'sqlsrv') {
+            return [];
+        }
+
+        extract($this->postedSalesQueryContext('w'));
+
+        $cityIds = $this->normalizeCities($cities);
+        [$citySql, $cityBindings] = $this->cityAccountWhereClause($cityIds);
+        $salesmanIds = $this->normalizeSalesmanIds($salesmanIds);
+        [$salesmanSql, $salesmanBindings] = $this->salesmanWhereClause($salesmanIds);
+        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings, $salesmanBindings);
+        $excludeSql = '';
+        $excluded = trim((string) ($excludeCategory ?? ''));
+        if ($excluded !== '') {
+            $excludeSql = ' AND '.$this->itemCategoryExpr('i').' <> ? ';
+            $bindings[] = $excluded;
+        }
+
+        $sql = "
+            SELECT
+                COALESCE(CAST(a.fld_sales_man_id_ref AS NVARCHAR(100)), N'') AS salesman_id,
+                SUM({$lineAmountExpr}) AS amount
+            FROM dbo.tbl_store_document_detail AS d
+            INNER JOIN dbo.tbl_store_document_titles AS t
+                ON t.fld_store_document_title_id = d.fld_store_document_title_id_ref
+            {$invoiceJoin}
+            LEFT JOIN dbo.tbl_accounting_accounts AS a
+                ON a.fld_account_id = t.fld_account_id_ref
+            {$this->itemsJoinSql()}
+            WHERE CAST(t.fld_store_document_title_date AS date) >= CAST(? AS date)
+              AND CAST(t.fld_store_document_title_date AS date) <= CAST(? AS date)
+              AND ISNULL(t.fld_is_cancelled, 0) = 0
+              AND ISNULL(d.fld_is_cancelled, 0) = 0
+              {$postedSalesScopeSql}
+              {$citySql}
+              {$salesmanSql}
+              {$excludeSql}
+            GROUP BY COALESCE(CAST(a.fld_sales_man_id_ref AS NVARCHAR(100)), N'')
+            ORDER BY amount DESC
+            OFFSET 0 ROWS FETCH NEXT 50 ROWS ONLY
+        ";
+
+        return DB::select($sql, $bindings);
+    }
+
+    /**
+     * @param  list<string>  $cities
+     * @return list<stdClass>
+     */
+    public function getPieByCategorySeries(string $dateFrom, string $dateTo, array $cities, ?string $excludeCategory, array $salesmanIds = []): array
     {
         $categoryExpr = $this->itemCategoryExpr('i');
 
@@ -834,6 +967,7 @@ class CitiesReportRepository
             $dateFrom,
             $dateTo,
             $cities,
+            $salesmanIds,
             $categoryExpr,
             'item_category',
             $this->itemsJoinSql(),
@@ -850,16 +984,20 @@ class CitiesReportRepository
         string $dateTo,
         array $cities,
         ?string $category,
-        ?string $excludeCategory
-    ): array
-    {
+        ?string $excludeCategory,
+        array $salesmanIds = []
+    ): array {
         if (DB::getDriverName() !== 'sqlsrv') {
             return [];
         }
 
+        extract($this->postedSalesQueryContext('w'));
+
         $cityIds = $this->normalizeCities($cities);
         [$citySql, $cityBindings] = $this->cityAccountWhereClause($cityIds);
-        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings);
+        $salesmanIds = $this->normalizeSalesmanIds($salesmanIds);
+        [$salesmanSql, $salesmanBindings] = $this->salesmanWhereClause($salesmanIds);
+        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings, $salesmanBindings);
         $categoryExpr = $this->itemCategoryExpr('i');
         $itemExpr = $this->itemNameExpr('i');
         $filterCategorySql = '';
@@ -879,13 +1017,11 @@ class CitiesReportRepository
         $sql = "
             SELECT
                 {$itemExpr} AS item_name,
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(d.fld_store_document_unit_price AS decimal(24, 6))
-                ) AS amount
+                SUM({$lineAmountExpr}) AS amount
             FROM dbo.tbl_store_document_detail AS d
             INNER JOIN dbo.tbl_store_document_titles AS t
                 ON t.fld_store_document_title_id = d.fld_store_document_title_id_ref
+            {$invoiceJoin}
             LEFT JOIN dbo.tbl_accounting_accounts AS a
                 ON a.fld_account_id = t.fld_account_id_ref
             {$joins}
@@ -893,7 +1029,9 @@ class CitiesReportRepository
               AND CAST(t.fld_store_document_title_date AS date) <= CAST(? AS date)
               AND ISNULL(t.fld_is_cancelled, 0) = 0
               AND ISNULL(d.fld_is_cancelled, 0) = 0
+              {$postedSalesScopeSql}
               {$citySql}
+              {$salesmanSql}
               {$filterCategorySql}
               {$excludeSql}
             GROUP BY {$itemExpr}
@@ -908,15 +1046,19 @@ class CitiesReportRepository
      * @param  list<string>  $cities
      * @return list<string>
      */
-    public function getItemCategoryOptions(string $dateFrom, string $dateTo, array $cities): array
+    public function getItemCategoryOptions(string $dateFrom, string $dateTo, array $cities, array $salesmanIds = []): array
     {
         if (DB::getDriverName() !== 'sqlsrv') {
             return [];
         }
 
+        extract($this->postedSalesQueryContext('w'));
+
         $cityIds = $this->normalizeCities($cities);
         [$citySql, $cityBindings] = $this->cityAccountWhereClause($cityIds);
-        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings);
+        $salesmanIds = $this->normalizeSalesmanIds($salesmanIds);
+        [$salesmanSql, $salesmanBindings] = $this->salesmanWhereClause($salesmanIds);
+        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings, $salesmanBindings);
         $categoryExpr = $this->itemCategoryExpr('i');
         $joins = $this->itemsJoinSql();
 
@@ -925,6 +1067,7 @@ class CitiesReportRepository
             FROM dbo.tbl_store_document_detail AS d
             INNER JOIN dbo.tbl_store_document_titles AS t
                 ON t.fld_store_document_title_id = d.fld_store_document_title_id_ref
+            {$invoiceJoin}
             LEFT JOIN dbo.tbl_accounting_accounts AS a
                 ON a.fld_account_id = t.fld_account_id_ref
             {$joins}
@@ -932,7 +1075,9 @@ class CitiesReportRepository
               AND CAST(t.fld_store_document_title_date AS date) <= CAST(? AS date)
               AND ISNULL(t.fld_is_cancelled, 0) = 0
               AND ISNULL(d.fld_is_cancelled, 0) = 0
+              {$postedSalesScopeSql}
               {$citySql}
+              {$salesmanSql}
             ORDER BY item_category ASC
         ";
 
@@ -982,6 +1127,7 @@ class CitiesReportRepository
         string $dateFrom,
         string $dateTo,
         array $cities,
+        array $salesmanIds,
         string $dimensionExpr,
         string $dimensionAlias,
         ?string $extraJoinSql,
@@ -991,9 +1137,13 @@ class CitiesReportRepository
             return [];
         }
 
+        extract($this->postedSalesQueryContext('w'));
+
         $cityIds = $this->normalizeCities($cities);
         [$citySql, $cityBindings] = $this->cityAccountWhereClause($cityIds);
-        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings);
+        $salesmanIds = $this->normalizeSalesmanIds($salesmanIds);
+        [$salesmanSql, $salesmanBindings] = $this->salesmanWhereClause($salesmanIds);
+        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings, $salesmanBindings);
         $join = trim((string) $extraJoinSql);
         $excludeSql = '';
         $excluded = trim((string) ($excludeCategory ?? ''));
@@ -1005,13 +1155,11 @@ class CitiesReportRepository
         $sql = "
             SELECT
                 {$dimensionExpr} AS {$dimensionAlias},
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(d.fld_store_document_unit_price AS decimal(24, 6))
-                ) AS amount
+                SUM({$lineAmountExpr}) AS amount
             FROM dbo.tbl_store_document_detail AS d
             INNER JOIN dbo.tbl_store_document_titles AS t
                 ON t.fld_store_document_title_id = d.fld_store_document_title_id_ref
+            {$invoiceJoin}
             LEFT JOIN dbo.tbl_accounting_accounts AS a
                 ON a.fld_account_id = t.fld_account_id_ref
             {$join}
@@ -1019,7 +1167,9 @@ class CitiesReportRepository
               AND CAST(t.fld_store_document_title_date AS date) <= CAST(? AS date)
               AND ISNULL(t.fld_is_cancelled, 0) = 0
               AND ISNULL(d.fld_is_cancelled, 0) = 0
+              {$postedSalesScopeSql}
               {$citySql}
+              {$salesmanSql}
               {$excludeSql}
             GROUP BY {$dimensionExpr}
             ORDER BY amount DESC

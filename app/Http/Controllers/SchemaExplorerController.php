@@ -13,8 +13,7 @@ class SchemaExplorerController extends Controller
 {
     public function __construct(
         private readonly SchemaExplorerService $service
-    ) {
-    }
+    ) {}
 
     public function index(SchemaBrowserRequest $request): View
     {
@@ -32,6 +31,9 @@ class SchemaExplorerController extends Controller
                 'searchQuery' => $browser['search_query'],
                 'searchQueryInput' => $browser['search_query_input'],
                 'searchHits' => $browser['search_hits'],
+                'viewMode' => $browser['view'] ?? 'browse',
+                'relations' => $browser['relations'] ?? [],
+                'relationDiagramLines' => $browser['relation_diagram_lines'] ?? [],
                 'filters' => $filters,
                 'errorMessage' => null,
             ]);
@@ -45,6 +47,9 @@ class SchemaExplorerController extends Controller
                 'searchQuery' => '',
                 'searchQueryInput' => '',
                 'searchHits' => [],
+                'viewMode' => 'browse',
+                'relations' => [],
+                'relationDiagramLines' => [],
                 'filters' => $filters,
                 'errorMessage' => 'Unable to browse remote schema right now. Please retry.',
             ]);

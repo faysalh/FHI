@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Repositories;
 
+use App\Repositories\Concerns\UsesPostedSalesDocumentMetrics;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -11,6 +12,8 @@ use stdClass;
 
 class SalesByItemAverageReportRepository
 {
+    use UsesPostedSalesDocumentMetrics;
+
     private const MAX_EXPORT_ROWS = 10000;
 
     public function __construct(
@@ -60,6 +63,8 @@ class SalesByItemAverageReportRepository
             throw new RuntimeException('Sales by item average report requires SQL Server (sqlsrv).');
         }
 
+        extract($this->postedSalesQueryContext('w'));
+
         $itemsTable = (string) config('reporting.store_items_table', 'dbo.tbl_store_items');
         $pkCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_pk_column', 'fld_item_id'));
         $descCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_description_column', 'fld_description'));
@@ -80,6 +85,7 @@ class SalesByItemAverageReportRepository
             FROM dbo.tbl_store_document_detail AS d
             INNER JOIN dbo.tbl_store_document_titles AS t
                 ON t.fld_store_document_title_id = d.fld_store_document_title_id_ref
+            {$invoiceJoin}
             LEFT JOIN dbo.tbl_accounting_accounts AS a
                 ON a.fld_account_id = t.fld_account_id_ref
             LEFT JOIN {$itemsTable} AS i
@@ -88,6 +94,7 @@ class SalesByItemAverageReportRepository
               AND CAST(t.fld_store_document_title_date AS date) <= CAST(? AS date)
               AND ISNULL(t.fld_is_cancelled, 0) = 0
               AND ISNULL(d.fld_is_cancelled, 0) = 0
+              {$postedSalesScopeSql}
               {$citySql}
               {$searchSql}
             ORDER BY category_name ASC
@@ -118,15 +125,12 @@ class SalesByItemAverageReportRepository
         $perPage = max(1, min(100, $perPage));
         $page = max(1, $page);
 
+        extract($this->postedSalesQueryContext('w'));
+
         $itemsTable = (string) config('reporting.store_items_table', 'dbo.tbl_store_items');
         $pkCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_pk_column', 'fld_item_id'));
         $descCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_description_column', 'fld_description'));
 
-        $weightSub = '
-            SELECT fld_item_id_ref, MAX(CAST(fld_weight AS float)) AS fld_weight
-            FROM dbo.tbl_store_item_setting
-            GROUP BY fld_item_id_ref
-        ';
         $balanceSub = '
             SELECT fld_item_id_ref, SUM(CAST(fld_item_balance AS float)) AS fld_item_balance
             FROM dbo.tbl_store_item_informations
@@ -155,6 +159,7 @@ class SalesByItemAverageReportRepository
             FROM dbo.tbl_store_document_detail AS d
             INNER JOIN dbo.tbl_store_document_titles AS t
                 ON t.fld_store_document_title_id = d.fld_store_document_title_id_ref
+            {$invoiceJoin}
             LEFT JOIN dbo.tbl_accounting_accounts AS a
                 ON a.fld_account_id = t.fld_account_id_ref
             LEFT JOIN {$itemsTable} AS i
@@ -167,6 +172,7 @@ class SalesByItemAverageReportRepository
               AND CAST(t.fld_store_document_title_date AS date) <= CAST(? AS date)
               AND ISNULL(t.fld_is_cancelled, 0) = 0
               AND ISNULL(d.fld_is_cancelled, 0) = 0
+              {$postedSalesScopeSql}
               {$citySql}
               {$searchSql}
               {$excludeSql}
@@ -193,15 +199,9 @@ class SalesByItemAverageReportRepository
                 SELECT
                     {$categoryExpr} AS category_name,
                     i.{$pkCol} AS item_id,
-                    SUM(CAST(d.fld_store_document_quantity AS decimal(24, 6))) AS units_sold,
-                    SUM(
-                        CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                        * CAST(d.fld_store_document_unit_price AS decimal(24, 6))
-                    ) AS amount,
-                    SUM(
-                        CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                        * CAST(COALESCE(w.fld_weight, 0) AS float)
-                    ) AS weight_total,
+                    SUM({$lineQtyExpr}) AS units_sold,
+                    SUM({$lineAmountExpr}) AS amount,
+                    SUM({$lineWeightExpr}) AS weight_total,
                     MAX(CAST(COALESCE(s.fld_item_balance, 0) AS float)) AS storage_balance
                 {$baseFrom}
                 GROUP BY {$categoryExpr}, i.{$pkCol}
@@ -223,6 +223,84 @@ class SalesByItemAverageReportRepository
     }
 
     /**
+     * Grand totals for units sold, amount, and weight (full filter set).
+     *
+     * @param  list<string>  $cities
+     */
+    public function getGrandTotals(
+        string $dateFrom,
+        string $dateTo,
+        ?string $searchItem,
+        ?string $excludeCategory,
+        array $cities
+    ): stdClass {
+        if (DB::getDriverName() !== 'sqlsrv') {
+            throw new RuntimeException('Sales by item average report requires SQL Server (sqlsrv).');
+        }
+
+        extract($this->postedSalesQueryContext('w'));
+
+        $itemsTable = (string) config('reporting.store_items_table', 'dbo.tbl_store_items');
+        $pkCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_pk_column', 'fld_item_id'));
+        $descCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_description_column', 'fld_description'));
+
+        $categoryExpr = 'COALESCE(NULLIF(LTRIM(RTRIM(CAST(i.'.$descCol.' AS NVARCHAR(500)))), N\'\'), N\'(uncategorized)\')';
+        $cityIds = $this->normalizeCities($cities);
+        [$citySql, $cityBindings] = $this->cityAccountWhereClause($cityIds);
+        $bindings = array_merge([$dateFrom, $dateTo], $cityBindings);
+
+        $searchSql = '';
+        $q = trim((string) ($searchItem ?? ''));
+        if ($q !== '') {
+            $searchSql = ' AND LTRIM(RTRIM(CAST(COALESCE(i.'.$descCol.', N\'\') AS NVARCHAR(500)))) LIKE ? ESCAPE N\'\\\' ';
+            $bindings[] = '%'.$this->escapeLikePattern($q).'%';
+        }
+        $excludeSql = '';
+        $excluded = trim((string) ($excludeCategory ?? ''));
+        if ($excluded !== '') {
+            $excludeSql = " AND {$categoryExpr} <> ? ";
+            $bindings[] = $excluded;
+        }
+
+        $baseFrom = "
+            FROM dbo.tbl_store_document_detail AS d
+            INNER JOIN dbo.tbl_store_document_titles AS t
+                ON t.fld_store_document_title_id = d.fld_store_document_title_id_ref
+            {$invoiceJoin}
+            LEFT JOIN dbo.tbl_accounting_accounts AS a
+                ON a.fld_account_id = t.fld_account_id_ref
+            LEFT JOIN {$itemsTable} AS i
+                ON i.{$pkCol} = d.fld_item_id_ref
+            LEFT JOIN ({$weightSub}) AS w
+                ON w.fld_item_id_ref = d.fld_item_id_ref
+            WHERE CAST(t.fld_store_document_title_date AS date) >= CAST(? AS date)
+              AND CAST(t.fld_store_document_title_date AS date) <= CAST(? AS date)
+              AND ISNULL(t.fld_is_cancelled, 0) = 0
+              AND ISNULL(d.fld_is_cancelled, 0) = 0
+              {$postedSalesScopeSql}
+              {$citySql}
+              {$searchSql}
+              {$excludeSql}
+        ";
+
+        $sql = "
+            SELECT
+                COALESCE(SUM({$lineQtyExpr}), 0) AS units_sold,
+                COALESCE(SUM({$lineAmountExpr}), 0) AS amount,
+                COALESCE(SUM({$lineWeightExpr}), 0) AS weight_total
+            {$baseFrom}
+        ";
+
+        $row = DB::selectOne($sql, $bindings);
+
+        return $row ?? (object) [
+            'units_sold' => 0,
+            'amount' => 0,
+            'weight_total' => 0,
+        ];
+    }
+
+    /**
      * @return list<stdClass>
      */
     public function getCategoryItems(
@@ -236,6 +314,8 @@ class SalesByItemAverageReportRepository
             throw new RuntimeException('Sales by item average report requires SQL Server (sqlsrv).');
         }
 
+        extract($this->postedSalesQueryContext('w'));
+
         $itemsTable = (string) config('reporting.store_items_table', 'dbo.tbl_store_items');
         $pkCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_pk_column', 'fld_item_id'));
         $descCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_description_column', 'fld_description'));
@@ -243,11 +323,6 @@ class SalesByItemAverageReportRepository
         $categoryExpr = 'COALESCE(NULLIF(LTRIM(RTRIM(CAST(i.'.$descCol.' AS NVARCHAR(500)))), N\'\'), N\'(uncategorized)\')';
         $itemExpr = 'COALESCE(NULLIF(LTRIM(RTRIM(CAST(i.'.$nameCol.' AS NVARCHAR(500)))), N\'\'), N\'(unnamed item)\')';
 
-        $weightSub = '
-            SELECT fld_item_id_ref, MAX(CAST(fld_weight AS float)) AS fld_weight
-            FROM dbo.tbl_store_item_setting
-            GROUP BY fld_item_id_ref
-        ';
         $balanceSub = '
             SELECT fld_item_id_ref, SUM(CAST(fld_item_balance AS float)) AS fld_item_balance
             FROM dbo.tbl_store_item_informations
@@ -267,19 +342,14 @@ class SalesByItemAverageReportRepository
         $sql = "
             SELECT
                 {$itemExpr} AS item_name,
-                SUM(CAST(d.fld_store_document_quantity AS decimal(24, 6))) AS units_sold,
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(d.fld_store_document_unit_price AS decimal(24, 6))
-                ) AS amount,
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(COALESCE(w.fld_weight, 0) AS float)
-                ) AS weight_total,
+                SUM({$lineQtyExpr}) AS units_sold,
+                SUM({$lineAmountExpr}) AS amount,
+                SUM({$lineWeightExpr}) AS weight_total,
                 MAX(CAST(COALESCE(s.fld_item_balance, 0) AS float)) AS storage_balance
             FROM dbo.tbl_store_document_detail AS d
             INNER JOIN dbo.tbl_store_document_titles AS t
                 ON t.fld_store_document_title_id = d.fld_store_document_title_id_ref
+            {$invoiceJoin}
             LEFT JOIN dbo.tbl_accounting_accounts AS a
                 ON a.fld_account_id = t.fld_account_id_ref
             LEFT JOIN {$itemsTable} AS i
@@ -292,6 +362,7 @@ class SalesByItemAverageReportRepository
               AND CAST(t.fld_store_document_title_date AS date) <= CAST(? AS date)
               AND ISNULL(t.fld_is_cancelled, 0) = 0
               AND ISNULL(d.fld_is_cancelled, 0) = 0
+              {$postedSalesScopeSql}
               {$citySql}
               AND {$categoryExpr} = ?
               {$excludeSql}
@@ -319,16 +390,13 @@ class SalesByItemAverageReportRepository
             throw new RuntimeException('Sales by item average report requires SQL Server (sqlsrv).');
         }
 
+        extract($this->postedSalesQueryContext('w'));
+
         $itemsTable = (string) config('reporting.store_items_table', 'dbo.tbl_store_items');
         $pkCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_pk_column', 'fld_item_id'));
         $descCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_description_column', 'fld_description'));
         $nameCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_name_column', 'fld_item_name'));
 
-        $weightSub = '
-            SELECT fld_item_id_ref, MAX(CAST(fld_weight AS float)) AS fld_weight
-            FROM dbo.tbl_store_item_setting
-            GROUP BY fld_item_id_ref
-        ';
         $balanceSub = '
             SELECT fld_item_id_ref, SUM(CAST(fld_item_balance AS float)) AS fld_item_balance
             FROM dbo.tbl_store_item_informations
@@ -366,19 +434,14 @@ class SalesByItemAverageReportRepository
             SELECT
                 {$categoryExpr} AS category_name,
                 {$itemExpr} AS item_name,
-                SUM(CAST(d.fld_store_document_quantity AS decimal(24, 6))) AS units_sold,
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(d.fld_store_document_unit_price AS decimal(24, 6))
-                ) AS amount,
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(COALESCE(w.fld_weight, 0) AS float)
-                ) AS weight_total,
+                SUM({$lineQtyExpr}) AS units_sold,
+                SUM({$lineAmountExpr}) AS amount,
+                SUM({$lineWeightExpr}) AS weight_total,
                 MAX(CAST(COALESCE(s.fld_item_balance, 0) AS float)) AS storage_balance
             FROM dbo.tbl_store_document_detail AS d
             INNER JOIN dbo.tbl_store_document_titles AS t
                 ON t.fld_store_document_title_id = d.fld_store_document_title_id_ref
+            {$invoiceJoin}
             LEFT JOIN dbo.tbl_accounting_accounts AS a
                 ON a.fld_account_id = t.fld_account_id_ref
             LEFT JOIN {$itemsTable} AS i
@@ -391,6 +454,7 @@ class SalesByItemAverageReportRepository
               AND CAST(t.fld_store_document_title_date AS date) <= CAST(? AS date)
               AND ISNULL(t.fld_is_cancelled, 0) = 0
               AND ISNULL(d.fld_is_cancelled, 0) = 0
+              {$postedSalesScopeSql}
               {$citySql}
               {$searchSql}
               {$categorySql}

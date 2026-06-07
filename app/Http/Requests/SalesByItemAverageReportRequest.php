@@ -25,13 +25,10 @@ class SalesByItemAverageReportRequest extends FormRequest
             $this->merge(['date_to' => $today]);
         }
         if (! $this->filled('per_page')) {
-            $this->merge(['per_page' => 25]);
+            $this->merge(['per_page' => 250]);
         }
         if (! $this->filled('page')) {
             $this->merge(['page' => 1]);
-        }
-        if (! $this->filled('working_days')) {
-            $this->merge(['working_days' => 0]);
         }
         if ($this->has('cities')) {
             $raw = $this->input('cities');
@@ -57,14 +54,13 @@ class SalesByItemAverageReportRequest extends FormRequest
         return [
             'date_from' => ['required', 'date'],
             'date_to' => ['required', 'date', 'after_or_equal:date_from'],
-            'per_page' => ['sometimes', 'integer', 'in:10,25,50,100'],
+            'per_page' => ['sometimes', 'integer', 'in:10,25,50,100,250'],
             'page' => ['sometimes', 'integer', 'min:1'],
             'q' => ['nullable', 'string', 'max:200'],
             'category' => ['nullable', 'string', 'max:500'],
             'exclude_category' => ['nullable', 'string', 'max:500'],
             'cities' => ['sometimes', 'array', 'max:500'],
             'cities.*' => ['string', 'max:200'],
-            'working_days' => ['nullable', 'integer', 'min:0', 'max:400'],
         ];
     }
 

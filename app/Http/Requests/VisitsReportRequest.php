@@ -25,7 +25,19 @@ class VisitsReportRequest extends FormRequest
             $this->merge(['date_to' => $today]);
         }
         if (! $this->filled('per_page')) {
-            $this->merge(['per_page' => 25]);
+            $this->merge(['per_page' => 250]);
+        }
+
+        if ($this->has('sort_by_city')) {
+            $this->merge([
+                'sort_by_city' => filter_var($this->input('sort_by_city'), FILTER_VALIDATE_BOOLEAN),
+            ]);
+        }
+
+        if ($this->has('show_month_sales')) {
+            $this->merge([
+                'show_month_sales' => filter_var($this->input('show_month_sales'), FILTER_VALIDATE_BOOLEAN),
+            ]);
         }
     }
 
@@ -40,8 +52,10 @@ class VisitsReportRequest extends FormRequest
             'cities' => ['sometimes', 'array'],
             'cities.*' => ['string', 'max:500'],
             'salesman_id' => ['nullable', 'string', 'max:64'],
-            'per_page' => ['sometimes', 'integer', 'in:10,25,50,100'],
+            'per_page' => ['sometimes', 'integer', 'in:10,25,50,100,250'],
             'page' => ['sometimes', 'integer', 'min:1'],
+            'sort_by_city' => ['sometimes', 'boolean'],
+            'show_month_sales' => ['sometimes', 'boolean'],
         ];
     }
 

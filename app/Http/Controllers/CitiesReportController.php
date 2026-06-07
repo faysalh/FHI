@@ -9,11 +9,11 @@ use App\Http\Requests\CitiesReportRequest;
 use App\Repositories\CitiesReportRepository;
 use App\Repositories\VisitsReportRepository;
 use App\Services\CitiesGovernorateSqliteService;
+use App\Services\ReportAssemblyPriorityService;
 use App\Support\SvgSalesTimeSeriesChart;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
-use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Response;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -28,11 +28,11 @@ class CitiesReportController extends Controller
 
     public function __construct(
         private readonly CitiesReportRepository $repository,
-        private readonly VisitsReportRepository $visitsRepository
-    ) {
-    }
+        private readonly VisitsReportRepository $visitsRepository,
+        private readonly ReportAssemblyPriorityService $assemblyPriority
+    ) {}
 
-    public function index(CitiesReportRequest $request): View
+    public function index(CitiesReportRequest $request): View|RedirectResponse
     {
         $govService = app(CitiesGovernorateSqliteService::class);
         $today = Carbon::now()->toDateString();
@@ -40,11 +40,12 @@ class CitiesReportController extends Controller
             'date_from' => $today,
             'date_to' => $today,
             'group_by_client' => true,
-            'per_page' => 25,
+            'per_page' => 250,
             'breakdown' => false,
             'breakdown_by_client' => false,
             'q' => '',
             'cities' => [],
+            'salesman_ids' => [],
             'panel' => 'table',
             'city_page' => 'overview',
             'governorate_city' => '',
@@ -59,7 +60,7 @@ class CitiesReportController extends Controller
         $dateFrom = (string) $input['date_from'];
         $dateTo = (string) $input['date_to'];
         $groupByClient = (bool) ($input['group_by_client'] ?? false);
-        $perPage = (int) ($input['per_page'] ?? 25);
+        $perPage = (int) ($input['per_page'] ?? 250);
         $page = (int) ($input['page'] ?? 1);
         $breakdown = (bool) ($input['breakdown'] ?? false);
         $breakdownByClient = (bool) ($input['breakdown_by_client'] ?? false);
@@ -74,22 +75,26 @@ class CitiesReportController extends Controller
         $excludeCategory = trim((string) ($input['exclude_category'] ?? ''));
         $savedGovernorateId = (int) ($input['saved_governorate_id'] ?? 0);
         $editGovernorateId = (int) ($input['edit_governorate_id'] ?? 0);
+        if ($editGovernorateId > 0) {
+            return redirect()->route('reports.governorates.index', ['edit' => $editGovernorateId]);
+        }
         $cities = $this->repository->normalizeCities(
             is_array($input['cities'] ?? null) ? $input['cities'] : []
         );
+        $salesmanIds = $this->repository->normalizeSalesmanIds(
+            is_array($input['salesman_ids'] ?? null) ? $input['salesman_ids'] : []
+        );
 
         $savedGovernorates = [];
-        $editingGovernorate = null;
         $governorateStorageError = null;
         try {
             $savedGovernorates = $govService->listGovernorates();
-            $editingGovernorate = $editGovernorateId > 0 ? $govService->getGovernorateById($editGovernorateId) : null;
             if ($savedGovernorateId > 0) {
                 $selectedGovernorate = $govService->getGovernorateById($savedGovernorateId);
                 if ($selectedGovernorate !== null) {
                     $governorateCity = $selectedGovernorate['governorate_city'];
                     $governorateMembers = $this->repository->normalizeCities($selectedGovernorate['members']);
-                    if ($cityPage === 'pie-charts') {
+                    if (in_array($cityPage, ['pie-charts', 'salesman-pie'], true)) {
                         $cities = $this->repository->normalizeCities($selectedGovernorate['members']);
                     }
                 }
@@ -97,7 +102,6 @@ class CitiesReportController extends Controller
         } catch (Throwable $e) {
             Log::warning('cities.governorate_storage_unavailable', ['message' => $e->getMessage()]);
             $savedGovernorates = [];
-            $editingGovernorate = null;
             $governorateStorageError = 'Saved governorates could not be loaded ('.$e->getMessage().'). Check the deliveries SQLite path (DELIVERIES_SQLITE_DATABASE).';
         }
 
@@ -110,6 +114,7 @@ class CitiesReportController extends Controller
             'breakdown_by_client' => $breakdownByClient,
             'q' => $q,
             'cities' => $cities,
+            'salesman_ids' => $salesmanIds,
             'panel' => $panel,
             'city_page' => $cityPage,
             'governorate_city' => $governorateCity,
@@ -117,10 +122,10 @@ class CitiesReportController extends Controller
             'pie_category' => $pieCategory,
             'exclude_category' => $excludeCategory,
             'saved_governorate_id' => $savedGovernorateId > 0 ? $savedGovernorateId : '',
-            'edit_governorate_id' => $editGovernorateId > 0 ? $editGovernorateId : '',
         ];
 
         $cityOptions = $this->cityOptionsForPicker();
+        $salesmanOptions = $this->visitsRepository->getSalesmanOptions();
         $cityNames = array_values(array_map(
             static fn (array $c): string => (string) ($c['id'] ?? ''),
             $cityOptions
@@ -130,7 +135,7 @@ class CitiesReportController extends Controller
         $chartTimeSeries = [];
         if ($panel === 'charts' && $cityPage === 'overview') {
             try {
-                $chartTimeSeries = $this->repository->getSalesOverTimeChartSeries($dateFrom, $dateTo, $cities);
+                $chartTimeSeries = $this->repository->getSalesOverTimeChartSeries($dateFrom, $dateTo, $cities, $salesmanIds);
             } catch (Throwable $e) {
                 Log::warning('cities.chart_time_series_failed', ['message' => $e->getMessage()]);
                 $chartTimeSeries = [];
@@ -141,13 +146,30 @@ class CitiesReportController extends Controller
         $pieSeriesByCity = [];
         $pieSeriesByCategory = [];
         $pieSeriesByItem = [];
+        $pieSeriesBySalesman = [];
         $pieCategoryOptions = [];
-        if ($cityPage === 'governorate-breakdown' || $cityPage === 'pie-charts') {
+        if ($cityPage === 'governorate-breakdown' || $cityPage === 'pie-charts' || $cityPage === 'salesman-pie') {
             try {
-                $pieCategoryOptions = $this->repository->getItemCategoryOptions($dateFrom, $dateTo, $cities);
+                $pieCategoryOptions = $this->repository->getItemCategoryOptions($dateFrom, $dateTo, $cities, $salesmanIds);
             } catch (Throwable $e) {
                 Log::warning('cities.category_options_failed', ['message' => $e->getMessage()]);
                 $pieCategoryOptions = [];
+            }
+        }
+
+        $grandTotals = null;
+        if ($panel === 'table' && $cityPage === 'overview') {
+            $categorySearch = ($breakdown || $breakdownByClient) && $q !== '' ? $q : null;
+            try {
+                $grandTotals = $this->repository->getMetricGrandTotals(
+                    $dateFrom,
+                    $dateTo,
+                    $cities,
+                    $salesmanIds,
+                    $categorySearch
+                );
+            } catch (Throwable $e) {
+                Log::warning('cities.grand_totals_unavailable', ['message' => $e->getMessage()]);
             }
         }
 
@@ -160,8 +182,12 @@ class CitiesReportController extends Controller
                     $governorateMembers,
                     $excludeCategory !== '' ? $excludeCategory : null,
                     $page,
-                    $perPage
+                    $perPage,
+                    $salesmanIds
                 );
+                $governorateRows->setCollection(collect(
+                    $this->assemblyPriority->sortRows($governorateRows->items(), 'item_category', 'item_category')
+                ));
 
                 return view('reports.cities.index', [
                     'mode' => 'governorate_breakdown',
@@ -169,16 +195,17 @@ class CitiesReportController extends Controller
                     'totals' => null,
                     'filters' => $filters,
                     'cityOptions' => $cityOptions,
+                    'salesmanOptions' => $salesmanOptions,
                     'cityNames' => $cityNames,
                     'chartTimeSeries' => [],
                     'governorateRows' => $governorateRows,
                     'pieSeriesByCity' => [],
                     'pieSeriesByCategory' => [],
                     'pieSeriesByItem' => [],
+                    'pieSeriesBySalesman' => [],
                     'pieCategoryOptions' => $pieCategoryOptions,
                     'savedGovernorates' => $savedGovernorates,
                     'governorateStorageError' => $governorateStorageError,
-                    'editingGovernorate' => $editingGovernorate,
                     'hasCityColumn' => $hasCityColumn,
                     'errorMessage' => null,
                 ]);
@@ -189,20 +216,23 @@ class CitiesReportController extends Controller
                     $dateFrom,
                     $dateTo,
                     $cities,
-                    $excludeCategory !== '' ? $excludeCategory : null
+                    $excludeCategory !== '' ? $excludeCategory : null,
+                    $salesmanIds
                 );
                 $pieSeriesByCategory = $this->repository->getPieByCategorySeries(
                     $dateFrom,
                     $dateTo,
                     $cities,
-                    $excludeCategory !== '' ? $excludeCategory : null
+                    $excludeCategory !== '' ? $excludeCategory : null,
+                    $salesmanIds
                 );
                 $pieSeriesByItem = $this->repository->getPieByItemSeries(
                     $dateFrom,
                     $dateTo,
                     $cities,
                     $pieCategory !== '' ? $pieCategory : null,
-                    $excludeCategory !== '' ? $excludeCategory : null
+                    $excludeCategory !== '' ? $excludeCategory : null,
+                    $salesmanIds
                 );
 
                 return view('reports.cities.index', [
@@ -211,16 +241,64 @@ class CitiesReportController extends Controller
                     'totals' => null,
                     'filters' => $filters,
                     'cityOptions' => $cityOptions,
+                    'salesmanOptions' => $salesmanOptions,
                     'cityNames' => $cityNames,
                     'chartTimeSeries' => [],
                     'governorateRows' => null,
                     'pieSeriesByCity' => $pieSeriesByCity,
                     'pieSeriesByCategory' => $pieSeriesByCategory,
                     'pieSeriesByItem' => $pieSeriesByItem,
+                    'pieSeriesBySalesman' => [],
                     'pieCategoryOptions' => $pieCategoryOptions,
                     'savedGovernorates' => $savedGovernorates,
                     'governorateStorageError' => $governorateStorageError,
-                    'editingGovernorate' => $editingGovernorate,
+                    'hasCityColumn' => $hasCityColumn,
+                    'errorMessage' => null,
+                ]);
+            }
+
+            if ($cityPage === 'salesman-pie') {
+                $salesmanRows = $this->repository->getPieBySalesmanSeries(
+                    $dateFrom,
+                    $dateTo,
+                    $cities,
+                    $excludeCategory !== '' ? $excludeCategory : null,
+                    $salesmanIds
+                );
+                $salesmenById = collect($salesmanOptions)->keyBy('id');
+                $pieSeriesBySalesman = array_values(array_map(
+                    static function (object $row) use ($salesmenById): object {
+                        $salesmanId = trim((string) ($row->salesman_id ?? ''));
+                        $salesmanRow = $salesmanId !== '' ? $salesmenById->get($salesmanId) : null;
+                        $label = $salesmanId !== ''
+                            ? (string) ((is_array($salesmanRow) ? ($salesmanRow['name'] ?? $salesmanId) : $salesmanId))
+                            : '(unassigned)';
+
+                        return (object) [
+                            'salesman_name' => $label,
+                            'amount' => $row->amount ?? 0,
+                        ];
+                    },
+                    $salesmanRows
+                ));
+
+                return view('reports.cities.index', [
+                    'mode' => 'salesman_pie',
+                    'rows' => null,
+                    'totals' => null,
+                    'filters' => $filters,
+                    'cityOptions' => $cityOptions,
+                    'salesmanOptions' => $salesmanOptions,
+                    'cityNames' => $cityNames,
+                    'chartTimeSeries' => [],
+                    'governorateRows' => null,
+                    'pieSeriesByCity' => [],
+                    'pieSeriesByCategory' => [],
+                    'pieSeriesByItem' => [],
+                    'pieSeriesBySalesman' => $pieSeriesBySalesman,
+                    'pieCategoryOptions' => $pieCategoryOptions,
+                    'savedGovernorates' => $savedGovernorates,
+                    'governorateStorageError' => $governorateStorageError,
                     'hasCityColumn' => $hasCityColumn,
                     'errorMessage' => null,
                 ]);
@@ -233,6 +311,7 @@ class CitiesReportController extends Controller
                     'totals' => null,
                     'filters' => $filters,
                     'cityOptions' => $cityOptions,
+                    'salesmanOptions' => $salesmanOptions,
                     'cityNames' => $cityNames,
                     'chartTimeSeries' => $chartTimeSeries,
                     'governorateRows' => null,
@@ -242,7 +321,6 @@ class CitiesReportController extends Controller
                     'pieCategoryOptions' => [],
                     'savedGovernorates' => $savedGovernorates,
                     'governorateStorageError' => $governorateStorageError,
-                    'editingGovernorate' => $editingGovernorate,
                     'hasCityColumn' => $hasCityColumn,
                     'errorMessage' => null,
                 ]);
@@ -255,15 +333,21 @@ class CitiesReportController extends Controller
                     $q !== '' ? $q : null,
                     $page,
                     $perPage,
-                    $cities
+                    $cities,
+                    $salesmanIds
                 );
+                $result->setCollection(collect(
+                    $this->assemblyPriority->sortRows($result->items(), 'chicken_category', 'chicken_category')
+                ));
 
                 return view('reports.cities.index', [
                     'mode' => 'by_category_by_client',
                     'rows' => $result,
                     'totals' => null,
+                    'grandTotals' => $grandTotals,
                     'filters' => $filters,
                     'cityOptions' => $cityOptions,
+                    'salesmanOptions' => $salesmanOptions,
                     'cityNames' => $cityNames,
                     'chartTimeSeries' => [],
                     'governorateRows' => null,
@@ -273,7 +357,6 @@ class CitiesReportController extends Controller
                     'pieCategoryOptions' => [],
                     'savedGovernorates' => $savedGovernorates,
                     'governorateStorageError' => $governorateStorageError,
-                    'editingGovernorate' => $editingGovernorate,
                     'hasCityColumn' => $hasCityColumn,
                     'errorMessage' => null,
                 ]);
@@ -286,15 +369,21 @@ class CitiesReportController extends Controller
                     $q !== '' ? $q : null,
                     $page,
                     $perPage,
-                    $cities
+                    $cities,
+                    $salesmanIds
                 );
+                $result->setCollection(collect(
+                    $this->assemblyPriority->sortRows($result->items(), 'chicken_category', 'chicken_category')
+                ));
 
                 return view('reports.cities.index', [
                     'mode' => 'by_category',
                     'rows' => $result,
                     'totals' => null,
+                    'grandTotals' => $grandTotals,
                     'filters' => $filters,
                     'cityOptions' => $cityOptions,
+                    'salesmanOptions' => $salesmanOptions,
                     'cityNames' => $cityNames,
                     'chartTimeSeries' => [],
                     'governorateRows' => null,
@@ -304,7 +393,6 @@ class CitiesReportController extends Controller
                     'pieCategoryOptions' => [],
                     'savedGovernorates' => $savedGovernorates,
                     'governorateStorageError' => $governorateStorageError,
-                    'editingGovernorate' => $editingGovernorate,
                     'hasCityColumn' => $hasCityColumn,
                     'errorMessage' => null,
                 ]);
@@ -316,7 +404,8 @@ class CitiesReportController extends Controller
                 $groupByClient,
                 $page,
                 $perPage,
-                $cities
+                $cities,
+                $salesmanIds
             );
 
             if ($groupByClient && $result instanceof LengthAwarePaginator) {
@@ -324,8 +413,10 @@ class CitiesReportController extends Controller
                     'mode' => 'by_client',
                     'rows' => $result,
                     'totals' => null,
+                    'grandTotals' => $grandTotals,
                     'filters' => $filters,
                     'cityOptions' => $cityOptions,
+                    'salesmanOptions' => $salesmanOptions,
                     'cityNames' => $cityNames,
                     'chartTimeSeries' => [],
                     'governorateRows' => null,
@@ -335,7 +426,6 @@ class CitiesReportController extends Controller
                     'pieCategoryOptions' => [],
                     'savedGovernorates' => $savedGovernorates,
                     'governorateStorageError' => $governorateStorageError,
-                    'editingGovernorate' => $editingGovernorate,
                     'hasCityColumn' => $hasCityColumn,
                     'errorMessage' => null,
                 ]);
@@ -347,8 +437,10 @@ class CitiesReportController extends Controller
                 'mode' => 'totals',
                 'rows' => null,
                 'totals' => $totals,
+                'grandTotals' => $grandTotals ?? $totals,
                 'filters' => $filters,
                 'cityOptions' => $cityOptions,
+                'salesmanOptions' => $salesmanOptions,
                 'cityNames' => $cityNames,
                 'chartTimeSeries' => [],
                 'governorateRows' => null,
@@ -358,7 +450,6 @@ class CitiesReportController extends Controller
                 'pieCategoryOptions' => [],
                 'savedGovernorates' => $savedGovernorates,
                 'governorateStorageError' => $governorateStorageError,
-                'editingGovernorate' => $editingGovernorate,
                 'hasCityColumn' => $hasCityColumn,
                 'errorMessage' => null,
             ]);
@@ -378,50 +469,21 @@ class CitiesReportController extends Controller
                 'totals' => null,
                 'filters' => $filters,
                 'cityOptions' => $cityOptions,
+                'salesmanOptions' => $salesmanOptions,
                 'cityNames' => $cityNames,
                 'chartTimeSeries' => [],
                 'governorateRows' => $governorateRows,
                 'pieSeriesByCity' => $pieSeriesByCity,
                 'pieSeriesByCategory' => $pieSeriesByCategory,
                 'pieSeriesByItem' => $pieSeriesByItem,
+                'pieSeriesBySalesman' => $pieSeriesBySalesman,
                 'pieCategoryOptions' => $pieCategoryOptions,
                 'savedGovernorates' => $savedGovernorates,
                 'governorateStorageError' => $governorateStorageError,
-                'editingGovernorate' => $editingGovernorate,
                 'hasCityColumn' => $hasCityColumn,
                 'errorMessage' => 'Unable to load cities report. Check logs and try again.',
             ]);
         }
-    }
-
-    public function saveGovernorate(Request $request): RedirectResponse
-    {
-        $validated = $request->validate([
-            'governorate_id' => ['nullable', 'integer', 'min:1'],
-            'governorate_name' => ['required', 'string', 'max:200'],
-            'governorate_city' => ['required', 'string', 'max:200'],
-            'governorate_members' => ['sometimes', 'array', 'max:500'],
-            'governorate_members.*' => ['string', 'max:200'],
-        ]);
-
-        try {
-            $govId = app(CitiesGovernorateSqliteService::class)->saveGovernorate(
-                isset($validated['governorate_id']) ? (int) $validated['governorate_id'] : null,
-                trim((string) $validated['governorate_name']),
-                trim((string) $validated['governorate_city']),
-                is_array($validated['governorate_members'] ?? null) ? $validated['governorate_members'] : []
-            );
-        } catch (Throwable $e) {
-            return redirect()->route('reports.cities.index', array_merge($request->query(), [
-                'city_page' => 'governorate-breakdown',
-            ]))->with('error', 'Could not save governorate: '.$e->getMessage());
-        }
-
-        return redirect()->route('reports.cities.index', array_merge($request->query(), [
-            'city_page' => 'governorate-breakdown',
-            'saved_governorate_id' => $govId,
-            'edit_governorate_id' => $govId,
-        ]))->with('status', 'Governorate saved.');
     }
 
     public function exportPdf(CitiesReportRequest $request): Response|RedirectResponse
@@ -432,6 +494,7 @@ class CitiesReportController extends Controller
             'breakdown_by_client' => false,
             'q' => '',
             'cities' => [],
+            'salesman_ids' => [],
         ], $request->validated());
 
         $dateFrom = (string) $input['date_from'];
@@ -440,11 +503,14 @@ class CitiesReportController extends Controller
         $cities = $this->repository->normalizeCities(
             is_array($input['cities'] ?? null) ? $input['cities'] : []
         );
+        $salesmanIds = $this->repository->normalizeSalesmanIds(
+            is_array($input['salesman_ids'] ?? null) ? $input['salesman_ids'] : []
+        );
 
         $exportMode = $this->resolveExportMode($input);
 
         try {
-            $rows = $this->fetchExportRows($exportMode, $dateFrom, $dateTo, $q, $cities);
+            $rows = $this->fetchExportRows($exportMode, $dateFrom, $dateTo, $q, $cities, $salesmanIds);
         } catch (Throwable $e) {
             Log::error('Cities PDF export failed.', ['message' => $e->getMessage()]);
 
@@ -461,7 +527,9 @@ class CitiesReportController extends Controller
             'q' => $q,
             'modeLabel' => $this->exportModeLabel($exportMode),
             'citiesLabel' => $this->cityFilterLabel($cities),
+            'salesmenLabel' => $this->salesmanFilterLabel($salesmanIds),
             'exportCap' => self::EXPORT_ROW_CAP,
+            ...\App\Support\ReportPdfBranding::viewData(),
         ])->setPaper('a4', $exportMode === 'by_category_by_client' ? 'landscape' : 'portrait');
 
         $filename = 'cities-sales-'.$dateFrom.'-'.$dateTo.'.pdf';
@@ -477,6 +545,7 @@ class CitiesReportController extends Controller
             'breakdown_by_client' => false,
             'q' => '',
             'cities' => [],
+            'salesman_ids' => [],
         ], $request->validated());
 
         $dateFrom = (string) $input['date_from'];
@@ -484,9 +553,12 @@ class CitiesReportController extends Controller
         $cities = $this->repository->normalizeCities(
             is_array($input['cities'] ?? null) ? $input['cities'] : []
         );
+        $salesmanIds = $this->repository->normalizeSalesmanIds(
+            is_array($input['salesman_ids'] ?? null) ? $input['salesman_ids'] : []
+        );
 
         try {
-            $rows = $this->repository->getSalesOverTimeChartSeries($dateFrom, $dateTo, $cities);
+            $rows = $this->repository->getSalesOverTimeChartSeries($dateFrom, $dateTo, $cities, $salesmanIds);
         } catch (Throwable $e) {
             Log::error('Cities chart PDF export failed.', ['message' => $e->getMessage()]);
 
@@ -510,7 +582,9 @@ class CitiesReportController extends Controller
             'dateFrom' => $dateFrom,
             'dateTo' => $dateTo,
             'citiesLabel' => $this->cityFilterLabel($cities),
+            'salesmenLabel' => $this->salesmanFilterLabel($salesmanIds),
             'chartShow' => $chartShow,
+            ...\App\Support\ReportPdfBranding::viewData(),
         ])->setPaper('a4', 'landscape');
 
         $filename = 'cities-sales-chart-'.$dateFrom.'-'.$dateTo.'.pdf';
@@ -526,6 +600,7 @@ class CitiesReportController extends Controller
             'breakdown_by_client' => false,
             'q' => '',
             'cities' => [],
+            'salesman_ids' => [],
         ], $request->validated());
 
         $dateFrom = (string) $input['date_from'];
@@ -534,11 +609,14 @@ class CitiesReportController extends Controller
         $cities = $this->repository->normalizeCities(
             is_array($input['cities'] ?? null) ? $input['cities'] : []
         );
+        $salesmanIds = $this->repository->normalizeSalesmanIds(
+            is_array($input['salesman_ids'] ?? null) ? $input['salesman_ids'] : []
+        );
 
         $exportMode = $this->resolveExportMode($input);
 
         try {
-            $rows = $this->fetchExportRows($exportMode, $dateFrom, $dateTo, $q, $cities);
+            $rows = $this->fetchExportRows($exportMode, $dateFrom, $dateTo, $q, $cities, $salesmanIds);
         } catch (Throwable $e) {
             Log::error('Cities CSV export failed.', ['message' => $e->getMessage()]);
 
@@ -599,7 +677,8 @@ class CitiesReportController extends Controller
         string $dateFrom,
         string $dateTo,
         string $q,
-        array $cities
+        array $cities,
+        array $salesmanIds
     ): array {
         $qOrNull = $q !== '' ? $q : null;
 
@@ -608,25 +687,29 @@ class CitiesReportController extends Controller
                 $dateFrom,
                 $dateTo,
                 $qOrNull,
-                $cities
+                $cities,
+                $salesmanIds
             ),
             'by_category' => $this->repository->exportChickenCategoryRows(
                 $dateFrom,
                 $dateTo,
                 $qOrNull,
-                $cities
+                $cities,
+                $salesmanIds
             ),
             'by_client' => $this->repository->exportReportRows(
                 $dateFrom,
                 $dateTo,
                 true,
-                $cities
+                $cities,
+                $salesmanIds
             ),
             default => $this->repository->exportReportRows(
                 $dateFrom,
                 $dateTo,
                 false,
-                $cities
+                $cities,
+                $salesmanIds
             ),
         };
     }
@@ -637,6 +720,25 @@ class CitiesReportController extends Controller
     private function cityFilterLabel(array $cities): string
     {
         return $cities === [] ? '' : implode('; ', $cities);
+    }
+
+    /**
+     * @param  list<string>  $salesmanIds
+     */
+    private function salesmanFilterLabel(array $salesmanIds): string
+    {
+        if ($salesmanIds === []) {
+            return '';
+        }
+
+        $all = collect($this->visitsRepository->getSalesmanOptions())->keyBy('id');
+        $labels = [];
+        foreach ($salesmanIds as $salesmanId) {
+            $row = $all->get($salesmanId);
+            $labels[] = is_array($row) ? (string) ($row['name'] ?? $salesmanId) : $salesmanId;
+        }
+
+        return implode('; ', $labels);
     }
 
     private function exportModeLabel(string $mode): string
