@@ -149,7 +149,7 @@
                 <div class="filters" style="margin-bottom: 0;">
                     <div>
                         <label for="occurred_date">Damage date</label>
-                        <input type="date" id="occurred_date" name="occurred_date" value="{{ old('occurred_date', $filters['date_to']) }}" required>
+                        <input type="date" id="occurred_date" name="occurred_date" value="{{ old('occurred_date', now()->toDateString()) }}" required>
                     </div>
                     <div style="grid-column: span 2;">
                         <label>Item (search main DB)</label>

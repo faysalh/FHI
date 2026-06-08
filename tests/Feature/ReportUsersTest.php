@@ -48,6 +48,20 @@ class ReportUsersTest extends TestCase
         $this->assertNotContains('users', $keys);
     }
 
+    public function test_cities_permission_does_not_include_governorates_in_navigation(): void
+    {
+        $sections = ReportNavigation::sectionsForUser(['cities'], false);
+        $keys = [];
+        foreach ($sections as $section) {
+            foreach ($section['items'] as $item) {
+                $keys[] = $item['key'];
+            }
+        }
+
+        $this->assertContains('cities', $keys);
+        $this->assertNotContains('governorates', $keys);
+    }
+
     public function test_login_redirects_to_no_access_when_user_has_no_report_permissions(): void
     {
         $response = $this->withSession([

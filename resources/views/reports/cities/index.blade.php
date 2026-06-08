@@ -540,7 +540,7 @@
         <p class="hint">
             Select one city as the governorate and other cities that belong to it. The report shows sales by item category,
             with city-by-category breakdown for the selected governorate mapping.
-            Save or edit presets under <a href="{{ route('reports.governorates.index') }}">Settings → Governorates</a>.
+            Save or edit presets under @if (\App\Support\ReportAuthSession::canAccessReport('governorates'))<a href="{{ route('reports.governorates.index') }}">Settings → Governorates</a>@else Settings → Governorates (ask an administrator for access) @endif.
         </p>
         @if (!empty($governorateStorageError))
             <div class="alert alert--error">{{ $governorateStorageError }}</div>

@@ -37,10 +37,6 @@ class EnsureReportPermission
             return $next($request);
         }
 
-        if ($reportKey === 'governorates' && ReportAuthSession::canAccessReport('cities')) {
-            return $next($request);
-        }
-
         if ($reportKey === 'guide') {
             return $next($request);
         }

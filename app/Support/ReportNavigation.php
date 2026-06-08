@@ -106,9 +106,8 @@ final class ReportNavigation
                 }
                 if (! $isSuperAdmin) {
                     $key = $item['key'];
-                    $allowedViaCities = $key === 'governorates' && isset($allowed['cities']);
                     $isGuide = $key === 'guide';
-                    if (! $isGuide && ! isset($allowed[$key]) && ! $allowedViaCities) {
+                    if (! $isGuide && ! isset($allowed[$key])) {
                         continue;
                     }
                 }

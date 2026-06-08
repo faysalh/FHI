@@ -34,6 +34,24 @@ class DamagesReportTest extends TestCase
         $response->assertSee('Packaging', false);
     }
 
+    public function test_add_damage_form_defaults_occurred_date_to_today_not_end_of_month(): void
+    {
+        \Carbon\Carbon::setTestNow('2026-06-07 12:00:00');
+
+        try {
+            $response = $this->get(route('reports.damages.index', ['tab' => 'damages']));
+        } finally {
+            \Carbon\Carbon::setTestNow();
+        }
+
+        $response->assertOk();
+        $response->assertSee('id="occurred_date"', false);
+        $this->assertMatchesRegularExpression(
+            '/id="occurred_date"[^>]*value="2026-06-07"/',
+            (string) $response->getContent()
+        );
+    }
+
     public function test_damage_entry_can_be_deleted(): void
     {
         $svc = app(DamagesSqliteService::class);

@@ -339,8 +339,7 @@ final class ReportGuide
                     continue;
                 }
                 if (! $isSuperAdmin) {
-                    $allowedViaCities = $key === 'governorates' && isset($allowed['cities']);
-                    if (! isset($allowed[$key]) && ! $allowedViaCities) {
+                    if (! isset($allowed[$key])) {
                         continue;
                     }
                 }
@@ -371,7 +370,7 @@ final class ReportGuide
 
         $allowed = array_flip($allowedKeys);
 
-        return isset($allowed[$key]) || ($key === 'governorates' && isset($allowed['cities']));
+        return isset($allowed[$key]);
     }
 
     public static function hasTopic(string $reportKey): bool
