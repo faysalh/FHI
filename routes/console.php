@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Services\SqliteAutoBackupService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -110,3 +111,32 @@ Artisan::command('reports:clear-invoice-last-print {invoiceId}', function (strin
     return self::SUCCESS;
 })->purpose('Clear fld_last_print_date on dbo.tbl_store_document_titles for one internal invoice id (retest first print)')
     ->addOption('force', null, InputOption::VALUE_NONE, 'Allow outside local/testing');
+
+Artisan::command('reports:sqlite-auto-backup', function (SqliteAutoBackupService $autoBackup): int {
+    try {
+        if ($this->option('force')) {
+            $result = $autoBackup->runNow();
+            $this->info('SQLite auto backup saved: '.$result['filename'].' ('.$result['label'].').');
+
+            return self::SUCCESS;
+        }
+
+        if (! $autoBackup->runIfDue()) {
+            return self::SUCCESS;
+        }
+
+        $settings = $autoBackup->settings();
+        $filename = (string) ($settings['last_run_filename'] ?? '');
+        $this->info($filename !== ''
+            ? 'SQLite auto backup saved: '.$filename
+            : 'SQLite auto backup completed.');
+
+        return self::SUCCESS;
+    } catch (Throwable $e) {
+        Log::error('sqlite_auto_backup.command_failed', ['message' => $e->getMessage()]);
+        $this->error('SQLite auto backup failed: '.$e->getMessage());
+
+        return self::FAILURE;
+    }
+})->purpose('Run scheduled SQLite backup when daily time is due')
+    ->addOption('force', null, InputOption::VALUE_NONE, 'Run immediately using the saved backup folder');

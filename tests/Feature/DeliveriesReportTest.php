@@ -129,7 +129,7 @@ class DeliveriesReportTest extends TestCase
             ]);
 
         $teams = Mockery::mock(DeliveriesTeamSqliteService::class);
-        $teams->shouldReceive('listAllAssignedInvoiceIds')->once()->andReturn([]);
+        $teams->shouldReceive('listAllAssignedInvoiceIds')->never();
         $teams->shouldReceive('assignmentsByInvoiceIds')
             ->once()
             ->with(['1001'])
@@ -139,7 +139,7 @@ class DeliveriesReportTest extends TestCase
             ->with('1001', '2026-01-15', 3);
 
         $extractor = Mockery::mock(\App\Services\DeliveryInvoicePdfExtractor::class);
-        $extractor->shouldReceive('extractInvoiceNumbers')->once()->andReturn(['INV-100']);
+        $extractor->shouldReceive('extractInvoiceNumbersFromUpload')->once()->andReturn(['INV-100']);
 
         $this->app->instance(DeliveriesReportRepository::class, $repo);
         $this->app->instance(DeliveriesTeamSqliteService::class, $teams);

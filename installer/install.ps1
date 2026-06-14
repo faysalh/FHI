@@ -636,7 +636,7 @@ if (-not $installInPlace) {
         Remove-Item $InstallPath -Recurse -Force
     }
     New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
-    robocopy $PackageRoot $InstallPath /MIR /XD node_modules .git dist /XF .env /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+    robocopy $PackageRoot $InstallPath /MIR /XD node_modules .git dist /XF .env reports-users.sqlite deliveries-local.sqlite damages-local.sqlite operations-tasks.sqlite /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
     if ($LASTEXITCODE -ge 8) { throw "File copy failed (robocopy exit $LASTEXITCODE)" }
 } else {
     Write-Step "Configuring application in place at $InstallPath"
@@ -654,18 +654,28 @@ if ([string]::IsNullOrWhiteSpace($SqlPassword)) { $SqlPassword = Read-Secret 'SQ
 if ([string]::IsNullOrWhiteSpace($AdminPassword)) { $AdminPassword = Read-Secret 'Bootstrap admin password' $AdminPassword }
 if ([string]::IsNullOrWhiteSpace($AppUrl)) { $AppUrl = "http://localhost:$SitePort" }
 
-Write-Step 'Writing .env'
 $envPath = Join-Path $InstallPath '.env'
-Write-EnvFile -Path $envPath -AppUrl $AppUrl -SqlHost $SqlHost `
-    -SqlDatabase $SqlDatabase -SqlUser $SqlUser -SqlPassword $SqlPassword `
-    -InstallPath $InstallPath -AdminUsername $AdminUsername -AdminPassword $AdminPassword
-if (-not (Test-Path $envPath)) {
-    throw ".env was not created at $envPath. Run installer\create-env.cmd to recover."
+$isUpdateInstall = Test-Path $envPath
+if ($isUpdateInstall) {
+    Write-Step 'Keeping existing .env (upgrade install)'
+} else {
+    Write-Step 'Writing .env'
+    Write-EnvFile -Path $envPath -AppUrl $AppUrl -SqlHost $SqlHost `
+        -SqlDatabase $SqlDatabase -SqlUser $SqlUser -SqlPassword $SqlPassword `
+        -InstallPath $InstallPath -AdminUsername $AdminUsername -AdminPassword $AdminPassword
+    if (-not (Test-Path $envPath)) {
+        throw ".env was not created at $envPath. Run installer\create-env.cmd to recover."
+    }
 }
 
 Write-Step 'Laravel setup'
 Push-Location $InstallPath
-& $phpExe artisan key:generate --force
+$envText = if (Test-Path $envPath) { Get-Content $envPath -Raw } else { '' }
+if ($envText -match 'APP_KEY=base64:[A-Za-z0-9+/=]{20,}') {
+    Write-Host '  APP_KEY already set - skipping key:generate'
+} else {
+    & $phpExe artisan key:generate --force
+}
 & $phpExe artisan storage:link --force
 & $phpExe artisan config:cache
 & $phpExe artisan route:cache

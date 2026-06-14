@@ -115,6 +115,24 @@ if ($BundleRuntime) {
     }
 }
 
+# Identifier glossary route (missing import caused HTTP 500 on /reports/identifier)
+@(
+    'app\Http\Controllers\IdentifierController.php',
+    'app\Repositories\IdentifierRepository.php',
+    'resources\views\reports\identifier\index.blade.php'
+) | ForEach-Object { [void](Require-File $_ 'Identifier report') }
+
+$webRoutes = Join-Path $ReleaseRoot 'routes\web.php'
+if (Test-Path $webRoutes) {
+    $webRoutesText = Get-Content $webRoutes -Raw
+    if ($webRoutesText -notmatch 'use App\\Http\\Controllers\\IdentifierController;') {
+        $errors += 'routes\web.php must import App\Http\Controllers\IdentifierController'
+    }
+    if ($webRoutesText -notmatch 'reports\.identifier\.index') {
+        $errors += 'routes\web.php must register reports.identifier.index'
+    }
+}
+
 # Fonts for PDF
 @(
     'public\fonts\NotoNaskhArabic-Regular.ttf',

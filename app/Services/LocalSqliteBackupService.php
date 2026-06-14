@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Support\SqliteAutoBackupSettings;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -45,26 +46,45 @@ class LocalSqliteBackupService
 
     public function backupDirectory(): string
     {
-        $configured = trim((string) config('reporting.sqlite_backup_directory', ''));
+        $autoDirectory = SqliteAutoBackupSettings::configuredDirectory();
+        if ($autoDirectory !== '') {
+            return $autoDirectory;
+        }
 
-        return $configured !== '' ? $configured : storage_path('app/sqlite-backups');
+        $configured = trim((string) config('reporting.sqlite_backup_directory', ''));
+        if ($configured !== '') {
+            return $this->resolveConfiguredPath($configured);
+        }
+
+        return storage_path('app/sqlite-backups');
+    }
+
+    public function defaultBackupDirectory(): string
+    {
+        $configured = trim((string) config('reporting.sqlite_backup_directory', ''));
+        if ($configured !== '') {
+            return $this->resolveConfiguredPath($configured);
+        }
+
+        return storage_path('app/sqlite-backups');
     }
 
     /**
      * @return array{filename: string, path: string, label: string}
      */
-    public function createBackup(?string $databaseKey = null): array
+    public function createBackup(?string $databaseKey = null, ?string $targetDirectory = null): array
     {
-        $this->ensureBackupDirectory();
+        $directory = $this->resolveBackupDirectory($targetDirectory);
+        $this->ensureBackupDirectoryAt($directory);
 
         if ($databaseKey === null || $databaseKey === '' || $databaseKey === 'all') {
-            return $this->createFullBackupArchive();
+            return $this->createFullBackupArchive($directory);
         }
 
         $database = $this->findDatabase($databaseKey);
         $timestamp = date('Ymd-His');
         $filename = $databaseKey.'-'.$timestamp.'.sqlite';
-        $destination = $this->backupDirectoryPath($filename);
+        $destination = $this->backupDirectoryPath($filename, $directory);
 
         if (! $database['exists']) {
             throw new RuntimeException('Database file does not exist yet: '.$database['label'].'.');
@@ -195,18 +215,19 @@ class LocalSqliteBackupService
     /**
      * @return array{filename: string, path: string, label: string}
      */
-    private function createFullBackupArchive(): array
+    private function createFullBackupArchive(string $directory): array
     {
         if (! class_exists(ZipArchive::class)) {
-            throw new RuntimeException('ZipArchive is not available in PHP.');
+            throw new RuntimeException('ZipArchive is not available in PHP. Enable the php_zip extension.');
         }
 
         $timestamp = date('Ymd-His');
         $filename = 'all-'.$timestamp.'.zip';
-        $destination = $this->backupDirectoryPath($filename);
+        $destination = $this->backupDirectoryPath($filename, $directory);
         $zip = new ZipArchive;
-        if ($zip->open($destination, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
-            throw new RuntimeException('Could not create backup archive.');
+        $opened = $zip->open($destination, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+        if ($opened !== true) {
+            throw new RuntimeException($this->zipOpenFailureMessage($destination, $zip, is_int($opened) ? $opened : null));
         }
 
         $manifest = [
@@ -215,17 +236,34 @@ class LocalSqliteBackupService
             'databases' => [],
         ];
 
-        foreach ($this->managedDatabases() as $database) {
-            if (! $database['exists']) {
-                continue;
-            }
-            $entryName = $database['key'].'.sqlite';
-            $zip->addFile($database['path'], $entryName);
-            $manifest['databases'][$database['key']] = $entryName;
-        }
+        $tempDir = storage_path('app/temp/sqlite-backup-'.uniqid('', true));
+        File::makeDirectory($tempDir, 0755, true);
 
-        $zip->addFromString('manifest.json', (string) json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-        $zip->close();
+        try {
+            foreach ($this->managedDatabases() as $database) {
+                if (! $database['exists']) {
+                    continue;
+                }
+
+                $entryName = $database['key'].'.sqlite';
+                $tempCopy = $tempDir.DIRECTORY_SEPARATOR.$entryName;
+                $this->copyDatabaseFile($database['path'], $tempCopy);
+
+                if (! $zip->addFile($tempCopy, $entryName)) {
+                    throw new RuntimeException('Could not add '.$database['label'].' to the backup archive.');
+                }
+
+                $manifest['databases'][$database['key']] = $entryName;
+            }
+
+            $zip->addFromString('manifest.json', (string) json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+
+            if (! $zip->close()) {
+                throw new RuntimeException('Could not finalize backup archive in '.$directory.'.');
+            }
+        } finally {
+            File::deleteDirectory($tempDir);
+        }
 
         if ($manifest['databases'] === []) {
             File::delete($destination);
@@ -339,17 +377,54 @@ class LocalSqliteBackupService
         return trim((string) config('database.connections.'.$connection.'.database', ''));
     }
 
-    private function ensureBackupDirectory(): void
+    private function resolveBackupDirectory(?string $targetDirectory): string
     {
-        $directory = $this->backupDirectory();
+        $targetDirectory = SqliteAutoBackupSettings::normalizeDirectory((string) $targetDirectory);
+
+        return $targetDirectory !== '' ? $targetDirectory : $this->backupDirectory();
+    }
+
+    private function resolveConfiguredPath(string $path): string
+    {
+        $path = SqliteAutoBackupSettings::normalizeDirectory($path);
+        if ($path === '') {
+            return storage_path('app/sqlite-backups');
+        }
+
+        if (preg_match('/^[a-zA-Z]:\\\\|^\\\\/u', $path) === 1) {
+            return $path;
+        }
+
+        return storage_path(str_replace('\\', '/', $path));
+    }
+
+    private function ensureBackupDirectoryAt(string $directory): void
+    {
         if (! File::isDirectory($directory)) {
             File::makeDirectory($directory, 0755, true);
         }
     }
 
-    private function backupDirectoryPath(string $filename): string
+    private function backupDirectoryPath(string $filename, ?string $directory = null): string
     {
-        return $this->backupDirectory().DIRECTORY_SEPARATOR.$this->sanitizeBackupFilename($filename);
+        $directory ??= $this->backupDirectory();
+
+        return $directory.DIRECTORY_SEPARATOR.$this->sanitizeBackupFilename($filename);
+    }
+
+    private function zipOpenFailureMessage(string $destination, ZipArchive $zip, ?int $statusCode): string
+    {
+        $directory = dirname($destination);
+        $statusText = trim($zip->getStatusString());
+        $message = 'Could not create backup archive at '.$destination.'.';
+
+        if ($statusText !== '') {
+            $message .= ' '.$statusText;
+        } elseif ($statusCode !== null) {
+            $message .= ' Zip error code: '.$statusCode;
+        }
+
+        return $message.' Check that '.$directory.' is writable by IIS AppPool\\ReportingApp.';
     }
 
     private function sanitizeBackupFilename(string $filename): string
@@ -397,7 +472,12 @@ class LocalSqliteBackupService
         }
 
         if (! @copy($source, $destination)) {
-            throw new RuntimeException('Could not copy database file.');
+            $lastError = error_get_last();
+            $details = is_array($lastError) ? (string) ($lastError['message'] ?? '') : '';
+
+            throw new RuntimeException(
+                'Could not copy database file'.($details !== '' ? ': '.$details : '.')
+            );
         }
     }
 

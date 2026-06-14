@@ -15,7 +15,6 @@ $files = [
     'cities/index.blade.php',
     'visits/index.blade.php',
     'damages/index.blade.php',
-    'customers/index.blade.php',
     'schema/index.blade.php',
     'identifier/index.blade.php',
     'invoice-branding/index.blade.php',

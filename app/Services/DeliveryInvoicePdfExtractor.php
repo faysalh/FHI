@@ -4,18 +4,77 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use Illuminate\Http\UploadedFile;
 use Smalot\PdfParser\Parser;
 
 class DeliveryInvoicePdfExtractor
 {
     /**
+     * Read invoice numbers from an uploaded PDF. Uses the temp upload path when
+     * available; falls back to in-memory parsing when getRealPath() fails (common on IIS).
+     *
+     * @return list<string>
+     */
+    public function extractInvoiceNumbersFromUpload(UploadedFile $file): array
+    {
+        if (! $file->isValid()) {
+            throw new \InvalidArgumentException('The uploaded PDF could not be read. Check PHP upload settings (upload_max_filesize, post_max_size, upload_tmp_dir).');
+        }
+
+        $path = $file->getRealPath();
+        if ($path === false || $path === '') {
+            $path = $file->getPathname();
+        }
+
+        if ($path !== '' && is_readable($path)) {
+            return $this->extractInvoiceNumbers($path);
+        }
+
+        $content = $file->get();
+        if ($content === false || $content === '') {
+            throw new \InvalidArgumentException('The uploaded PDF could not be read. Check PHP upload settings (upload_max_filesize, post_max_size, upload_tmp_dir).');
+        }
+
+        return $this->extractInvoiceNumbersFromContent($content);
+    }
+
+    /**
      * @return list<string>
      */
     public function extractInvoiceNumbers(string $filePath): array
     {
+        $filePath = trim($filePath);
+        if ($filePath === '') {
+            throw new \InvalidArgumentException('The uploaded PDF could not be read. Check PHP upload settings (upload_max_filesize, post_max_size, upload_tmp_dir).');
+        }
+
         $parser = new Parser();
         $pdf = $parser->parseFile($filePath);
-        $text = $this->normalizeDigits($pdf->getText());
+
+        return $this->extractFromPdfText($pdf->getText());
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function extractInvoiceNumbersFromContent(string $content): array
+    {
+        if ($content === '') {
+            throw new \InvalidArgumentException('The uploaded PDF is empty.');
+        }
+
+        $parser = new Parser();
+        $pdf = $parser->parseContent($content);
+
+        return $this->extractFromPdfText($pdf->getText());
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function extractFromPdfText(string $text): array
+    {
+        $text = $this->normalizeDigits($text);
 
         $fromDeliveryReport = $this->extractFromDeliveryReportTable($text);
         if ($fromDeliveryReport !== []) {

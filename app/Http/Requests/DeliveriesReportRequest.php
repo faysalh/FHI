@@ -66,7 +66,7 @@ class DeliveriesReportRequest extends FormRequest
             'storage' => ['nullable', 'string', 'max:500'],
             'delivery_status' => ['nullable', 'string', 'in:delivered,not_delivered'],
             'team_id' => ['nullable', 'integer', 'min:1'],
-            'tab' => ['nullable', 'string', 'in:report,setup,daily-teams,batch-assignment'],
+            'tab' => ['nullable', 'string', 'in:report,setup,daily-teams,batch-assignment,receipts'],
             'team_date' => ['nullable', 'date'],
             'include_amount' => ['sometimes', 'boolean'],
             'include_weight' => ['sometimes', 'boolean'],

@@ -61,7 +61,6 @@
             @endforeach
         </tbody>
     </table>
-</div>
 <script>
 (function () {
     var sel = document.getElementById('term-select');
@@ -84,7 +83,6 @@
 @push('styles')
 <style>
 .picker { margin-bottom: 20px; padding: 12px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
-        .picker
         .picker select { width: 100%; max-width: 420px; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
         table { width: 100%; border-collapse: collapse; font-size: 14px; }
         th, td { border-bottom: 1px solid #ececec; padding: 10px 12px; text-align: left; vertical-align: top; }

@@ -233,15 +233,6 @@ final class ReportGuide
                         'reports.schema.index'
                     ),
                     self::topic(
-                        'customers',
-                        'Accounts',
-                        'Search customer accounts on the main database.',
-                        [
-                            'Type in filters and Apply to load matching accounts.',
-                        ],
-                        'reports.customers.index'
-                    ),
-                    self::topic(
                         'identifier',
                         'Glossary',
                         'Business terms, column meanings, and sample rows for this reporting app.',

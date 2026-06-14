@@ -21,6 +21,7 @@
 /database/damages-local.sqlite
 /database/reports-users.sqlite
 /storage/app/sqlite-backups/
+/storage/app/sqlite-auto-backup.json
 /vendor
 _ide_helper.php
 Homestead.json

@@ -194,6 +194,10 @@ Create or verify `public\web.config`:
   <system.webServer>
     <rewrite>
       <rules>
+        <rule name="BlockPublicStorageFolder" stopProcessing="true">
+          <match url="^storage(?:/.*)?$" ignoreCase="true" />
+          <action type="CustomResponse" statusCode="404" statusReason="Not Found" statusDescription="Not Found" />
+        </rule>
         <rule name="Laravel" stopProcessing="true">
           <match url="^(.*)$" ignoreCase="false" />
           <conditions logicalGrouping="MatchAll">
@@ -214,7 +218,6 @@ Create or verify `public\web.config`:
       <requestFiltering>
         <hiddenSegments>
           <add segment="vendor" />
-          <add segment="storage" />
         </hiddenSegments>
       </requestFiltering>
     </security>

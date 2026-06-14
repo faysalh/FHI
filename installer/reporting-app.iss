@@ -27,7 +27,12 @@ ArchitecturesInstallIn64BitMode=x64compatible
 SetupLogging=yes
 
 [Files]
-Source: "..\dist\ReportingApp-Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Never overwrite live SQLite files on upgrade (see database\*.sqlite entries below).
+Source: "..\dist\ReportingApp-Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "database\reports-users.sqlite,database\deliveries-local.sqlite,database\damages-local.sqlite,database\operations-tasks.sqlite"
+Source: "..\dist\ReportingApp-Release\database\reports-users.sqlite"; DestDir: "{app}\database"; Flags: onlyifdoesntexist uninsneveruninstall
+Source: "..\dist\ReportingApp-Release\database\deliveries-local.sqlite"; DestDir: "{app}\database"; Flags: onlyifdoesntexist uninsneveruninstall
+Source: "..\dist\ReportingApp-Release\database\damages-local.sqlite"; DestDir: "{app}\database"; Flags: onlyifdoesntexist uninsneveruninstall
+Source: "..\dist\ReportingApp-Release\database\operations-tasks.sqlite"; DestDir: "{app}\database"; Flags: onlyifdoesntexist uninsneveruninstall
 
 [Icons]
 Name: "{group}\Open Reporting App"; Filename: "{code:GetAppUrl}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 13
@@ -162,10 +167,46 @@ begin
     '-ConfigFile "' + InstallConfigPath + '" -Pause';
 end;
 
+procedure BackupSqliteBeforeUpdate;
+var
+  AppDir, BackupDir, Timestamp, Src, Dst, BaseName: String;
+  I: Integer;
+  Names: TArrayOfString;
+begin
+  AppDir := ExpandConstant('{app}');
+  if not DirExists(AppDir) then
+    Exit;
+
+  SetArrayLength(Names, 4);
+  Names[0] := 'reports-users.sqlite';
+  Names[1] := 'deliveries-local.sqlite';
+  Names[2] := 'damages-local.sqlite';
+  Names[3] := 'operations-tasks.sqlite';
+
+  Timestamp := GetDateTimeString('yyyyMMdd-HHmmss', #0, #0);
+  BackupDir := AppDir + '\storage\app\sqlite-backups\pre-install-' + Timestamp;
+
+  for I := 0 to GetArrayLength(Names) - 1 do
+  begin
+    BaseName := Names[I];
+    Src := AppDir + '\database\' + BaseName;
+    if FileExists(Src) then
+    begin
+      if not DirExists(BackupDir) then
+        ForceDirectories(BackupDir);
+      Dst := BackupDir + '\' + BaseName;
+      CopyFile(Src, Dst, False);
+    end;
+  end;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssInstall then
+  begin
+    BackupSqliteBeforeUpdate;
     WriteInstallConfig;
+  end;
 end;
 
 function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo, MemoTypeInfo,
@@ -175,7 +216,8 @@ begin
     'SQL host: ' + SqlPage.Values[0] + NewLine +
     'Database: ' + SqlPage.Values[1] + NewLine +
     'Site URL: ' + UrlPage.Values[0] + '/login' + NewLine + NewLine +
-    'Bundled SQLite data (users, deliveries, damages, tasks) is installed with the app.' + NewLine + NewLine +
+    'SQLite data (users, deliveries, damages, tasks) is seeded on first install only.' + NewLine +
+    'Existing database files are backed up and never overwritten on upgrade.' + NewLine + NewLine +
     'The installer will enable IIS (if needed), install PHP + drivers, and configure the site.';
 end;
 

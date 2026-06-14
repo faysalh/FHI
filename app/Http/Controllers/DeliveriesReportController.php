@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Exports\DeliveriesReportExport;
+use App\Http\Requests\DeliveriesReceiptBookletAssignRequest;
+use App\Http\Requests\DeliveriesReceiptBookletStoreRequest;
 use App\Http\Requests\DeliveriesReportRequest;
+use App\Services\DeliveriesReceiptBookletSqliteService;
 use App\Repositories\DeliveriesReportRepository;
 use App\Repositories\VisitsReportRepository;
 use App\Services\DeliveriesTeamSqliteService;
@@ -27,6 +30,7 @@ class DeliveriesReportController extends Controller
         private readonly DeliveriesReportRepository $repository,
         private readonly VisitsReportRepository $visitsRepository,
         private readonly DeliveriesTeamSqliteService $teams,
+        private readonly DeliveriesReceiptBookletSqliteService $receiptBooklets,
         private readonly DeliveryInvoicePdfExtractor $pdfExtractor
     ) {}
 
@@ -64,6 +68,19 @@ class DeliveriesReportController extends Controller
         $assignmentMap = [];
         $teamFilterOptions = [];
         $batchResult = session('batch_result');
+        $receiptBookletsAssigned = [];
+        $receiptBookletsUnassigned = [];
+        $receiptBookletsReturned = [];
+
+        if ($activeTab === 'receipts') {
+            try {
+                $receiptBookletsAssigned = $this->receiptBooklets->listAssignedActive();
+                $receiptBookletsUnassigned = $this->receiptBooklets->listUnassigned();
+                $receiptBookletsReturned = $this->receiptBooklets->listReturned();
+            } catch (Throwable $e) {
+                Log::warning('Deliveries receipt booklets unavailable.', ['message' => $e->getMessage()]);
+            }
+        }
 
         try {
             $drivers = $this->teams->listDrivers();
@@ -153,6 +170,9 @@ class DeliveriesReportController extends Controller
                 'teamsByDate' => $teamsByDate,
                 'teamFilterOptions' => $teamFilterOptions,
                 'batchResult' => $batchResult,
+                'receiptBookletsAssigned' => $receiptBookletsAssigned,
+                'receiptBookletsUnassigned' => $receiptBookletsUnassigned,
+                'receiptBookletsReturned' => $receiptBookletsReturned,
                 'errorMessage' => 'Unable to load deliveries report. Check logs and try again.',
             ]);
         }
@@ -181,8 +201,76 @@ class DeliveriesReportController extends Controller
             'teamsByDate' => $teamsByDate,
             'teamFilterOptions' => $teamFilterOptions,
             'batchResult' => $batchResult,
+            'receiptBookletsAssigned' => $receiptBookletsAssigned,
+            'receiptBookletsUnassigned' => $receiptBookletsUnassigned,
+            'receiptBookletsReturned' => $receiptBookletsReturned,
             'errorMessage' => null,
         ]);
+    }
+
+    public function storeReceiptBooklets(DeliveriesReceiptBookletStoreRequest $request): RedirectResponse
+    {
+        $validated = $request->validated();
+
+        try {
+            $result = $this->receiptBooklets->addBookletsFromRange(
+                (int) $validated['first_number'],
+                (int) $validated['last_number']
+            );
+        } catch (\InvalidArgumentException $e) {
+            return $this->receiptsRedirect($request)->with('error', $e->getMessage());
+        } catch (Throwable $e) {
+            Log::error('deliveries.receipt_booklets_store_failed', ['message' => $e->getMessage()]);
+
+            return $this->receiptsRedirect($request)->with('error', 'Could not add receipt booklets.');
+        }
+
+        $message = 'Added '.$result['added'].' receipt booklet(s).';
+        if ($result['skipped'] > 0) {
+            $message .= ' Skipped '.$result['skipped'].' duplicate starting number(s).';
+        }
+
+        return $this->receiptsRedirect($request)->with('status', $message);
+    }
+
+    public function assignReceiptBooklet(DeliveriesReceiptBookletAssignRequest $request): RedirectResponse
+    {
+        $validated = $request->validated();
+
+        try {
+            $this->receiptBooklets->assignByStartNumber(
+                (int) $validated['start_number'],
+                (string) $validated['driver_name']
+            );
+        } catch (\InvalidArgumentException $e) {
+            return $this->receiptsRedirect($request)->with('error', $e->getMessage());
+        } catch (Throwable $e) {
+            Log::error('deliveries.receipt_booklet_assign_failed', ['message' => $e->getMessage()]);
+
+            return $this->receiptsRedirect($request)->with('error', 'Could not assign receipt booklet.');
+        }
+
+        return $this->receiptsRedirect($request)->with('status', 'Receipt booklet assigned.');
+    }
+
+    public function returnReceiptBooklet(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'booklet_id' => ['required', 'integer', 'min:1'],
+            'tab' => ['nullable', 'string', 'in:receipts'],
+        ]);
+
+        try {
+            $this->receiptBooklets->markReturned((int) $validated['booklet_id']);
+        } catch (\InvalidArgumentException $e) {
+            return $this->receiptsRedirect($request)->with('error', $e->getMessage());
+        } catch (Throwable $e) {
+            Log::error('deliveries.receipt_booklet_return_failed', ['message' => $e->getMessage()]);
+
+            return $this->receiptsRedirect($request)->with('error', 'Could not mark receipt booklet as returned.');
+        }
+
+        return $this->receiptsRedirect($request)->with('status', 'Receipt booklet marked as returned.');
     }
 
     public function exportPdf(DeliveriesReportRequest $request): Response|RedirectResponse
@@ -533,8 +621,8 @@ class DeliveriesReportController extends Controller
         ]);
 
         try {
-            $numbers = $this->pdfExtractor->extractInvoiceNumbers(
-                (string) $request->file('batch_pdf')->getRealPath()
+            $numbers = $this->pdfExtractor->extractInvoiceNumbersFromUpload(
+                $request->file('batch_pdf')
             );
             $matches = $this->repository->findInvoicesByInvoiceNumbersForBatch($numbers);
 
@@ -628,6 +716,13 @@ class DeliveriesReportController extends Controller
             'reassigned_count' => $reassignedCount,
             'unmatched_count' => $unmatchedCount,
         ])->with('status', 'Batch assignment completed.');
+    }
+
+    private function receiptsRedirect(Request $request): RedirectResponse
+    {
+        return redirect()->route('reports.deliveries.index', array_merge($request->query(), [
+            'tab' => 'receipts',
+        ]));
     }
 
     private function normalizeBatchInvoiceNumberKey(string $value): string

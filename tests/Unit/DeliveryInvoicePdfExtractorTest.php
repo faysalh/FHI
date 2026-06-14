@@ -32,6 +32,26 @@ Invoices
 Generated on: 2026-05-26 10:07:35
 TEXT;
 
+    public function test_empty_file_path_throws_clear_error(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('uploaded PDF could not be read');
+
+        (new DeliveryInvoicePdfExtractor())->extractInvoiceNumbers('');
+    }
+
+    public function test_extract_from_uploaded_file_content_fallback(): void
+    {
+        $extractor = new DeliveryInvoicePdfExtractor();
+        $method = new \ReflectionMethod(DeliveryInvoicePdfExtractor::class, 'extractFromPdfText');
+        $method->setAccessible(true);
+
+        /** @var list<string> $numbers */
+        $numbers = $method->invoke($extractor, self::SAMPLE_DELIVERY_REPORT);
+
+        $this->assertSame(['53267', '53265', '53264', '53162', '53283'], $numbers);
+    }
+
     public function test_delivery_report_extracts_table_invoice_numbers_only(): void
     {
         $extractor = new DeliveryInvoicePdfExtractor();
