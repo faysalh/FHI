@@ -124,10 +124,11 @@ class OperationsTasksSqliteService
      * @param  array<string, string>  $clientsWithInvoiceToday account_id => client_name
      * @return list<object>
      */
-    public function claimDueTasks(array $clientsWithInvoiceToday): array
+    public function findDueTasks(array $clientsWithInvoiceToday): array
     {
         $this->ensureReady();
-        if ($clientsWithInvoiceToday === []) {
+        $clientIndex = $this->normalizeClientIndex($clientsWithInvoiceToday);
+        if ($clientIndex === []) {
             return [];
         }
 
@@ -140,46 +141,97 @@ class OperationsTasksSqliteService
 
         $now = now();
         $due = [];
-        $dueIds = [];
 
         foreach ($tasks as $task) {
-            $accountId = trim((string) ($task->client_account_id ?? ''));
-            if ($accountId === '' || ! isset($clientsWithInvoiceToday[$accountId])) {
+            $accountId = $this->normalizeAccountId((string) ($task->client_account_id ?? ''));
+            if ($accountId === '' || ! isset($clientIndex[$accountId])) {
                 continue;
             }
 
-            $minutes = $this->normalizeRecurrenceMinutes((int) ($task->recurrence_minutes ?? 60));
-            $lastRaw = (string) ($task->last_notified_at ?? '');
-            $isDue = $lastRaw === '';
-
-            if (! $isDue) {
-                try {
-                    $isDue = \Carbon\Carbon::parse($lastRaw)->addMinutes($minutes)->lte($now);
-                } catch (\Throwable) {
-                    $isDue = true;
-                }
-            }
-
-            if (! $isDue) {
+            if (! $this->taskIsDueForNotification($task, $now)) {
                 continue;
             }
 
-            $task->client_name = $clientsWithInvoiceToday[$accountId];
+            $task->client_name = $clientIndex[$accountId];
             $due[] = $task;
-            $dueIds[] = (int) ($task->id ?? 0);
-        }
-
-        if ($dueIds !== []) {
-            $marks = implode(',', array_fill(0, count($dueIds), '?'));
-            DB::connection(self::CONNECTION)->update(
-                'UPDATE '.self::TABLE.'
-                 SET last_notified_at = ?, updated_at = ?
-                 WHERE id IN ('.$marks.')',
-                array_merge([now()->toDateTimeString(), now()->toDateTimeString()], $dueIds)
-            );
         }
 
         return $due;
+    }
+
+    /**
+     * @param  list<int>  $taskIds
+     */
+    public function markTasksNotified(array $taskIds): void
+    {
+        $this->ensureReady();
+        $taskIds = array_values(array_unique(array_filter(array_map('intval', $taskIds), static fn (int $id): bool => $id > 0)));
+        if ($taskIds === []) {
+            return;
+        }
+
+        $marks = implode(',', array_fill(0, count($taskIds), '?'));
+        DB::connection(self::CONNECTION)->update(
+            'UPDATE '.self::TABLE.'
+             SET last_notified_at = ?, updated_at = ?
+             WHERE id IN ('.$marks.') AND is_active = 1',
+            array_merge([now()->toDateTimeString(), now()->toDateTimeString()], $taskIds)
+        );
+    }
+
+    public function normalizeAccountId(string $accountId): string
+    {
+        $accountId = trim($accountId);
+
+        return $accountId === '' ? '' : mb_strtolower($accountId);
+    }
+
+    /**
+     * @param  array<string, string>  $clientsWithInvoiceToday
+     * @return array<string, string>
+     */
+    public function normalizeClientIndex(array $clientsWithInvoiceToday): array
+    {
+        $index = [];
+        foreach ($clientsWithInvoiceToday as $accountId => $clientName) {
+            $key = $this->normalizeAccountId((string) $accountId);
+            if ($key === '') {
+                continue;
+            }
+            $index[$key] = trim((string) $clientName) !== '' ? trim((string) $clientName) : $key;
+        }
+
+        return $index;
+    }
+
+    /**
+     * @param  array<string, string>  $clientsWithInvoiceToday account_id => client_name
+     * @return list<object>
+     *
+     * @deprecated Use findDueTasks() and markTasksNotified() so the browser can ack after showing a notification.
+     */
+    public function claimDueTasks(array $clientsWithInvoiceToday): array
+    {
+        $due = $this->findDueTasks($clientsWithInvoiceToday);
+        $dueIds = array_map(static fn (object $task): int => (int) ($task->id ?? 0), $due);
+        $this->markTasksNotified($dueIds);
+
+        return $due;
+    }
+
+    private function taskIsDueForNotification(object $task, \Carbon\CarbonInterface $now): bool
+    {
+        $minutes = $this->normalizeRecurrenceMinutes((int) ($task->recurrence_minutes ?? 60));
+        $lastRaw = trim((string) ($task->last_notified_at ?? ''));
+        if ($lastRaw === '') {
+            return true;
+        }
+
+        try {
+            return \Carbon\Carbon::parse($lastRaw)->addMinutes($minutes)->lte($now);
+        } catch (\Throwable) {
+            return true;
+        }
     }
 
     private function ensureSchema(): void

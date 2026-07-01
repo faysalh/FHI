@@ -36,6 +36,8 @@ class DashboardLabTest extends TestCase
         $response->assertDontSee('production dashboard');
         $response->assertSee('Weight by category');
         $response->assertSee('id="lab_governorate_id"', false);
+        $response->assertSee('id="lab_as_of_date"', false);
+        $response->assertSee('Insights');
         $response->assertSee('Erbil');
         $response->assertSee('Duhok');
     }
@@ -115,6 +117,73 @@ class DashboardLabTest extends TestCase
 
         $response->assertOk();
         $response->assertJsonPath('monthSalesComparisons.compare_label', '1 May – 31 May 2026');
+    }
+
+    public function test_metrics_honors_as_of_date_when_historical_dates_enabled(): void
+    {
+        $this->registerMocks();
+        config(['reporting.dashboard_lab.historical_dates_enabled' => true]);
+
+        Carbon::setTestNow('2026-06-20 12:00:00');
+
+        try {
+            $response = $this->getJson('/reports/dashboard-lab/metrics?as_of_date=2026-06-10');
+        } finally {
+            Carbon::setTestNow();
+        }
+
+        $response->assertOk();
+        $response->assertJsonPath('meta.as_of', '2026-06-10');
+        $response->assertJsonPath('meta.is_live', false);
+        $response->assertJsonPath('meta.day_section_label', '10 Jun 2026');
+    }
+
+    public function test_metrics_ignores_as_of_date_when_historical_dates_disabled(): void
+    {
+        $this->registerMocks();
+        config(['reporting.dashboard_lab.historical_dates_enabled' => false]);
+
+        Carbon::setTestNow('2026-06-20 12:00:00');
+
+        try {
+            $response = $this->getJson('/reports/dashboard-lab/metrics?as_of_date=2026-06-10');
+        } finally {
+            Carbon::setTestNow();
+        }
+
+        $response->assertOk();
+        $response->assertJsonPath('meta.as_of', '2026-06-20');
+        $response->assertJsonPath('meta.is_live', true);
+    }
+
+    public function test_live_query_param_forces_today_even_with_as_of_date(): void
+    {
+        $this->registerMocks();
+        config(['reporting.dashboard_lab.historical_dates_enabled' => true]);
+
+        Carbon::setTestNow('2026-06-20 12:00:00');
+
+        try {
+            $response = $this->getJson('/reports/dashboard-lab/metrics?as_of_date=2026-06-10&live=1');
+        } finally {
+            Carbon::setTestNow();
+        }
+
+        $response->assertOk();
+        $response->assertJsonPath('meta.as_of', '2026-06-20');
+        $response->assertJsonPath('meta.is_live', true);
+    }
+
+    public function test_page_hides_date_picker_when_historical_dates_disabled(): void
+    {
+        $this->registerMocks();
+        config(['reporting.dashboard_lab.historical_dates_enabled' => false]);
+
+        $response = $this->get('/reports/dashboard-lab');
+
+        $response->assertOk();
+        $response->assertDontSee('id="lab_as_of_date"', false);
+        $response->assertSee('Live only');
     }
 
     private function registerMocks(): void

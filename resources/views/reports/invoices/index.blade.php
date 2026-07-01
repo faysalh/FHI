@@ -3,7 +3,7 @@
 
 @section('content')
 <header class="page-header"><h1>Invoices report</h1></header>
-<p class="hint">Filter invoices by store, date, city, salesman, and text. Expand a row to inspect invoice/client/salesman metadata and invoice line items.</p>
+<p class="hint">Filter <strong>sales invoices</strong> only (<code>fld_type_alias = S</code>) — purchase and settlement documents are excluded. Filter by store, date, city, salesman, and text. Expand a row to inspect invoice/client/salesman metadata and invoice line items.</p>
 
     <form method="GET" action="{{ route('reports.invoices.index') }}" id="invoices-filter-form">
         <details class="filters-panel" open>

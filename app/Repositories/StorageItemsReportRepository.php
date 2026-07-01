@@ -100,16 +100,6 @@ class StorageItemsReportRepository
 
         [$baseFrom, $bindings] = $this->evaluationFromAndBindings($asOfDate, $storage, $category, $excludeCategories, $itemSearch);
 
-        $countSql = "
-            SELECT COUNT(*) AS c
-            FROM (
-                SELECT 1 AS grp
-                {$baseFrom}
-                GROUP BY category_name, item_code, item_name
-            ) AS grouped_rows
-        ";
-        $total = (int) (DB::selectOne($countSql, $bindings)->c ?? 0);
-
         $offset = max(0, ($page - 1) * $perPage);
         $quantityTotalExpr = $hasBalanceSource
             ? 'MAX(CAST(quantity AS decimal(24, 6)))'
@@ -163,6 +153,25 @@ class StorageItemsReportRepository
             GROUP BY grouped.category_name, grouped.item_code, grouped.item_name
         ";
 
+        $visibilitySql = $this->zeroCartonUnlessSoldVisibilitySql();
+
+        $countSql = "
+            SELECT COUNT(*) AS c
+            FROM (
+                {$inventorySubSql}
+            ) AS inv
+            LEFT JOIN (
+                {$soldSubSql}
+            ) AS sold
+                ON sold.category_name = inv.category_name
+               AND sold.item_code = inv.item_code
+               AND sold.item_name = inv.item_name
+            WHERE 1=1
+              {$visibilitySql}
+        ";
+        $allBindings = array_merge($bindings, $soldBindings);
+        $total = (int) (DB::selectOne($countSql, $allBindings)->c ?? 0);
+
         $dataSql = "
             SELECT
                 inv.category_name,
@@ -181,11 +190,11 @@ class StorageItemsReportRepository
                 ON sold.category_name = inv.category_name
                AND sold.item_code = inv.item_code
                AND sold.item_name = inv.item_name
+            WHERE 1=1
+              {$visibilitySql}
             ORDER BY inv.category_name ASC, inv.amount_total DESC
             OFFSET {$offset} ROWS FETCH NEXT {$perPage} ROWS ONLY
         ";
-
-        $allBindings = array_merge($bindings, $soldBindings);
 
         $items = DB::select($dataSql, $allBindings);
 
@@ -265,6 +274,8 @@ class StorageItemsReportRepository
                 ON sold.category_name = inv.category_name
                AND sold.item_code = inv.item_code
                AND sold.item_name = inv.item_name
+            WHERE 1=1
+              {$this->zeroCartonUnlessSoldVisibilitySql()}
         ";
 
         $allBindings = array_merge($bindings, $soldBindings);
@@ -368,6 +379,8 @@ class StorageItemsReportRepository
                 ON sold.category_name = inv.category_name
                AND sold.item_code = inv.item_code
                AND sold.item_name = inv.item_name
+            WHERE 1=1
+              {$this->zeroCartonUnlessSoldVisibilitySql()}
             ORDER BY inv.category_name ASC, inv.amount_total DESC
             OFFSET 0 ROWS FETCH NEXT {$limit} ROWS ONLY
         ";
@@ -697,6 +710,17 @@ SELECT
         ";
 
         return [$sql, $bindings];
+    }
+
+    /**
+     * Hide rows with zero cartons unless the item sold in the selected sales period.
+     */
+    private function zeroCartonUnlessSoldVisibilitySql(): string
+    {
+        return ' AND (
+                inv.quantity_total > CAST(0 AS decimal(24, 6))
+                OR COALESCE(sold.sold_quantity_period, CAST(0 AS decimal(24, 6))) > CAST(0 AS decimal(24, 6))
+            ) ';
     }
 
     /**

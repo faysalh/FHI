@@ -57,13 +57,23 @@ class AdminAuthController extends Controller
         $userId = (int) ($user->id ?? 0);
         $isSuperAdmin = (int) ($user->is_super_admin ?? 0) === 1;
         $allowedKeys = $isSuperAdmin ? [] : $this->users->permissionKeysForUserId($userId);
+        $deliveriesAccess = null;
+        if (! $isSuperAdmin && in_array('deliveries', $allowedKeys, true)) {
+            $deliveriesAccess = $this->users->deliveriesAccessForUserId($userId);
+        }
+        $storageAccess = null;
+        if (! $isSuperAdmin && in_array('storage', $allowedKeys, true)) {
+            $storageAccess = $this->users->storageAccessForUserId($userId);
+        }
 
         $request->session()->regenerate();
         ReportAuthSession::login(
             $userId,
             (string) ($user->username ?? ''),
             $isSuperAdmin,
-            $allowedKeys
+            $allowedKeys,
+            $deliveriesAccess,
+            $storageAccess
         );
 
         $intended = (string) $request->session()->pull('reports_admin_intended_url', '');

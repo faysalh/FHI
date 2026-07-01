@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Repositories;
 
+use App\Support\SalesDocumentMetricsSql;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -321,6 +322,13 @@ class InvoicesReportRepository
                 ON w.fld_item_id_ref = d.fld_item_id_ref
             WHERE d.fld_store_document_title_id_ref = ?
               AND ISNULL(d.fld_is_cancelled, 0) = 0
+              AND EXISTS (
+                  SELECT 1
+                  FROM dbo.tbl_store_document_titles AS t
+                  WHERE t.fld_store_document_title_id = d.fld_store_document_title_id_ref
+                    AND ISNULL(t.fld_is_cancelled, 0) = 0
+                    {$this->salesOnlyScopeSql('t', 'd')}
+              )
             GROUP BY
                 {$itemCodeExpr},
                 COALESCE(NULLIF(LTRIM(RTRIM(CAST(i.{$this->bracketSqlIdentifier((string) config('reporting.store_items_description_column', 'fld_description'))} AS NVARCHAR(500)))), N''), N'(uncategorized)'),
@@ -387,6 +395,7 @@ class InvoicesReportRepository
             WHERE t.fld_store_document_title_id = ?
               AND ISNULL(t.fld_is_cancelled, 0) = 0
               AND ISNULL(d.fld_is_cancelled, 0) = 0
+              {$this->salesOnlyScopeSql()}
             GROUP BY t.fld_store_document_title_id
         ";
 
@@ -496,6 +505,7 @@ class InvoicesReportRepository
               AND CAST(t.fld_store_document_title_date AS date) <= CAST(? AS date)
               AND ISNULL(t.fld_is_cancelled, 0) = 0
               AND ISNULL(d.fld_is_cancelled, 0) = 0
+              {$this->salesOnlyScopeSql()}
               {$citySql}
               {$storeSql}
               {$salesmanSql}
@@ -503,6 +513,11 @@ class InvoicesReportRepository
         ";
 
         return [$baseFrom, $bindings];
+    }
+
+    private function salesOnlyScopeSql(string $titleAlias = 't', string $detailAlias = 'd'): string
+    {
+        return (new SalesDocumentMetricsSql)->postedSalesScopeSql(false, $titleAlias, $detailAlias);
     }
 
     private function invoiceNumberExpr(): string

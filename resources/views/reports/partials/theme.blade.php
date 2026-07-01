@@ -400,7 +400,10 @@
     .btn-icon--print:hover,
     .btn-icon--logout:hover { background: #f1f5f9; border-color: #94a3b8; }
     @media (max-width: 720px) {
-        .report-main { padding: 8px; }
+        .report-main {
+            padding: 8px;
+            padding-bottom: max(8px, var(--rp-safe-bottom));
+        }
         .report-container { padding: 14px; }
     }
 </style>

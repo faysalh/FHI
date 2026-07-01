@@ -9,6 +9,7 @@ use App\Http\Requests\StorageReportRequest;
 use App\Repositories\StorageReportRepository;
 use App\Services\CitiesGovernorateSqliteService;
 use App\Services\ReportAssemblyPriorityService;
+use App\Support\ReportAuthSession;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
@@ -216,6 +217,7 @@ class StorageReportController extends Controller
         /** @var list<string> $cities */
         $cities = $this->repository->normalizeStringList($input['cities'] ?? []);
         $savedGovernorateId = (int) ($input['saved_governorate_id'] ?? 0);
+        $storageAccess = ReportAuthSession::storageAccess();
 
         $savedGovernorates = [];
         $governorateLabel = 'None';
@@ -269,7 +271,7 @@ class StorageReportController extends Controller
         $errorMessage = null;
 
         try {
-            $storageOptions = $this->repository->getStorageOptions();
+            $storageOptions = $storageAccess->filterStorages($this->repository->getStorageOptions());
             $categoryOptions = $this->repository->getCategoryOptions();
             $itemOptions = $this->repository->getItemOptions($categories);
             $storeCityOptions = $this->repository->getStoreCityOptions();
@@ -326,6 +328,7 @@ class StorageReportController extends Controller
             'hasStoreCityColumn' => $hasStoreCityColumn,
             'savedGovernorates' => $savedGovernorates,
             'governorateLabel' => $governorateLabel,
+            'storageAccess' => $storageAccess,
             ...\App\Support\ReportPdfBranding::viewData(),
             'errorMessage' => $errorMessage,
         ];

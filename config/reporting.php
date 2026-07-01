@@ -212,6 +212,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Dashboard lab — historical "as of" date
+    |--------------------------------------------------------------------------
+    |
+    | When true, the dashboard toolbar shows an as-of date picker (default remains
+    | today). Set DASHBOARD_LAB_HISTORICAL_DATES=false to disable and always use
+    | live metrics. You can also force live mode per request with ?live=1.
+    |
+    */
+    'dashboard_lab' => [
+        'historical_dates_enabled' => filter_var(
+            env('DASHBOARD_LAB_HISTORICAL_DATES', true),
+            FILTER_VALIDATE_BOOL
+        ),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Non-working holidays (Eid, etc.) — dashboard business-day calculations
     |--------------------------------------------------------------------------
     |
@@ -262,6 +279,14 @@ return [
         'operations_tasks' => [
             'label' => 'Operations tasks',
             'connection' => 'operations_tasks_sqlite',
+        ],
+        'accounting' => [
+            'label' => 'Accounting (cash & transfers)',
+            'connection' => 'accounting_sqlite',
+        ],
+        'promotions' => [
+            'label' => 'Promotions (promoters & visit schedules)',
+            'connection' => 'promotions_sqlite',
         ],
     ],
 

@@ -8,7 +8,9 @@ use App\Http\Requests\DashboardMetricsRequest;
 use App\Repositories\VisitsReportRepository;
 use App\Services\DashboardGovernorateService;
 use App\Services\DashboardLabMetricsService;
+use App\Support\DashboardLabAsOf;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
@@ -24,7 +26,7 @@ class DashboardLabController extends Controller
 
     public function index(): View
     {
-        $now = Carbon::now();
+        $asOf = $this->resolveAsOf(request()->query('as_of_date'));
         $governorateOptions = $this->governorate->listForSelect();
         $requestedGovernorateId = $this->requestedGovernorateId();
         $geo = $this->governorate->resolve($requestedGovernorateId);
@@ -33,7 +35,7 @@ class DashboardLabController extends Controller
 
         if ($geo['cities'] !== []) {
             try {
-                $initialMetrics = $this->metrics->build($geo['cities'], null, $now);
+                $initialMetrics = $this->metrics->build($geo['cities'], null, $asOf);
             } catch (Throwable $e) {
                 Log::error('dashboard_lab.metrics_failed', ['message' => $e->getMessage()]);
                 $dataError = $dataError ?? 'Could not load lab dashboard metrics.';
@@ -41,8 +43,14 @@ class DashboardLabController extends Controller
         }
 
         return view('reports.dashboard-lab.index', [
-            'asOfLabel' => $now->format('l, j M Y'),
-            'monthLabel' => $now->format('F Y'),
+            'asOfDate' => $asOf->toDateString(),
+            'todayDate' => Carbon::now()->toDateString(),
+            'asOfLabel' => $asOf->format('l, j M Y'),
+            'monthLabel' => $asOf->format('F Y'),
+            'daySectionLabel' => DashboardLabAsOf::daySectionLabel($asOf),
+            'isLiveView' => DashboardLabAsOf::isLive($asOf),
+            'historicalDatesEnabled' => DashboardLabAsOf::historicalDatesEnabled(),
+            'forceLive' => request()->boolean('live'),
             'governorateLabel' => $geo['label'],
             'governorateError' => $geo['error'],
             'dataError' => $dataError,
@@ -69,8 +77,13 @@ class DashboardLabController extends Controller
             $salesmanId = null;
         }
 
+        $asOf = $this->resolveAsOf(
+            $request->validated('as_of_date'),
+            (bool) ($request->validated('live') ?? false)
+        );
+
         try {
-            $payload = $this->metrics->build($geo['cities'], $salesmanId, Carbon::now());
+            $payload = $this->metrics->build($geo['cities'], $salesmanId, $asOf);
 
             return response()->json([
                 'ok' => true,
@@ -85,6 +98,18 @@ class DashboardLabController extends Controller
                 'error' => 'Could not load metrics.',
             ], 500);
         }
+    }
+
+    private function resolveAsOf(mixed $dateInput, bool $forceLive = false): CarbonInterface
+    {
+        if (! $forceLive && request()->boolean('live')) {
+            $forceLive = true;
+        }
+
+        return DashboardLabAsOf::resolve(
+            is_string($dateInput) ? $dateInput : null,
+            $forceLive
+        );
     }
 
     private function requestedGovernorateId(): ?int

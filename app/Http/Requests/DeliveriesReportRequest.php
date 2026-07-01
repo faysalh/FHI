@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Http\Requests;
 
+use App\Support\DeliveriesReportAccess;
 use Carbon\Carbon;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Validation\Validator;
 
 class DeliveriesReportRequest extends FormRequest
@@ -17,6 +19,12 @@ class DeliveriesReportRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        if (trim((string) $this->input('tab', '')) === 'receipts') {
+            throw new HttpResponseException(
+                redirect()->route('reports.accounting.index', ['tab' => 'receipts'])
+            );
+        }
+
         $today = Carbon::now()->toDateString();
         if (! $this->filled('date_from')) {
             $this->merge(['date_from' => $today]);
@@ -39,6 +47,15 @@ class DeliveriesReportRequest extends FormRequest
         } else {
             $this->merge(['cities' => []]);
         }
+        if ($this->has('salesman_ids')) {
+            $rawSalesmen = $this->input('salesman_ids');
+            if (! is_array($rawSalesmen)) {
+                $rawSalesmen = $rawSalesmen !== null && $rawSalesmen !== '' ? [(string) $rawSalesmen] : [];
+            }
+            $this->merge(['salesman_ids' => array_values(array_filter(array_map('strval', $rawSalesmen)))]);
+        } else {
+            $this->merge(['salesman_ids' => []]);
+        }
         $includeAmount = $this->input('include_amount', false);
         $includeWeight = $this->input('include_weight', false);
         $this->merge([
@@ -48,7 +65,13 @@ class DeliveriesReportRequest extends FormRequest
             'team_date' => $this->input('team_date') !== null ? trim((string) $this->input('team_date')) : $today,
             'include_amount' => in_array($includeAmount, [true, 1, '1', 'true', 'on'], true),
             'include_weight' => in_array($includeWeight, [true, 1, '1', 'true', 'on'], true),
+            'invoice_search' => $this->input('invoice_search') !== null
+                ? trim((string) $this->input('invoice_search'))
+                : '',
         ]);
+
+        $applied = DeliveriesReportAccess::applySessionToValidated($this->all());
+        $this->merge($applied);
     }
 
     /**
@@ -63,13 +86,16 @@ class DeliveriesReportRequest extends FormRequest
             'page' => ['sometimes', 'integer', 'min:1'],
             'cities' => ['sometimes', 'array', 'max:500'],
             'cities.*' => ['string', 'max:200'],
+            'salesman_ids' => ['sometimes', 'array', 'max:100'],
+            'salesman_ids.*' => ['string', 'max:64'],
             'storage' => ['nullable', 'string', 'max:500'],
             'delivery_status' => ['nullable', 'string', 'in:delivered,not_delivered'],
             'team_id' => ['nullable', 'integer', 'min:1'],
-            'tab' => ['nullable', 'string', 'in:report,setup,daily-teams,batch-assignment,receipts'],
+            'tab' => ['nullable', 'string', 'in:report,setup,daily-teams,batch-assignment'],
             'team_date' => ['nullable', 'date'],
             'include_amount' => ['sometimes', 'boolean'],
             'include_weight' => ['sometimes', 'boolean'],
+            'invoice_search' => ['nullable', 'string', 'max:100'],
         ];
     }
 

@@ -351,6 +351,38 @@ class DeliveriesTeamSqliteService
         return trim(implode(' ', $parts));
     }
 
+    public function teamPeopleLabel(object $row): string
+    {
+        $driver = trim((string) ($row->driver_name ?? ''));
+        $companion = trim((string) ($row->companion_name ?? ''));
+
+        $parts = [];
+        if ($driver !== '') {
+            $parts[] = $driver;
+        }
+        if ($companion !== '') {
+            $parts[] = '+ '.$companion;
+        }
+
+        return trim(implode(' ', $parts));
+    }
+
+    public function teamAssignmentOptionLabel(object $row): string
+    {
+        $date = trim((string) ($row->team_date ?? ''));
+        $people = $this->teamPeopleLabel($row);
+
+        if ($date === '') {
+            return $people;
+        }
+
+        if ($people === '') {
+            return $date;
+        }
+
+        return $date.' — '.$people;
+    }
+
     private function assertPersonType(int $personId, string $expectedType): void
     {
         if ($personId <= 0) {

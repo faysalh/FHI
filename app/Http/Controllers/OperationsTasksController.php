@@ -42,11 +42,15 @@ class OperationsTasksController extends Controller
             }
         }
 
+        $invoiceClientsToday = $this->clientsWithInvoiceToday();
+
         return view('reports.tasks.index', [
             'tasks' => $tasks,
             'activeTasks' => $activeTasks,
             'completedTasks' => $completedTasks,
             'clients' => $this->clientOptions(),
+            'invoiceClientsTodayCount' => count($invoiceClientsToday),
+            'tasksEligibleTodayCount' => $this->countTasksEligibleToday($activeTasks, $invoiceClientsToday),
             'taskFilters' => [
                 'client' => $clientFilter,
                 'status' => $statusFilter,
@@ -113,7 +117,8 @@ class OperationsTasksController extends Controller
         }
 
         $this->tasks->ensureReady();
-        $due = $this->tasks->claimDueTasks($this->clientsWithInvoiceToday());
+        $invoiceClientsToday = $this->clientsWithInvoiceToday();
+        $due = $this->tasks->findDueTasks($invoiceClientsToday);
 
         return response()->json([
             'items' => array_map(static function (object $task): array {
@@ -124,8 +129,47 @@ class OperationsTasksController extends Controller
                     'recurrence_minutes' => (int) ($task->recurrence_minutes ?? 60),
                 ];
             }, $due),
+            'invoice_clients_today' => count($invoiceClientsToday),
             'server_now' => now()->toIso8601String(),
         ]);
+    }
+
+    public function ackDueNotifications(Request $request): JsonResponse
+    {
+        if (! ReportAuthSession::canAccessReport('tasks')) {
+            abort(403, 'You do not have access to task notifications.');
+        }
+
+        $data = $request->validate([
+            'task_ids' => ['required', 'array', 'min:1', 'max:50'],
+            'task_ids.*' => ['integer', 'min:1'],
+        ]);
+
+        $this->tasks->markTasksNotified(array_map('intval', $data['task_ids']));
+
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * @param  list<object>  $activeTasks
+     * @param  array<string, string>  $clientsWithInvoiceToday
+     */
+    private function countTasksEligibleToday(array $activeTasks, array $clientsWithInvoiceToday): int
+    {
+        $index = $this->tasks->normalizeClientIndex($clientsWithInvoiceToday);
+        if ($index === []) {
+            return 0;
+        }
+
+        $count = 0;
+        foreach ($activeTasks as $task) {
+            $accountId = $this->tasks->normalizeAccountId((string) ($task->client_account_id ?? ''));
+            if ($accountId !== '' && isset($index[$accountId])) {
+                $count++;
+            }
+        }
+
+        return $count;
     }
 
     /**
@@ -181,7 +225,7 @@ class OperationsTasksController extends Controller
 
         $map = [];
         foreach ($rows as $row) {
-            $id = trim((string) ($row->client_id ?? ''));
+            $id = $this->tasks->normalizeAccountId((string) ($row->client_id ?? ''));
             if ($id === '') {
                 continue;
             }

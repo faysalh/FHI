@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Repositories\InvoicesReportRepository;
 use App\Repositories\SalesReportRepository;
+use App\Support\DashboardLabAsOf;
 use App\Support\WorkingDays;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -170,6 +171,10 @@ class DashboardLabMetricsService
         return array_merge($core, [
             'meta' => [
                 'as_of' => $today,
+                'as_of_label' => $asOf->format('l, j M Y'),
+                'month_label' => $asOf->format('F Y'),
+                'day_section_label' => DashboardLabAsOf::daySectionLabel($asOf),
+                'is_live' => DashboardLabAsOf::isLive($asOf),
                 'comparison_date' => $compareDate,
                 'comparison_label' => $compareLabel,
                 'month_from' => $monthFrom,

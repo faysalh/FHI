@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Support\DeliveriesReportAccess;
+use App\Support\StorageReportAccess;
 use App\Support\ReportNavigation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -17,6 +19,10 @@ class ReportsUsersSqliteService
     private const USERS_TABLE = 'report_users';
 
     private const PERMISSIONS_TABLE = 'report_user_permissions';
+
+    private const DELIVERIES_ACCESS_TABLE = 'report_user_deliveries_access';
+
+    private const STORAGE_ACCESS_TABLE = 'report_user_storage_access';
 
     private bool $schemaChecked = false;
 
@@ -63,7 +69,10 @@ class ReportsUsersSqliteService
         );
 
         foreach ($users as $user) {
-            $user->report_keys = $this->permissionKeysForUserId((int) ($user->id ?? 0));
+            $userId = (int) ($user->id ?? 0);
+            $user->report_keys = $this->permissionKeysForUserId($userId);
+            $user->deliveries_access = $this->deliveriesAccessForUserId($userId)->toArray();
+            $user->storage_access = $this->storageAccessForUserId($userId)->toArray();
         }
 
         return $users;
@@ -89,15 +98,175 @@ class ReportsUsersSqliteService
         }
 
         $user->report_keys = $this->permissionKeysForUserId($userId);
+        $user->deliveries_access = $this->deliveriesAccessForUserId($userId)->toArray();
+        $user->storage_access = $this->storageAccessForUserId($userId)->toArray();
 
         return $user;
+    }
+
+    public function deliveriesAccessForUserId(int $userId): DeliveriesReportAccess
+    {
+        $this->ensureReady();
+        if ($userId <= 0) {
+            return DeliveriesReportAccess::full();
+        }
+
+        $row = DB::connection(self::CONNECTION)->selectOne(
+            'SELECT can_filter_date, can_filter_city, can_filter_storage, can_filter_salesman,
+                    can_filter_status, can_edit_status, default_storage
+             FROM '.self::DELIVERIES_ACCESS_TABLE.'
+             WHERE user_id = ?
+             LIMIT 1',
+            [$userId]
+        );
+
+        if ($row === null) {
+            return DeliveriesReportAccess::full();
+        }
+
+        return DeliveriesReportAccess::fromArray([
+            'can_filter_date' => (int) ($row->can_filter_date ?? 1) === 1,
+            'can_filter_city' => (int) ($row->can_filter_city ?? 1) === 1,
+            'can_filter_storage' => (int) ($row->can_filter_storage ?? 1) === 1,
+            'can_filter_salesman' => (int) ($row->can_filter_salesman ?? 1) === 1,
+            'can_filter_status' => (int) ($row->can_filter_status ?? 1) === 1,
+            'can_edit_status' => (int) ($row->can_edit_status ?? 1) === 1,
+            'default_storage' => $row->default_storage ?? null,
+        ]);
+    }
+
+    public function syncDeliveriesAccess(int $userId, DeliveriesReportAccess $access): void
+    {
+        $this->ensureReady();
+        if ($userId <= 0) {
+            return;
+        }
+
+        DB::connection(self::CONNECTION)->delete(
+            'DELETE FROM '.self::DELIVERIES_ACCESS_TABLE.' WHERE user_id = ?',
+            [$userId]
+        );
+
+        DB::connection(self::CONNECTION)->insert(
+            'INSERT INTO '.self::DELIVERIES_ACCESS_TABLE.' (
+                user_id, can_filter_date, can_filter_city, can_filter_storage, can_filter_salesman,
+                can_filter_status, can_edit_status, default_storage
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+                $userId,
+                $access->canFilterDate ? 1 : 0,
+                $access->canFilterCity ? 1 : 0,
+                $access->canFilterStorage ? 1 : 0,
+                $access->canFilterSalesman ? 1 : 0,
+                $access->canFilterStatus ? 1 : 0,
+                $access->canEditStatus ? 1 : 0,
+                $access->defaultStorage,
+            ]
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     */
+    public static function deliveriesAccessFromInput(array $input): DeliveriesReportAccess
+    {
+        $storage = isset($input['deliveries_default_storage'])
+            ? trim((string) $input['deliveries_default_storage'])
+            : '';
+
+        return new DeliveriesReportAccess(
+            canFilterDate: (bool) ($input['deliveries_can_filter_date'] ?? false),
+            canFilterCity: (bool) ($input['deliveries_can_filter_city'] ?? false),
+            canFilterStorage: (bool) ($input['deliveries_can_filter_storage'] ?? false),
+            canFilterSalesman: (bool) ($input['deliveries_can_filter_salesman'] ?? false),
+            canFilterStatus: (bool) ($input['deliveries_can_filter_status'] ?? false),
+            canEditStatus: (bool) ($input['deliveries_can_edit_status'] ?? false),
+            defaultStorage: $storage !== '' ? $storage : null,
+        );
+    }
+
+    public function storageAccessForUserId(int $userId): StorageReportAccess
+    {
+        $this->ensureReady();
+        if ($userId <= 0) {
+            return StorageReportAccess::full();
+        }
+
+        $row = DB::connection(self::CONNECTION)->selectOne(
+            'SELECT can_filter_storage, allowed_storages
+             FROM '.self::STORAGE_ACCESS_TABLE.'
+             WHERE user_id = ?
+             LIMIT 1',
+            [$userId]
+        );
+
+        if ($row === null) {
+            return StorageReportAccess::full();
+        }
+
+        return StorageReportAccess::fromArray([
+            'can_filter_storage' => (int) ($row->can_filter_storage ?? 1) === 1,
+            'allowed_storages' => $row->allowed_storages ?? '[]',
+        ]);
+    }
+
+    public function syncStorageAccess(int $userId, StorageReportAccess $access): void
+    {
+        $this->ensureReady();
+        if ($userId <= 0) {
+            return;
+        }
+
+        DB::connection(self::CONNECTION)->delete(
+            'DELETE FROM '.self::STORAGE_ACCESS_TABLE.' WHERE user_id = ?',
+            [$userId]
+        );
+
+        DB::connection(self::CONNECTION)->insert(
+            'INSERT INTO '.self::STORAGE_ACCESS_TABLE.' (user_id, can_filter_storage, allowed_storages)
+             VALUES (?, ?, ?)',
+            [
+                $userId,
+                $access->canFilterStorage ? 1 : 0,
+                json_encode($access->allowedStorages, JSON_UNESCAPED_UNICODE),
+            ]
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     */
+    public static function storageAccessFromInput(array $input): StorageReportAccess
+    {
+        $raw = $input['storage_allowed_storages'] ?? [];
+        if (! is_array($raw)) {
+            $raw = $raw !== null && $raw !== '' ? [(string) $raw] : [];
+        }
+        $allowed = [];
+        foreach ($raw as $value) {
+            $name = trim((string) $value);
+            if ($name !== '') {
+                $allowed[] = $name;
+            }
+        }
+
+        return new StorageReportAccess(
+            canFilterStorage: (bool) ($input['storage_can_filter_storage'] ?? false),
+            allowedStorages: array_values(array_unique($allowed)),
+        );
     }
 
     /**
      * @param  list<string>  $reportKeys
      */
-    public function createUser(string $username, string $password, bool $isSuperAdmin, array $reportKeys): int
-    {
+    public function createUser(
+        string $username,
+        string $password,
+        bool $isSuperAdmin,
+        array $reportKeys,
+        ?DeliveriesReportAccess $deliveriesAccess = null,
+        ?StorageReportAccess $storageAccess = null,
+    ): int {
         $this->ensureReady();
         $username = $this->normalizeUsername($username);
         if ($username === '') {
@@ -121,6 +290,12 @@ class ReportsUsersSqliteService
         $userId = (int) DB::connection(self::CONNECTION)->getPdo()->lastInsertId();
         if (! $isSuperAdmin) {
             $this->syncPermissions($userId, $reportKeys);
+            if ($deliveriesAccess !== null && in_array('deliveries', $reportKeys, true)) {
+                $this->syncDeliveriesAccess($userId, $deliveriesAccess);
+            }
+            if ($storageAccess !== null && in_array('storage', $reportKeys, true)) {
+                $this->syncStorageAccess($userId, $storageAccess);
+            }
         }
 
         return $userId;
@@ -129,8 +304,14 @@ class ReportsUsersSqliteService
     /**
      * @param  list<string>  $reportKeys
      */
-    public function updateUser(int $userId, bool $isSuperAdmin, array $reportKeys, ?string $newPassword = null): void
-    {
+    public function updateUser(
+        int $userId,
+        bool $isSuperAdmin,
+        array $reportKeys,
+        ?string $newPassword = null,
+        ?DeliveriesReportAccess $deliveriesAccess = null,
+        ?StorageReportAccess $storageAccess = null,
+    ): void {
         $this->ensureReady();
         if ($userId <= 0) {
             throw new RuntimeException('Invalid user.');
@@ -163,8 +344,32 @@ class ReportsUsersSqliteService
                 'DELETE FROM '.self::PERMISSIONS_TABLE.' WHERE user_id = ?',
                 [$userId]
             );
+            DB::connection(self::CONNECTION)->delete(
+                'DELETE FROM '.self::DELIVERIES_ACCESS_TABLE.' WHERE user_id = ?',
+                [$userId]
+            );
+            DB::connection(self::CONNECTION)->delete(
+                'DELETE FROM '.self::STORAGE_ACCESS_TABLE.' WHERE user_id = ?',
+                [$userId]
+            );
         } else {
             $this->syncPermissions($userId, $reportKeys);
+            if (in_array('deliveries', $reportKeys, true) && $deliveriesAccess !== null) {
+                $this->syncDeliveriesAccess($userId, $deliveriesAccess);
+            } else {
+                DB::connection(self::CONNECTION)->delete(
+                    'DELETE FROM '.self::DELIVERIES_ACCESS_TABLE.' WHERE user_id = ?',
+                    [$userId]
+                );
+            }
+            if (in_array('storage', $reportKeys, true) && $storageAccess !== null) {
+                $this->syncStorageAccess($userId, $storageAccess);
+            } else {
+                DB::connection(self::CONNECTION)->delete(
+                    'DELETE FROM '.self::STORAGE_ACCESS_TABLE.' WHERE user_id = ?',
+                    [$userId]
+                );
+            }
         }
     }
 
@@ -317,6 +522,27 @@ class ReportsUsersSqliteService
         );
         $db->statement(
             'CREATE INDEX IF NOT EXISTS idx_report_user_permissions_key ON '.self::PERMISSIONS_TABLE.' (report_key)'
+        );
+        $db->statement(
+            'CREATE TABLE IF NOT EXISTS '.self::DELIVERIES_ACCESS_TABLE.' (
+                user_id INTEGER PRIMARY KEY,
+                can_filter_date INTEGER NOT NULL DEFAULT 1 CHECK (can_filter_date IN (0, 1)),
+                can_filter_city INTEGER NOT NULL DEFAULT 1 CHECK (can_filter_city IN (0, 1)),
+                can_filter_storage INTEGER NOT NULL DEFAULT 1 CHECK (can_filter_storage IN (0, 1)),
+                can_filter_salesman INTEGER NOT NULL DEFAULT 1 CHECK (can_filter_salesman IN (0, 1)),
+                can_filter_status INTEGER NOT NULL DEFAULT 1 CHECK (can_filter_status IN (0, 1)),
+                can_edit_status INTEGER NOT NULL DEFAULT 1 CHECK (can_edit_status IN (0, 1)),
+                default_storage TEXT,
+                FOREIGN KEY (user_id) REFERENCES '.self::USERS_TABLE.'(id) ON DELETE CASCADE
+            )'
+        );
+        $db->statement(
+            'CREATE TABLE IF NOT EXISTS '.self::STORAGE_ACCESS_TABLE.' (
+                user_id INTEGER PRIMARY KEY,
+                can_filter_storage INTEGER NOT NULL DEFAULT 1 CHECK (can_filter_storage IN (0, 1)),
+                allowed_storages TEXT NOT NULL DEFAULT "[]",
+                FOREIGN KEY (user_id) REFERENCES '.self::USERS_TABLE.'(id) ON DELETE CASCADE
+            )'
         );
 
         $this->schemaChecked = true;

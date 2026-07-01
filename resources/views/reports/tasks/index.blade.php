@@ -5,7 +5,21 @@
 <header class="page-header">
     <h1>Operations tasks</h1>
 </header>
-<p class="hint">Create client task notes and receive browser notifications on invoice days. Notifications repeat using your chosen recurrence while this page is open.</p>
+<p class="hint">
+        Create client task notes and receive browser reminders on <strong>invoice days</strong> (when that client has a posted sales invoice dated today).
+        Keep any signed-in reports tab open, enable browser notifications below, and reminders repeat at your chosen interval.
+    </p>
+
+<div id="tasksNotificationStatus" class="tasks-notification-status muted" aria-live="polite"></div>
+
+@if (count($activeTasks) > 0 && ($tasksEligibleTodayCount ?? 0) === 0)
+    <div class="alert alert--warn">
+        None of your active tasks match a client with a sales invoice dated <strong>today</strong>
+        ({{ $invoiceClientsTodayCount ?? 0 }} client(s) invoiced today in total). Reminders only run on invoice days.
+    </div>
+@elseif (($tasksEligibleTodayCount ?? 0) > 0)
+    <p class="muted">{{ $tasksEligibleTodayCount }} active task(s) can notify today ({{ $invoiceClientsTodayCount ?? 0 }} client(s) invoiced today).</p>
+@endif
 
 @if (session('status'))
     <div class="alert alert--success">{{ session('status') }}</div>
@@ -104,7 +118,13 @@
         <h2 class="tasks-card__title">Current tasks ({{ count($tasks) }})</h2>
         @include('reports.partials.icon-button', ['action' => 'notifications', 'label' => 'Enable browser notifications', 'type' => 'button', 'id' => 'enableNotificationsBtn'])
     </div>
-    <p class="muted">Notification checks run every minute while you are signed in. Only users with access to Tasks receive reminders.</p>
+<p class="muted">Checks run every minute on any signed-in reports page. Click <strong>Enable browser notifications</strong> once per browser.</p>
+@if (! request()->secure())
+    <p class="alert alert--warn">
+        You are using <strong>HTTP</strong> (not HTTPS). Browsers will not show the Windows notification permission pop-up on HTTP.
+        Click the button below to enable <strong>on-page reminders</strong> instead (cards in the corner of the screen).
+    </p>
+@endif
 
     @if ($tasks === [])
         <p class="muted">No tasks yet.</p>
@@ -119,6 +139,7 @@
                         <tr>
                             <th>Client name</th>
                             <th>Repeat (minutes)</th>
+                            <th>Last notified</th>
                             <th>Task notes</th>
                             <th>Actions</th>
                         </tr>
@@ -135,6 +156,9 @@
                                     @csrf
                                     @method('PUT')
                                     <input type="number" name="recurrence_minutes" min="{{ \App\Services\OperationsTasksSqliteService::MIN_RECURRENCE_MINUTES }}" max="{{ \App\Services\OperationsTasksSqliteService::MAX_RECURRENCE_MINUTES }}" value="{{ (int) ($task->recurrence_minutes ?? 60) }}" required>
+                            </td>
+                            <td class="tasks-last-notified muted">
+                                    {{ ! empty($task->last_notified_at) ? $task->last_notified_at : '—' }}
                             </td>
                             <td class="tasks-notes">
                                     <textarea name="notes" rows="2" maxlength="3000" required>{{ $task->notes }}</textarea>
@@ -197,7 +221,28 @@
     var clientAccountId = document.getElementById('client_account_id');
     var clientName = document.getElementById('client_name');
     var enableBtn = document.getElementById('enableNotificationsBtn');
+    var statusEl = document.getElementById('tasksNotificationStatus');
     var addForm = document.querySelector('.tasks-form-add');
+
+    function refreshNotificationStatus() {
+        if (!statusEl || !window.reportTasksNotifications) return;
+        if (!window.reportTasksNotifications.isSecureContext()) {
+            statusEl.textContent = 'HTTP site: desktop notification pop-ups are blocked by the browser. Click the button to enable on-page reminders.';
+            return;
+        }
+        var state = window.reportTasksNotifications.permissionState();
+        if (state === 'granted') {
+            statusEl.textContent = 'Desktop notifications: enabled. This tab checks for due tasks every minute.';
+        } else if (state === 'in-page') {
+            statusEl.textContent = 'On-page reminders: enabled. Due tasks appear as cards in the bottom-right corner.';
+        } else if (state === 'denied') {
+            statusEl.textContent = 'Desktop notifications: blocked. Click the button to use on-page reminders, or allow notifications in browser site settings.';
+        } else if (state === 'default') {
+            statusEl.textContent = 'Desktop notifications: not enabled yet. Click the button below (browser may show a permission pop-up on HTTPS only).';
+        } else {
+            statusEl.textContent = 'Reminders are not enabled yet. Click the button below.';
+        }
+    }
 
     function syncClientFields() {
         if (!clientSearch || !clientName || !clientAccountId) return false;
@@ -236,11 +281,19 @@
         });
     }
 
-    if (enableBtn && window.reportTasksNotifications) {
+    if (enableBtn) {
+        refreshNotificationStatus();
         enableBtn.addEventListener('click', async function () {
-            var ok = await window.reportTasksNotifications.requestPermission();
-            if (ok) {
-                alert('Browser notifications enabled.');
+            if (!window.reportTasksNotifications) {
+                alert('Your account does not have access to task reminders.');
+                return;
+            }
+            var result = await window.reportTasksNotifications.requestPermission();
+            refreshNotificationStatus();
+            if (result && result.message) {
+                alert(result.message);
+            }
+            if (result && result.ok) {
                 window.reportTasksNotifications.checkNow();
             }
         });
@@ -306,8 +359,9 @@
     border-bottom: none;
 }
 .tasks-client { width: 22%; }
-.tasks-frequency { width: 14%; }
-.tasks-notes { width: 42%; }
+.tasks-frequency { width: 12%; }
+.tasks-last-notified { width: 14%; font-size: 12px; }
+.tasks-notes { width: 34%; }
 .tasks-actions { width: 22%; }
 .tasks-row-form input[type="number"] {
     width: 100%;

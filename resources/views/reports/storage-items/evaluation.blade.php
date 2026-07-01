@@ -15,6 +15,7 @@
         @php $wdUi = max(1, min(366, (int) ($filters['working_days'] ?? 1))); @endphp
         <p class="hint">
         Same data as <a href="{{ route('reports.storage-items.index', $q) }}">Inventory & sales</a>, plus <strong>weight</strong>, editable <strong>price per KG (IQD)</strong>, and <strong>total value</strong> (weight × price). Drag rows to set priority; use category shortcuts to fill prices.
+        Items with <strong>zero cartons</strong> are hidden unless they had <strong>sales</strong> in the selected date range.
         <strong>Forecast</strong> under 5: row <span class="forecast-legend forecast-legend--critical">red</span>; under 10 (≥ 5): <span class="forecast-legend forecast-legend--warning">orange</span>.
         </p>
 

@@ -4,20 +4,22 @@
 @section('content')
 <header class="page-header"><h1>Deliveries report</h1></header>
     <div class="subtabs">
-        <a href="{{ route('reports.deliveries.index', array_merge(request()->query(), ['tab' => 'report'])) }}" class="{{ ($filters['tab'] ?? 'report') === 'report' ? 'active' : '' }}">Report</a>
-        <a href="{{ route('reports.deliveries.index', array_merge(request()->query(), ['tab' => 'setup'])) }}" class="{{ ($filters['tab'] ?? 'report') === 'setup' ? 'active' : '' }}">Setup drivers & companions</a>
-        <a href="{{ route('reports.deliveries.index', array_merge(request()->query(), ['tab' => 'daily-teams'])) }}" class="{{ ($filters['tab'] ?? 'report') === 'daily-teams' ? 'active' : '' }}">Setup daily teams</a>
-        <a href="{{ route('reports.deliveries.index', array_merge(request()->query(), ['tab' => 'batch-assignment'])) }}" class="{{ ($filters['tab'] ?? 'report') === 'batch-assignment' ? 'active' : '' }}">Batch assignment</a>
-        <a href="{{ route('reports.deliveries.index', array_merge(request()->query(), ['tab' => 'receipts'])) }}" class="{{ ($filters['tab'] ?? 'report') === 'receipts' ? 'active' : '' }}">Receipts</a>
+        @php $nav = $navQuery ?? $filters ?? []; @endphp
+        <a href="{{ route('reports.deliveries.index', array_merge($nav, ['tab' => 'report'])) }}" class="{{ ($filters['tab'] ?? 'report') === 'report' ? 'active' : '' }}">Report</a>
+        <a href="{{ route('reports.deliveries.index', array_merge($nav, ['tab' => 'setup'])) }}" class="{{ ($filters['tab'] ?? 'report') === 'setup' ? 'active' : '' }}">Setup drivers & companions</a>
+        <a href="{{ route('reports.deliveries.index', array_merge($nav, ['tab' => 'daily-teams'])) }}" class="{{ ($filters['tab'] ?? 'report') === 'daily-teams' ? 'active' : '' }}">Setup daily teams</a>
+        <a href="{{ route('reports.deliveries.index', array_merge($nav, ['tab' => 'batch-assignment'])) }}" class="{{ ($filters['tab'] ?? 'report') === 'batch-assignment' ? 'active' : '' }}">Batch assignment</a>
     </div>
 
     @if (($filters['tab'] ?? 'report') === 'setup')
+        @include('reports.deliveries.partials.active-filters-note', ['filters' => $filters, 'deliveriesAccess' => $deliveriesAccess ?? null])
         <p class="hint">Save drivers (with car details) and companions in local SQLite tables. Edit inline and save, or delete (removes related daily teams and invoice assignments).</p>
 
         <div class="lab-card deliveries-setup-card">
             <h3 class="section-title">Add driver</h3>
             <form method="POST" action="{{ route('reports.deliveries.setup.driver', request()->query()) }}" class="mini-grid">
                 @csrf
+                @include('reports.deliveries.partials.filter-hidden', ['filters' => $filters, 'deliveriesAccess' => $deliveriesAccess ?? null])
                 <div>
                     <label for="driver_name">Driver name</label>
                     <input type="text" id="driver_name" name="driver_name" required>
@@ -40,6 +42,7 @@
             <h3 class="section-title">Add companion</h3>
             <form method="POST" action="{{ route('reports.deliveries.setup.companion', request()->query()) }}" class="mini-grid">
                 @csrf
+                @include('reports.deliveries.partials.filter-hidden', ['filters' => $filters, 'deliveriesAccess' => $deliveriesAccess ?? null])
                 <div>
                     <label for="companion_name">Companion name</label>
                     <input type="text" id="companion_name" name="companion_name" required>
@@ -68,11 +71,13 @@
                             <form id="{{ $driverFormId }}" method="POST" action="{{ route('reports.deliveries.setup.driver.update', array_merge(['person' => $driverId], request()->query())) }}" class="setup-people-actions__form">
                                 @csrf
                                 @method('PUT')
+                                @include('reports.deliveries.partials.filter-hidden', ['filters' => $filters, 'deliveriesAccess' => $deliveriesAccess ?? null])
                                 @include('reports.partials.icon-button', ['action' => 'save', 'label' => 'Save driver'])
                             </form>
                             <form method="POST" action="{{ route('reports.deliveries.setup.driver.delete', array_merge(['person' => $driverId], request()->query())) }}" class="setup-people-actions__form" onsubmit="return confirm('Delete this driver? Daily teams using them and their invoice assignments will be removed.');">
                                 @csrf
                                 @method('DELETE')
+                                @include('reports.deliveries.partials.filter-hidden', ['filters' => $filters, 'deliveriesAccess' => $deliveriesAccess ?? null])
                                 @include('reports.partials.icon-button', ['action' => 'delete', 'label' => 'Delete driver'])
                             </form>
                         </td>
@@ -100,11 +105,13 @@
                             <form id="{{ $companionFormId }}" method="POST" action="{{ route('reports.deliveries.setup.companion.update', array_merge(['person' => $companionId], request()->query())) }}" class="setup-people-actions__form">
                                 @csrf
                                 @method('PUT')
+                                @include('reports.deliveries.partials.filter-hidden', ['filters' => $filters, 'deliveriesAccess' => $deliveriesAccess ?? null])
                                 @include('reports.partials.icon-button', ['action' => 'save', 'label' => 'Save companion'])
                             </form>
                             <form method="POST" action="{{ route('reports.deliveries.setup.companion.delete', array_merge(['person' => $companionId], request()->query())) }}" class="setup-people-actions__form" onsubmit="return confirm('Delete this companion? Daily teams using them and their invoice assignments will be removed.');">
                                 @csrf
                                 @method('DELETE')
+                                @include('reports.deliveries.partials.filter-hidden', ['filters' => $filters, 'deliveriesAccess' => $deliveriesAccess ?? null])
                                 @include('reports.partials.icon-button', ['action' => 'delete', 'label' => 'Delete companion'])
                             </form>
                         </td>
@@ -116,12 +123,29 @@
             </table>
         </div>
     @elseif (($filters['tab'] ?? 'report') === 'daily-teams')
+        @include('reports.deliveries.partials.active-filters-note', ['filters' => $filters, 'deliveriesAccess' => $deliveriesAccess ?? null])
         <p class="hint">Create team combinations for a specific day, then use them in the report tab.</p>
+
+        <div class="lab-card deliveries-setup-card">
+            <h3 class="section-title">Team date</h3>
+            <form method="GET" action="{{ route('reports.deliveries.index') }}" class="mini-grid">
+                <input type="hidden" name="tab" value="daily-teams">
+                @include('reports.deliveries.partials.filter-hidden', ['filters' => $filters, 'deliveriesAccess' => $deliveriesAccess ?? null, 'excludeFilterKeys' => ['team_date']])
+                <div>
+                    <label for="daily_teams_date">Team date</label>
+                    <input type="date" id="daily_teams_date" name="team_date" value="{{ $filters['team_date'] ?? '' }}" required>
+                </div>
+                <div class="inline-action-row" style="align-items:flex-end;">
+                    @include('reports.partials.icon-button', ['action' => 'apply', 'label' => 'Load teams'])
+                </div>
+            </form>
+        </div>
 
         <div class="lab-card deliveries-setup-card">
             <h3 class="section-title">Add daily team</h3>
             <form method="POST" action="{{ route('reports.deliveries.setup.daily-team', request()->query()) }}" class="mini-grid">
                 @csrf
+                @include('reports.deliveries.partials.filter-hidden', ['filters' => $filters, 'deliveriesAccess' => $deliveriesAccess ?? null])
                 <div>
                     <label for="team_date">Team date</label>
                     <input type="date" id="team_date" name="team_date" value="{{ $filters['team_date'] ?? '' }}" required>
@@ -164,6 +188,7 @@
                             <form method="POST" action="{{ route('reports.deliveries.setup.daily-team.delete', array_merge(['team' => (int) ($team->id ?? 0)], request()->query())) }}" style="display:inline;" onsubmit="return confirm('Delete this daily team? Invoices assigned to this team will be unassigned.');">
                                 @csrf
                                 @method('DELETE')
+                                @include('reports.deliveries.partials.filter-hidden', ['filters' => $filters, 'deliveriesAccess' => $deliveriesAccess ?? null])
                                 @include('reports.partials.icon-button', ['action' => 'delete', 'label' => 'Delete daily team'])
                             </form>
                         </td>
@@ -175,37 +200,41 @@
             </table>
         </div>
     @elseif (($filters['tab'] ?? 'report') === 'batch-assignment')
+        @include('reports.deliveries.partials.active-filters-note', ['filters' => $filters, 'deliveriesAccess' => $deliveriesAccess ?? null])
         <p class="hint">
-            Upload a PDF containing invoice numbers and choose a team. Every matched invoice is assigned to that team,
+            Upload a PDF containing invoice numbers and choose a team for the selected day. Every matched invoice is assigned to that team,
             including invoices already assigned to a different team (for example returned items you batch again).
-            Invoice dates outside the From/To range below are still matched; those dates are for navigation only.
+            Invoice matching ignores dates — only the PDF numbers matter.
         </p>
+
+        <div class="lab-card deliveries-setup-card">
+            <h3 class="section-title">Team date</h3>
+            <form method="GET" action="{{ route('reports.deliveries.index') }}" class="mini-grid">
+                <input type="hidden" name="tab" value="batch-assignment">
+                @include('reports.deliveries.partials.filter-hidden', ['filters' => $filters, 'deliveriesAccess' => $deliveriesAccess ?? null, 'excludeFilterKeys' => ['team_date']])
+                <div>
+                    <label for="batch_team_date">Team date</label>
+                    <input type="date" id="batch_team_date" name="team_date" value="{{ $filters['team_date'] ?? '' }}" required>
+                </div>
+                <div class="inline-action-row" style="align-items:flex-end;">
+                    @include('reports.partials.icon-button', ['action' => 'apply', 'label' => 'Load teams'])
+                </div>
+            </form>
+        </div>
 
         <div class="lab-card deliveries-setup-card">
             <h3 class="section-title">Batch assignment from PDF</h3>
             <form method="POST" action="{{ route('reports.deliveries.batch-assign', request()->query()) }}" enctype="multipart/form-data" class="mini-grid">
                 @csrf
+                @include('reports.deliveries.partials.filter-hidden', ['filters' => $filters, 'deliveriesAccess' => $deliveriesAccess ?? null, 'excludeFilterKeys' => ['team_id']])
                 <div>
-                    <label for="batch_team_id">Team</label>
+                    <label for="batch_team_id">Team ({{ $filters['team_date'] ?? '' }})</label>
                     <select id="batch_team_id" name="team_id" required>
                         <option value="">Select team</option>
                         @foreach (($teamFilterOptions ?? []) as $teamOpt)
-                            @php
-                                $teamLabel = trim((string) (($teamOpt->driver_name ?? '').' '.(!empty($teamOpt->car_number) || !empty($teamOpt->car_model) ? '('.trim(($teamOpt->car_number ?? '').' '.($teamOpt->car_model ?? '')).')' : '').' + '.($teamOpt->companion_name ?? '')));
-                            @endphp
-                            <option value="{{ (int) ($teamOpt->id ?? 0) }}">
-                                {{ $teamOpt->team_date ?? '' }} - {{ $teamLabel }}
-                            </option>
+                            <option value="{{ (int) ($teamOpt->id ?? 0) }}">{{ app(\App\Services\DeliveriesTeamSqliteService::class)->teamPeopleLabel($teamOpt) }}</option>
                         @endforeach
                     </select>
-                </div>
-                <div>
-                    <label for="batch_date_from">From</label>
-                    <input type="date" id="batch_date_from" name="date_from" value="{{ $filters['date_from'] ?? '' }}" required>
-                </div>
-                <div>
-                    <label for="batch_date_to">To</label>
-                    <input type="date" id="batch_date_to" name="date_to" value="{{ $filters['date_to'] ?? '' }}" required>
                 </div>
                 <div>
                     <label for="batch_pdf">PDF file</label>
@@ -215,6 +244,9 @@
                     @include('reports.partials.icon-button', ['action' => 'run', 'label' => 'Run batch assignment'])
                 </div>
             </form>
+            @if (($teamFilterOptions ?? []) === [])
+                <p class="hint muted" style="margin-bottom:0;">No teams for this date. Create one on the <strong>Setup daily teams</strong> tab.</p>
+            @endif
         </div>
 
         <div class="lab-card deliveries-setup-card">
@@ -229,17 +261,13 @@
                 onsubmit="return confirm('Remove all invoice assignments for the selected team? This cannot be undone.');"
             >
                 @csrf
+                @include('reports.deliveries.partials.filter-hidden', ['filters' => $filters, 'deliveriesAccess' => $deliveriesAccess ?? null, 'excludeFilterKeys' => ['team_id']])
                 <div>
-                    <label for="clear_team_id">Team</label>
+                    <label for="clear_team_id">Team ({{ $filters['team_date'] ?? '' }})</label>
                     <select id="clear_team_id" name="team_id" required>
                         <option value="">Select team</option>
                         @foreach (($teamFilterOptions ?? []) as $teamOpt)
-                            @php
-                                $teamLabel = trim((string) (($teamOpt->driver_name ?? '').' '.(!empty($teamOpt->car_number) || !empty($teamOpt->car_model) ? '('.trim(($teamOpt->car_number ?? '').' '.($teamOpt->car_model ?? '')).')' : '').' + '.($teamOpt->companion_name ?? '')));
-                            @endphp
-                            <option value="{{ (int) ($teamOpt->id ?? 0) }}">
-                                {{ $teamOpt->team_date ?? '' }} - {{ $teamLabel }}
-                            </option>
+                            <option value="{{ (int) ($teamOpt->id ?? 0) }}">{{ app(\App\Services\DeliveriesTeamSqliteService::class)->teamPeopleLabel($teamOpt) }}</option>
                         @endforeach
                     </select>
                 </div>
@@ -264,156 +292,27 @@
                 </table>
             </div>
         @endif
-    @elseif (($filters['tab'] ?? 'report') === 'receipts')
-        <p class="hint">
-            Each receipt booklet holds <strong>50</strong> consecutive numbers (for example 2051–2100).
-            Enter a first and last number to add every booklet in that range. Assign a booklet to a driver by its
-            <strong>starting number</strong>. Returned booklets cannot be assigned again.
-        </p>
-
-        <div class="lab-card deliveries-setup-card">
-            <h3 class="section-title">Add receipt booklets</h3>
-            <form method="POST" action="{{ route('reports.deliveries.receipts.store', request()->query()) }}" class="mini-grid">
-                @csrf
-                <input type="hidden" name="tab" value="receipts">
-                <div>
-                    <label for="receipt_first_number">First number</label>
-                    <input type="number" id="receipt_first_number" name="first_number" min="1" step="1" required value="{{ old('first_number') }}">
-                </div>
-                <div>
-                    <label for="receipt_last_number">Last number</label>
-                    <input type="number" id="receipt_last_number" name="last_number" min="1" step="1" required value="{{ old('last_number') }}">
-                </div>
-                <div class="inline-action-row" style="align-items:flex-end;">
-                    @include('reports.partials.icon-button', ['action' => 'save', 'label' => 'Add booklets'])
-                </div>
-            </form>
-        </div>
-
-        <div class="lab-card deliveries-setup-card">
-            <h3 class="section-title">Assign booklet to driver</h3>
-            <form method="POST" action="{{ route('reports.deliveries.receipts.assign', request()->query()) }}" class="mini-grid">
-                @csrf
-                <input type="hidden" name="tab" value="receipts">
-                <div>
-                    <label for="assign_start_number">Starting number</label>
-                    <input type="number" id="assign_start_number" name="start_number" min="1" step="1" required value="{{ old('start_number') }}">
-                </div>
-                <div>
-                    <label for="assign_driver_name">Driver name</label>
-                    <input type="text" id="assign_driver_name" name="driver_name" required maxlength="200" value="{{ old('driver_name') }}" list="receipt-driver-suggestions">
-                    <datalist id="receipt-driver-suggestions">
-                        @foreach (($drivers ?? []) as $driver)
-                            <option value="{{ $driver->full_name ?? '' }}"></option>
-                        @endforeach
-                    </datalist>
-                </div>
-                <div class="inline-action-row" style="align-items:flex-end;">
-                    @include('reports.partials.icon-button', ['action' => 'save', 'label' => 'Assign'])
-                </div>
-            </form>
-        </div>
-
-        <div class="lab-card deliveries-setup-card">
-            <h3 class="section-title">Assigned receipt booklets</h3>
-            <table>
-                <thead>
-                <tr>
-                    <th>#</th>
-                    <th class="num">Starting number</th>
-                    <th class="num">Last number</th>
-                    <th>Assigned to</th>
-                    <th>Return date</th>
-                    <th></th>
-                </tr>
-                </thead>
-                <tbody>
-                @forelse (($receiptBookletsAssigned ?? []) as $index => $booklet)
-                    <tr>
-                        <td>{{ $index + 1 }}</td>
-                        <td class="num">{{ display_number($booklet->start_number ?? 0) }}</td>
-                        <td class="num">{{ display_number($booklet->end_number ?? 0) }}</td>
-                        <td>{{ $booklet->assigned_driver ?? '' }}</td>
-                        <td>{{ $booklet->returned_at ? \Illuminate\Support\Carbon::parse($booklet->returned_at)->format('Y-m-d H:i') : '—' }}</td>
-                        <td>
-                            <form method="POST" action="{{ route('reports.deliveries.receipts.return', request()->query()) }}" style="margin:0;" onsubmit="return confirm('Mark this receipt booklet as returned?');">
-                                @csrf
-                                <input type="hidden" name="tab" value="receipts">
-                                <input type="hidden" name="booklet_id" value="{{ (int) ($booklet->id ?? 0) }}">
-                                <button type="submit" class="btn btn--secondary btn--sm">Returned</button>
-                            </form>
-                        </td>
-                    </tr>
-                @empty
-                    <tr><td colspan="6" class="muted">No assigned receipt booklets.</td></tr>
-                @endforelse
-                </tbody>
-            </table>
-        </div>
-
-        <div class="lab-card deliveries-setup-card">
-            <h3 class="section-title">Unassigned receipt booklets</h3>
-            <table>
-                <thead>
-                <tr>
-                    <th>#</th>
-                    <th class="num">Starting number</th>
-                    <th class="num">Last number</th>
-                    <th>Assigned to</th>
-                    <th>Return date</th>
-                </tr>
-                </thead>
-                <tbody>
-                @forelse (($receiptBookletsUnassigned ?? []) as $index => $booklet)
-                    <tr>
-                        <td>{{ $index + 1 }}</td>
-                        <td class="num">{{ display_number($booklet->start_number ?? 0) }}</td>
-                        <td class="num">{{ display_number($booklet->end_number ?? 0) }}</td>
-                        <td class="muted">—</td>
-                        <td class="muted">—</td>
-                    </tr>
-                @empty
-                    <tr><td colspan="5" class="muted">No unassigned receipt booklets.</td></tr>
-                @endforelse
-                </tbody>
-            </table>
-        </div>
-
-        <div class="lab-card deliveries-setup-card">
-            <h3 class="section-title">Returned receipt booklets</h3>
-            <table>
-                <thead>
-                <tr>
-                    <th>#</th>
-                    <th class="num">Starting number</th>
-                    <th class="num">Last number</th>
-                    <th>Assigned to</th>
-                    <th>Return date</th>
-                </tr>
-                </thead>
-                <tbody>
-                @forelse (($receiptBookletsReturned ?? []) as $index => $booklet)
-                    <tr>
-                        <td>{{ $index + 1 }}</td>
-                        <td class="num">{{ display_number($booklet->start_number ?? 0) }}</td>
-                        <td class="num">{{ display_number($booklet->end_number ?? 0) }}</td>
-                        <td>{{ $booklet->assigned_driver ?? '' }}</td>
-                        <td>{{ $booklet->returned_at ? \Illuminate\Support\Carbon::parse($booklet->returned_at)->format('Y-m-d H:i') : '—' }}</td>
-                    </tr>
-                @empty
-                    <tr><td colspan="5" class="muted">No returned receipt booklets yet.</td></tr>
-                @endforelse
-                </tbody>
-            </table>
-        </div>
     @else
+        @php
+            $access = $deliveriesAccess ?? \App\Support\DeliveriesReportAccess::full();
+        @endphp
         <p class="hint">
+            Only posted <strong>sales invoices</strong> (<code>fld_type_alias = S</code>) — purchase, settlement, and other document types are excluded.
             Delivery status is read from <code>dbo.tbl_store_document_detail.fld_is_delivered</code>.
             If value = <strong>1</strong> then status is <strong>Delivered</strong>, otherwise <strong>Not delivered</strong>.
             Click a status badge to update matching non-cancelled DB detail rows for that invoice.
             Team assignment is stored in local SQLite. When a team filter is selected, all invoices assigned to that team
             are shown regardless of the From/To dates (other filters still apply).
+            Use <strong>Invoice number</strong> to find a specific sales invoice on any date.
         </p>
+
+        @if (!empty($filters['invoice_search']))
+            @if (!empty($invoiceSearchNotFound))
+                <div class="alert alert--warn" role="alert">No sales invoice found for “{{ $filters['invoice_search'] }}”.</div>
+            @else
+                <div class="alert alert--info" role="status">Showing invoice “{{ $filters['invoice_search'] }}” — date range ignored.</div>
+            @endif
+        @endif
 
         <form method="GET" action="{{ route('reports.deliveries.index') }}" id="deliveries-filter-form">
             <input type="hidden" name="tab" value="report">
@@ -421,6 +320,7 @@
                 <summary>Filters</summary>
                 <div class="filters-body">
                     <div class="filters-grid">
+            @if ($access->canFilterDate)
             <div>
                 <label for="date_from">From</label>
                 <input type="date" id="date_from" name="date_from" value="{{ $filters['date_from'] }}">
@@ -429,6 +329,20 @@
                 <label for="date_to">To</label>
                 <input type="date" id="date_to" name="date_to" value="{{ $filters['date_to'] }}">
             </div>
+            @else
+            <div class="span-full">
+                <span class="muted">Date range is fixed to today for your account ({{ $filters['date_from'] }}).</span>
+                <input type="hidden" name="date_from" value="{{ $filters['date_from'] }}">
+                <input type="hidden" name="date_to" value="{{ $filters['date_to'] }}">
+            </div>
+            @endif
+            <div>
+                <label for="invoice_search">Invoice number</label>
+                <input type="text" id="invoice_search" name="invoice_search" maxlength="100"
+                       value="{{ $filters['invoice_search'] ?? '' }}"
+                       placeholder="Any date — e.g. 1001">
+            </div>
+            @if ($access->canFilterStorage)
             <div>
                 <label for="storage">Storage (optional)</label>
                 <select id="storage" name="storage">
@@ -438,6 +352,14 @@
                     @endforeach
                 </select>
             </div>
+            @else
+            <div>
+                <label>Storage</label>
+                <div class="muted">{{ $filters['storage'] !== '' ? $filters['storage'] : 'Not set' }} (fixed for your account)</div>
+                <input type="hidden" name="storage" value="{{ $filters['storage'] ?? '' }}">
+            </div>
+            @endif
+            @if ($access->canFilterStatus)
             <div>
                 <label for="delivery_status">Delivery status (optional)</label>
                 <select id="delivery_status" name="delivery_status">
@@ -446,6 +368,9 @@
                     <option value="not_delivered" @selected(($filters['delivery_status'] ?? '') === 'not_delivered')>Not delivered only</option>
                 </select>
             </div>
+            @else
+            <input type="hidden" name="delivery_status" value="">
+            @endif
             <div>
                 <label for="team_id">Team (optional)</label>
                 <select id="team_id" name="team_id">
@@ -460,6 +385,7 @@
                     @endforeach
                 </select>
             </div>
+            @if ($access->canFilterCity)
             <div>
                 <label for="cities" title="Ctrl/Cmd+click for multiple; empty = all cities">Cities (optional, multi-select)</label>
                 <select id="cities" name="cities[]" multiple size="4" class="select-compact-multi">
@@ -468,6 +394,17 @@
                     @endforeach
                 </select>
             </div>
+            @endif
+            @if ($access->canFilterSalesman)
+            <div>
+                <label for="salesman_ids" title="Ctrl/Cmd+click for multiple; empty = all salesmen">Salesmen (optional, multi-select)</label>
+                <select id="salesman_ids" name="salesman_ids[]" multiple size="4" class="select-compact-multi">
+                    @foreach (($salesmanOptions ?? []) as $salesman)
+                        <option value="{{ $salesman['id'] }}" @selected(in_array($salesman['id'], $filters['salesman_ids'] ?? [], true))>{{ $salesman['name'] }}</option>
+                    @endforeach
+                </select>
+            </div>
+            @endif
             <div>
                 <label for="per_page">Rows per page</label>
                 <select id="per_page" name="per_page">
@@ -509,6 +446,9 @@
                     'showWeight' => !empty($filters['include_weight']),
                 ])
             @endif
+            @if (empty($assignmentTeamOptions ?? []))
+                <p class="hint muted">No daily teams in this date range. Create teams on the <strong>Setup daily teams</strong> tab, then assign invoices here.</p>
+            @endif
             <table>
                 <thead>
                 <tr>
@@ -539,8 +479,7 @@
                 @forelse ($rows as $row)
                     @php
                         $delivered = strtolower((string) ($row->delivery_status ?? '')) === 'delivered';
-                        $rowDate = (string) ($row->document_date ?? '');
-                        $dateTeams = $teamsByDate[$rowDate] ?? [];
+                        $assignedTeamId = (int) ($row->team_id ?? 0);
                     @endphp
                     <tr>
                         <td class="num">{{ $rowStart + $loop->index }}</td>
@@ -560,8 +499,10 @@
                             <td class="num">{{ display_number((float) ($row->weight_total ?? 0)) }}</td>
                         @endif
                         <td>
+                            @if ($access->canEditStatus)
                             <form method="POST" action="{{ route('reports.deliveries.status', request()->query()) }}" class="status-toggle">
                                 @csrf
+                                @include('reports.deliveries.partials.filter-hidden', ['filters' => $filters, 'deliveriesAccess' => $deliveriesAccess ?? null])
                                 <input type="hidden" name="invoice_id" value="{{ $row->invoice_id ?? '' }}">
                                 <input type="hidden" name="current_status" value="{{ $delivered ? 'delivered' : 'not_delivered' }}">
                                 <button
@@ -572,26 +513,29 @@
                                     {{ $delivered ? 'Delivered' : 'Not delivered' }}
                                 </button>
                             </form>
+                            @else
+                            <span class="badge {{ $delivered ? 'badge-yes' : 'badge-no' }}">
+                                {{ $delivered ? 'Delivered' : 'Not delivered' }}
+                            </span>
+                            @endif
                         </td>
                         <td>
                             <form method="POST" action="{{ route('reports.deliveries.assign-team', request()->query()) }}">
                                 @csrf
+                                @include('reports.deliveries.partials.filter-hidden', ['filters' => $filters, 'deliveriesAccess' => $deliveriesAccess ?? null, 'excludeFilterKeys' => ['team_id']])
                                 <input type="hidden" name="invoice_id" value="{{ $row->invoice_id ?? '' }}">
                                 <input type="hidden" name="document_date" value="{{ $row->document_date ?? '' }}">
                                 <div class="inline-action-row">
                                     <select name="team_id" required>
                                         <option value="">Select team</option>
-                                        @foreach ($dateTeams as $team)
-                                            @php
-                                                $teamOptionLabel = trim((string) (($team->driver_name ?? '').' '.(!empty($team->car_number) || !empty($team->car_model) ? '('.trim(($team->car_number ?? '').' '.($team->car_model ?? '')).')' : '').' + '.($team->companion_name ?? '')));
-                                            @endphp
-                                            <option value="{{ (int) ($team->id ?? 0) }}" @selected((string) ($row->team_id ?? '') === (string) (int) ($team->id ?? 0))>{{ $teamOptionLabel }}</option>
+                                        @foreach (($assignmentTeamOptions ?? []) as $team)
+                                            <option value="{{ (int) ($team->id ?? 0) }}" @selected($assignedTeamId === (int) ($team->id ?? 0))>{{ app(\App\Services\DeliveriesTeamSqliteService::class)->teamAssignmentOptionLabel($team) }}</option>
                                         @endforeach
                                     </select>
                                     @include('reports.partials.icon-button', ['action' => 'save', 'label' => 'Save team'])
                                 </div>
-                                @if (!empty($row->team_name))
-                                    <span class="muted sub-meta">Current: {{ $row->team_name }}</span>
+                                @if (!empty($row->assigned_team_date))
+                                    <span class="muted sub-meta">Team date: {{ $row->assigned_team_date }}</span>
                                 @endif
                             </form>
                         </td>

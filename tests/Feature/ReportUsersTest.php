@@ -33,6 +33,47 @@ class ReportUsersTest extends TestCase
         $this->assertSame(['sales', 'storage'], $user->report_keys);
     }
 
+    public function test_sqlite_service_stores_deliveries_access_for_user(): void
+    {
+        $service = new ReportsUsersSqliteService;
+        $service->ensureReady();
+
+        $access = new \App\Support\DeliveriesReportAccess(
+            canFilterDate: true,
+            canFilterCity: false,
+            canFilterStorage: false,
+            canFilterSalesman: true,
+            canFilterStatus: false,
+            canEditStatus: false,
+            defaultStorage: 'Warehouse A',
+        );
+
+        $id = $service->createUser('deliveries-viewer', 'password123', false, ['deliveries'], $access);
+        $stored = $service->deliveriesAccessForUserId($id);
+
+        $this->assertFalse($stored->canFilterCity);
+        $this->assertFalse($stored->canFilterStorage);
+        $this->assertFalse($stored->canEditStatus);
+        $this->assertSame('Warehouse A', $stored->defaultStorage);
+    }
+
+    public function test_sqlite_service_stores_storage_access_for_user(): void
+    {
+        $service = new ReportsUsersSqliteService;
+        $service->ensureReady();
+
+        $access = new \App\Support\StorageReportAccess(
+            canFilterStorage: false,
+            allowedStorages: ['Warehouse A', 'Warehouse B'],
+        );
+
+        $id = $service->createUser('storage-viewer', 'password123', false, ['storage'], null, $access);
+        $stored = $service->storageAccessForUserId($id);
+
+        $this->assertFalse($stored->canFilterStorage);
+        $this->assertSame(['Warehouse A', 'Warehouse B'], $stored->allowedStorages);
+    }
+
     public function test_navigation_filters_reports_for_limited_user(): void
     {
         $sections = ReportNavigation::sectionsForUser(['sales'], false);

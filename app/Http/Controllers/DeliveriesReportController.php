@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Exports\DeliveriesReportExport;
-use App\Http\Requests\DeliveriesReceiptBookletAssignRequest;
-use App\Http\Requests\DeliveriesReceiptBookletStoreRequest;
 use App\Http\Requests\DeliveriesReportRequest;
-use App\Services\DeliveriesReceiptBookletSqliteService;
 use App\Repositories\DeliveriesReportRepository;
 use App\Repositories\VisitsReportRepository;
 use App\Services\DeliveriesTeamSqliteService;
 use App\Services\DeliveryInvoicePdfExtractor;
+use App\Support\DeliveriesReportAccess;
+use App\Support\ReportAuthSession;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
@@ -30,12 +29,15 @@ class DeliveriesReportController extends Controller
         private readonly DeliveriesReportRepository $repository,
         private readonly VisitsReportRepository $visitsRepository,
         private readonly DeliveriesTeamSqliteService $teams,
-        private readonly DeliveriesReceiptBookletSqliteService $receiptBooklets,
         private readonly DeliveryInvoicePdfExtractor $pdfExtractor
     ) {}
 
-    public function index(DeliveriesReportRequest $request): View
+    public function index(DeliveriesReportRequest $request): View|RedirectResponse
     {
+        if ($request->query('tab') === 'receipts') {
+            return redirect()->route('reports.accounting.index', ['tab' => 'receipts']);
+        }
+
         $today = Carbon::now()->toDateString();
         $input = array_merge([
             'date_from' => $today,
@@ -44,6 +46,7 @@ class DeliveriesReportController extends Controller
             'storage' => '',
         ], $request->validated());
 
+        $activeTab = (string) ($input['tab'] ?? 'report');
         $dateFrom = (string) $input['date_from'];
         $dateTo = (string) $input['date_to'];
         $perPage = (int) ($input['per_page'] ?? 250);
@@ -51,16 +54,21 @@ class DeliveriesReportController extends Controller
         $storage = trim((string) ($input['storage'] ?? ''));
         $deliveryStatus = trim((string) ($input['delivery_status'] ?? ''));
         $teamId = (int) ($input['team_id'] ?? 0);
-        $activeTab = (string) ($input['tab'] ?? 'report');
         $teamDate = (string) ($input['team_date'] ?? $today);
+        $invoiceSearch = trim((string) ($input['invoice_search'] ?? ''));
         $includeAmount = (bool) ($input['include_amount'] ?? false);
         $includeWeight = (bool) ($input['include_weight'] ?? false);
         $cities = $this->repository->normalizeCities(
             is_array($input['cities'] ?? null) ? $input['cities'] : []
         );
+        $salesmanIds = $this->repository->normalizeSalesmanIds(
+            is_array($input['salesman_ids'] ?? null) ? $input['salesman_ids'] : []
+        );
+        $deliveriesAccess = ReportAuthSession::deliveriesAccess();
 
         $storageOptions = $this->repository->getStorageOptions();
         $cityOptions = $this->visitsRepository->getCityOptions();
+        $salesmanOptions = $this->visitsRepository->getSalesmanOptions();
         $drivers = [];
         $companions = [];
         $teamsForSetupDate = [];
@@ -68,39 +76,34 @@ class DeliveriesReportController extends Controller
         $assignmentMap = [];
         $teamFilterOptions = [];
         $batchResult = session('batch_result');
-        $receiptBookletsAssigned = [];
-        $receiptBookletsUnassigned = [];
-        $receiptBookletsReturned = [];
-
-        if ($activeTab === 'receipts') {
-            try {
-                $receiptBookletsAssigned = $this->receiptBooklets->listAssignedActive();
-                $receiptBookletsUnassigned = $this->receiptBooklets->listUnassigned();
-                $receiptBookletsReturned = $this->receiptBooklets->listReturned();
-            } catch (Throwable $e) {
-                Log::warning('Deliveries receipt booklets unavailable.', ['message' => $e->getMessage()]);
-            }
-        }
 
         try {
             $drivers = $this->teams->listDrivers();
             $companions = $this->teams->listCompanions();
             $teamsForSetupDate = $this->teams->listDailyTeamsForDate($teamDate);
             $teamsByDate = $this->teams->listDailyTeamsByDateRange($dateFrom, $dateTo);
-            foreach ($teamsByDate as $dateRows) {
-                foreach ($dateRows as $teamRow) {
-                    $teamFilterOptions[] = $teamRow;
+            if ($activeTab === 'batch-assignment') {
+                $teamFilterOptions = $teamsForSetupDate;
+            } else {
+                foreach ($teamsByDate as $dateRows) {
+                    foreach ($dateRows as $teamRow) {
+                        $teamFilterOptions[] = $teamRow;
+                    }
                 }
             }
         } catch (Throwable $e) {
             Log::warning('Deliveries local team setup unavailable.', ['message' => $e->getMessage()]);
         }
 
+        $assignmentTeamOptions = $this->buildAssignmentTeamOptions($teamFilterOptions, $teamsForSetupDate);
+
         $invoiceIds = null;
         $applyDateFilter = true;
-        if ($teamId > 0) {
-            [$invoiceIds, $applyDateFilter] = $this->resolveTeamInvoiceFilter($teamId);
-        }
+        $invoiceSearchNotFound = false;
+        [$invoiceIds, $applyDateFilter, $invoiceSearchNotFound] = $this->resolveReportInvoiceFilter(
+            $teamId,
+            $invoiceSearch
+        );
 
         $grandTotals = null;
         $rows = null;
@@ -109,6 +112,7 @@ class DeliveriesReportController extends Controller
                 $dateFrom,
                 $dateTo,
                 $cities,
+                $salesmanIds,
                 $storage !== '' ? $storage : null,
                 $deliveryStatus !== '' ? $deliveryStatus : null,
                 $invoiceIds,
@@ -129,15 +133,17 @@ class DeliveriesReportController extends Controller
                 }
             }
             foreach ($rows->items() as $row) {
-                $invoiceId = trim((string) ($row->invoice_id ?? ''));
-                $assigned = $assignmentMap[$invoiceId] ?? null;
-                $row->team_id = $assigned !== null ? (int) ($assigned->team_id ?? 0) : null;
-                $row->team_name = $assigned !== null ? $this->teams->teamLabel($assigned) : '';
+                $this->attachTeamAssignmentToRow($row, $assignmentMap);
             }
+            $assignmentTeamOptions = $this->buildAssignmentTeamOptions(
+                array_merge($teamFilterOptions, $this->teamsFromAssignmentMap($assignmentMap)),
+                $teamsForSetupDate
+            );
             $grandTotals = $this->repository->getReportTotals(
                 $dateFrom,
                 $dateTo,
                 $cities,
+                $salesmanIds,
                 $storage !== '' ? $storage : null,
                 $deliveryStatus !== '' ? $deliveryStatus : null,
                 $invoiceIds,
@@ -154,28 +160,64 @@ class DeliveriesReportController extends Controller
                     'date_to' => $dateTo,
                     'per_page' => $perPage,
                     'cities' => $cities,
+                    'salesman_ids' => $salesmanIds,
                     'storage' => $storage,
                     'delivery_status' => $deliveryStatus,
                     'team_id' => $teamId > 0 ? $teamId : '',
                     'tab' => $activeTab,
                     'team_date' => $teamDate,
+                    'invoice_search' => $invoiceSearch,
                     'include_amount' => $includeAmount,
                     'include_weight' => $includeWeight,
                 ],
+                'invoiceSearchNotFound' => $invoiceSearchNotFound,
                 'storageOptions' => $storageOptions,
                 'cityOptions' => $cityOptions,
+                'salesmanOptions' => $salesmanOptions,
+                'deliveriesAccess' => $deliveriesAccess,
                 'drivers' => $drivers,
                 'companions' => $companions,
                 'teamsForSetupDate' => $teamsForSetupDate,
                 'teamsByDate' => $teamsByDate,
                 'teamFilterOptions' => $teamFilterOptions,
+                'assignmentTeamOptions' => $assignmentTeamOptions,
                 'batchResult' => $batchResult,
-                'receiptBookletsAssigned' => $receiptBookletsAssigned,
-                'receiptBookletsUnassigned' => $receiptBookletsUnassigned,
-                'receiptBookletsReturned' => $receiptBookletsReturned,
                 'errorMessage' => 'Unable to load deliveries report. Check logs and try again.',
+                'navQuery' => $this->buildNavQuery(
+                    $deliveriesAccess,
+                    $today,
+                    $dateFrom,
+                    $dateTo,
+                    $perPage,
+                    $cities,
+                    $salesmanIds,
+                    $storage,
+                    $deliveryStatus,
+                    $teamId,
+                    $teamDate,
+                    $invoiceSearch,
+                    $includeAmount,
+                    $includeWeight
+                ),
             ]);
         }
+
+        $navQuery = $this->buildNavQuery(
+            $deliveriesAccess,
+            $today,
+            $dateFrom,
+            $dateTo,
+            $perPage,
+            $cities,
+            $salesmanIds,
+            $storage,
+            $deliveryStatus,
+            $teamId,
+            $teamDate,
+            $invoiceSearch,
+            $includeAmount,
+            $includeWeight
+        );
 
         return view('reports.deliveries.index', [
             'rows' => $rows,
@@ -185,92 +227,31 @@ class DeliveriesReportController extends Controller
                 'date_to' => $dateTo,
                 'per_page' => $perPage,
                 'cities' => $cities,
+                'salesman_ids' => $salesmanIds,
                 'storage' => $storage,
                 'delivery_status' => $deliveryStatus,
                 'team_id' => $teamId > 0 ? $teamId : '',
                 'tab' => $activeTab,
                 'team_date' => $teamDate,
+                'invoice_search' => $invoiceSearch,
                 'include_amount' => $includeAmount,
                 'include_weight' => $includeWeight,
             ],
+            'invoiceSearchNotFound' => $invoiceSearchNotFound,
             'storageOptions' => $storageOptions,
             'cityOptions' => $cityOptions,
+            'salesmanOptions' => $salesmanOptions,
+            'deliveriesAccess' => $deliveriesAccess,
             'drivers' => $drivers,
             'companions' => $companions,
             'teamsForSetupDate' => $teamsForSetupDate,
             'teamsByDate' => $teamsByDate,
             'teamFilterOptions' => $teamFilterOptions,
+            'assignmentTeamOptions' => $assignmentTeamOptions,
             'batchResult' => $batchResult,
-            'receiptBookletsAssigned' => $receiptBookletsAssigned,
-            'receiptBookletsUnassigned' => $receiptBookletsUnassigned,
-            'receiptBookletsReturned' => $receiptBookletsReturned,
             'errorMessage' => null,
+            'navQuery' => $navQuery,
         ]);
-    }
-
-    public function storeReceiptBooklets(DeliveriesReceiptBookletStoreRequest $request): RedirectResponse
-    {
-        $validated = $request->validated();
-
-        try {
-            $result = $this->receiptBooklets->addBookletsFromRange(
-                (int) $validated['first_number'],
-                (int) $validated['last_number']
-            );
-        } catch (\InvalidArgumentException $e) {
-            return $this->receiptsRedirect($request)->with('error', $e->getMessage());
-        } catch (Throwable $e) {
-            Log::error('deliveries.receipt_booklets_store_failed', ['message' => $e->getMessage()]);
-
-            return $this->receiptsRedirect($request)->with('error', 'Could not add receipt booklets.');
-        }
-
-        $message = 'Added '.$result['added'].' receipt booklet(s).';
-        if ($result['skipped'] > 0) {
-            $message .= ' Skipped '.$result['skipped'].' duplicate starting number(s).';
-        }
-
-        return $this->receiptsRedirect($request)->with('status', $message);
-    }
-
-    public function assignReceiptBooklet(DeliveriesReceiptBookletAssignRequest $request): RedirectResponse
-    {
-        $validated = $request->validated();
-
-        try {
-            $this->receiptBooklets->assignByStartNumber(
-                (int) $validated['start_number'],
-                (string) $validated['driver_name']
-            );
-        } catch (\InvalidArgumentException $e) {
-            return $this->receiptsRedirect($request)->with('error', $e->getMessage());
-        } catch (Throwable $e) {
-            Log::error('deliveries.receipt_booklet_assign_failed', ['message' => $e->getMessage()]);
-
-            return $this->receiptsRedirect($request)->with('error', 'Could not assign receipt booklet.');
-        }
-
-        return $this->receiptsRedirect($request)->with('status', 'Receipt booklet assigned.');
-    }
-
-    public function returnReceiptBooklet(Request $request): RedirectResponse
-    {
-        $validated = $request->validate([
-            'booklet_id' => ['required', 'integer', 'min:1'],
-            'tab' => ['nullable', 'string', 'in:receipts'],
-        ]);
-
-        try {
-            $this->receiptBooklets->markReturned((int) $validated['booklet_id']);
-        } catch (\InvalidArgumentException $e) {
-            return $this->receiptsRedirect($request)->with('error', $e->getMessage());
-        } catch (Throwable $e) {
-            Log::error('deliveries.receipt_booklet_return_failed', ['message' => $e->getMessage()]);
-
-            return $this->receiptsRedirect($request)->with('error', 'Could not mark receipt booklet as returned.');
-        }
-
-        return $this->receiptsRedirect($request)->with('status', 'Receipt booklet marked as returned.');
     }
 
     public function exportPdf(DeliveriesReportRequest $request): Response|RedirectResponse
@@ -281,22 +262,23 @@ class DeliveriesReportController extends Controller
         $storage = trim((string) ($input['storage'] ?? ''));
         $deliveryStatus = trim((string) ($input['delivery_status'] ?? ''));
         $teamId = (int) ($input['team_id'] ?? 0);
+        $invoiceSearch = trim((string) ($input['invoice_search'] ?? ''));
         $includeAmount = (bool) ($input['include_amount'] ?? false);
         $includeWeight = (bool) ($input['include_weight'] ?? false);
         $cities = $this->repository->normalizeCities(
             is_array($input['cities'] ?? null) ? $input['cities'] : []
         );
-        $invoiceIds = null;
-        $applyDateFilter = true;
-        if ($teamId > 0) {
-            [$invoiceIds, $applyDateFilter] = $this->resolveTeamInvoiceFilter($teamId);
-        }
+        $salesmanIds = $this->repository->normalizeSalesmanIds(
+            is_array($input['salesman_ids'] ?? null) ? $input['salesman_ids'] : []
+        );
+        [$invoiceIds, $applyDateFilter] = $this->resolveReportInvoiceFilter($teamId, $invoiceSearch);
 
         try {
             $rows = $this->repository->exportRows(
                 $dateFrom,
                 $dateTo,
                 $cities,
+                $salesmanIds,
                 $storage !== '' ? $storage : null,
                 $deliveryStatus !== '' ? $deliveryStatus : null,
                 $invoiceIds,
@@ -321,7 +303,7 @@ class DeliveriesReportController extends Controller
             Log::error('Deliveries PDF export failed.', ['message' => $e->getMessage()]);
 
             return redirect()
-                ->to(route('reports.deliveries.index', $request->query()))
+                ->to(route('reports.deliveries.index', $this->redirectQuery($request)))
                 ->with('error', 'Could not export PDF.');
         }
 
@@ -349,22 +331,23 @@ class DeliveriesReportController extends Controller
         $storage = trim((string) ($input['storage'] ?? ''));
         $deliveryStatus = trim((string) ($input['delivery_status'] ?? ''));
         $teamId = (int) ($input['team_id'] ?? 0);
+        $invoiceSearch = trim((string) ($input['invoice_search'] ?? ''));
         $includeAmount = (bool) ($input['include_amount'] ?? false);
         $includeWeight = (bool) ($input['include_weight'] ?? false);
         $cities = $this->repository->normalizeCities(
             is_array($input['cities'] ?? null) ? $input['cities'] : []
         );
-        $invoiceIds = null;
-        $applyDateFilter = true;
-        if ($teamId > 0) {
-            [$invoiceIds, $applyDateFilter] = $this->resolveTeamInvoiceFilter($teamId);
-        }
+        $salesmanIds = $this->repository->normalizeSalesmanIds(
+            is_array($input['salesman_ids'] ?? null) ? $input['salesman_ids'] : []
+        );
+        [$invoiceIds, $applyDateFilter] = $this->resolveReportInvoiceFilter($teamId, $invoiceSearch);
 
         try {
             $rows = $this->repository->exportRows(
                 $dateFrom,
                 $dateTo,
                 $cities,
+                $salesmanIds,
                 $storage !== '' ? $storage : null,
                 $deliveryStatus !== '' ? $deliveryStatus : null,
                 $invoiceIds,
@@ -389,7 +372,7 @@ class DeliveriesReportController extends Controller
             Log::error('Deliveries CSV export failed.', ['message' => $e->getMessage()]);
 
             return redirect()
-                ->to(route('reports.deliveries.index', $request->query()))
+                ->to(route('reports.deliveries.index', $this->redirectQuery($request)))
                 ->with('error', 'Could not export CSV.');
         }
 
@@ -418,7 +401,7 @@ class DeliveriesReportController extends Controller
             return back()->withInput()->with('error', $e->getMessage());
         }
 
-        return redirect()->route('reports.deliveries.index', array_merge($request->query(), [
+        return redirect()->route('reports.deliveries.index', array_merge($this->redirectQuery($request), [
             'tab' => 'setup',
         ]))->with('status', 'Driver saved.');
     }
@@ -435,7 +418,7 @@ class DeliveriesReportController extends Controller
             return back()->withInput()->with('error', $e->getMessage());
         }
 
-        return redirect()->route('reports.deliveries.index', array_merge($request->query(), [
+        return redirect()->route('reports.deliveries.index', array_merge($this->redirectQuery($request), [
             'tab' => 'setup',
         ]))->with('status', 'Companion saved.');
     }
@@ -456,12 +439,12 @@ class DeliveriesReportController extends Controller
                 trim((string) ($validated['car_model'] ?? ''))
             );
         } catch (Throwable $e) {
-            return redirect()->route('reports.deliveries.index', array_merge($request->query(), [
+            return redirect()->route('reports.deliveries.index', array_merge($this->redirectQuery($request), [
                 'tab' => 'setup',
             ]))->with('error', $e->getMessage());
         }
 
-        return redirect()->route('reports.deliveries.index', array_merge($request->query(), [
+        return redirect()->route('reports.deliveries.index', array_merge($this->redirectQuery($request), [
             'tab' => 'setup',
         ]))->with('status', 'Driver updated.');
     }
@@ -471,12 +454,12 @@ class DeliveriesReportController extends Controller
         try {
             $this->teams->deleteDriver($person);
         } catch (Throwable $e) {
-            return redirect()->route('reports.deliveries.index', array_merge($request->query(), [
+            return redirect()->route('reports.deliveries.index', array_merge($this->redirectQuery($request), [
                 'tab' => 'setup',
             ]))->with('error', $e->getMessage());
         }
 
-        return redirect()->route('reports.deliveries.index', array_merge($request->query(), [
+        return redirect()->route('reports.deliveries.index', array_merge($this->redirectQuery($request), [
             'tab' => 'setup',
         ]))->with('status', 'Driver deleted. Related daily teams and invoice assignments were removed.');
     }
@@ -490,12 +473,12 @@ class DeliveriesReportController extends Controller
         try {
             $this->teams->updateCompanion($person, trim((string) $validated['companion_name']));
         } catch (Throwable $e) {
-            return redirect()->route('reports.deliveries.index', array_merge($request->query(), [
+            return redirect()->route('reports.deliveries.index', array_merge($this->redirectQuery($request), [
                 'tab' => 'setup',
             ]))->with('error', $e->getMessage());
         }
 
-        return redirect()->route('reports.deliveries.index', array_merge($request->query(), [
+        return redirect()->route('reports.deliveries.index', array_merge($this->redirectQuery($request), [
             'tab' => 'setup',
         ]))->with('status', 'Companion updated.');
     }
@@ -505,12 +488,12 @@ class DeliveriesReportController extends Controller
         try {
             $this->teams->deleteCompanion($person);
         } catch (Throwable $e) {
-            return redirect()->route('reports.deliveries.index', array_merge($request->query(), [
+            return redirect()->route('reports.deliveries.index', array_merge($this->redirectQuery($request), [
                 'tab' => 'setup',
             ]))->with('error', $e->getMessage());
         }
 
-        return redirect()->route('reports.deliveries.index', array_merge($request->query(), [
+        return redirect()->route('reports.deliveries.index', array_merge($this->redirectQuery($request), [
             'tab' => 'setup',
         ]))->with('status', 'Companion deleted. Related daily teams and invoice assignments were removed.');
     }
@@ -533,7 +516,7 @@ class DeliveriesReportController extends Controller
             return back()->withInput()->with('error', $e->getMessage());
         }
 
-        return redirect()->route('reports.deliveries.index', array_merge($request->query(), [
+        return redirect()->route('reports.deliveries.index', array_merge($this->redirectQuery($request), [
             'tab' => 'daily-teams',
             'team_date' => (string) $validated['team_date'],
         ]))->with('status', 'Daily team saved.');
@@ -544,13 +527,13 @@ class DeliveriesReportController extends Controller
         try {
             $this->teams->deleteDailyTeam($team);
         } catch (Throwable $e) {
-            return redirect()->route('reports.deliveries.index', array_merge($request->query(), [
+            return redirect()->route('reports.deliveries.index', array_merge($this->redirectQuery($request), [
                 'tab' => 'daily-teams',
                 'team_date' => $request->query('team_date'),
             ]))->with('error', $e->getMessage());
         }
 
-        return redirect()->route('reports.deliveries.index', array_merge($request->query(), [
+        return redirect()->route('reports.deliveries.index', array_merge($this->redirectQuery($request), [
             'tab' => 'daily-teams',
             'team_date' => $request->query('team_date'),
         ]))->with('status', 'Daily team deleted.');
@@ -558,6 +541,12 @@ class DeliveriesReportController extends Controller
 
     public function updateDeliveryStatus(Request $request): RedirectResponse
     {
+        if (! ReportAuthSession::deliveriesAccess()->canEditStatus) {
+            return redirect()
+                ->route('reports.deliveries.index', $this->redirectQuery($request, ['tab' => 'report']))
+                ->with('error', 'You do not have permission to change delivery status.');
+        }
+
         $validated = $request->validate([
             'invoice_id' => ['required', 'string', 'max:100'],
             'current_status' => ['required', 'string', 'in:delivered,not_delivered'],
@@ -575,18 +564,18 @@ class DeliveriesReportController extends Controller
             Log::error('Deliveries status update failed.', ['message' => $e->getMessage()]);
 
             return redirect()
-                ->route('reports.deliveries.index', $request->query())
+                ->route('reports.deliveries.index', $this->redirectQuery($request, ['tab' => 'report']))
                 ->with('error', 'Could not update delivery status.');
         }
 
         if ($updated < 1) {
             return redirect()
-                ->route('reports.deliveries.index', $request->query())
+                ->route('reports.deliveries.index', $this->redirectQuery($request, ['tab' => 'report']))
                 ->with('error', 'No matching delivery rows were updated.');
         }
 
         return redirect()
-            ->route('reports.deliveries.index', $request->query())
+            ->route('reports.deliveries.index', $this->redirectQuery($request, ['tab' => 'report']))
             ->with('status', 'Delivery status changed to '.$nextStatus.'.');
     }
 
@@ -608,15 +597,13 @@ class DeliveriesReportController extends Controller
             return back()->withInput()->with('error', $e->getMessage());
         }
 
-        return redirect()->route('reports.deliveries.index', $request->query())->with('status', 'Invoice team assignment saved.');
+        return redirect()->route('reports.deliveries.index', $this->redirectQuery($request, ['tab' => 'report']))->with('status', 'Invoice team assignment saved.');
     }
 
     public function batchAssignFromPdf(Request $request): RedirectResponse
     {
         $validated = $request->validate([
             'team_id' => ['required', 'integer', 'min:1'],
-            'date_from' => ['required', 'date'],
-            'date_to' => ['required', 'date', 'after_or_equal:date_from'],
             'batch_pdf' => ['required', 'file', 'mimes:pdf', 'max:15360'],
         ]);
 
@@ -651,6 +638,9 @@ class DeliveriesReportController extends Controller
                         if ($key !== '' && isset($unmatchedKeys[$key])) {
                             $matches[] = $row;
                             unset($unmatchedKeys[$key]);
+                            if ($unmatchedKeys === []) {
+                                break;
+                            }
                         }
                     }
                 }
@@ -682,7 +672,7 @@ class DeliveriesReportController extends Controller
 
                 $this->teams->assignInvoiceTeam(
                     $invoiceId,
-                    (string) ($row->document_date ?? $validated['date_from']),
+                    (string) ($row->document_date ?? Carbon::now()->toDateString()),
                     $targetTeamId
                 );
                 $assignedCount++;
@@ -701,12 +691,12 @@ class DeliveriesReportController extends Controller
                 array_values(array_unique(array_filter($matchedNumbers)))
             ))));
         } catch (Throwable $e) {
-            return redirect()->route('reports.deliveries.index', array_merge($request->query(), [
+            return redirect()->route('reports.deliveries.index', array_merge($this->redirectQuery($request), [
                 'tab' => 'batch-assignment',
             ]))->with('error', 'Batch assignment failed: '.$e->getMessage());
         }
 
-        return redirect()->route('reports.deliveries.index', array_merge($request->query(), [
+        return redirect()->route('reports.deliveries.index', array_merge($this->redirectQuery($request), [
             'tab' => 'batch-assignment',
         ]))->with('batch_result', [
             'team_id' => (int) $validated['team_id'],
@@ -716,13 +706,6 @@ class DeliveriesReportController extends Controller
             'reassigned_count' => $reassignedCount,
             'unmatched_count' => $unmatchedCount,
         ])->with('status', 'Batch assignment completed.');
-    }
-
-    private function receiptsRedirect(Request $request): RedirectResponse
-    {
-        return redirect()->route('reports.deliveries.index', array_merge($request->query(), [
-            'tab' => 'receipts',
-        ]));
     }
 
     private function normalizeBatchInvoiceNumberKey(string $value): string
@@ -752,7 +735,7 @@ class DeliveriesReportController extends Controller
         } catch (Throwable $e) {
             Log::error('deliveries.clear_team_assignments_failed', ['message' => $e->getMessage()]);
 
-            return redirect()->route('reports.deliveries.index', array_merge($request->query(), [
+            return redirect()->route('reports.deliveries.index', array_merge($this->redirectQuery($request), [
                 'tab' => 'batch-assignment',
             ]))->with('error', 'Could not clear team assignments.');
         }
@@ -761,9 +744,36 @@ class DeliveriesReportController extends Controller
             ? 'Removed '.$removedCount.' invoice assignment(s) for the selected team.'
             : 'No invoice assignments were found for the selected team.';
 
-        return redirect()->route('reports.deliveries.index', array_merge($request->query(), [
+        return redirect()->route('reports.deliveries.index', array_merge($this->redirectQuery($request), [
             'tab' => 'batch-assignment',
         ]))->with('status', $message);
+    }
+
+    /**
+     * @return array{0: list<string>|null, 1: bool, 2: bool}
+     */
+    private function resolveReportInvoiceFilter(int $teamId, string $invoiceSearch): array
+    {
+        $invoiceSearch = trim($invoiceSearch);
+        if ($invoiceSearch !== '') {
+            try {
+                $ids = $this->repository->resolveInvoiceIdsByNumberSearch($invoiceSearch);
+            } catch (Throwable $e) {
+                Log::warning('Deliveries invoice search failed.', ['message' => $e->getMessage()]);
+
+                return [[], false, true];
+            }
+
+            return [$ids, false, $ids === []];
+        }
+
+        if ($teamId > 0) {
+            [$invoiceIds, $applyDateFilter] = $this->resolveTeamInvoiceFilter($teamId);
+
+            return [$invoiceIds, $applyDateFilter, false];
+        }
+
+        return [null, true, false];
     }
 
     /**
@@ -778,5 +788,138 @@ class DeliveriesReportController extends Controller
 
             return [[], false];
         }
+    }
+
+    /**
+     * @param  array<string, object>  $assignmentMap
+     */
+    private function attachTeamAssignmentToRow(object $row, array $assignmentMap): void
+    {
+        $invoiceId = trim((string) ($row->invoice_id ?? ''));
+        $assigned = $assignmentMap[$invoiceId] ?? null;
+        if ($assigned === null) {
+            $row->team_id = null;
+            $row->team_name = '';
+            $row->assigned_team_date = '';
+            $row->assigned_team = null;
+
+            return;
+        }
+
+        $row->team_id = (int) ($assigned->team_id ?? 0);
+        $row->team_name = $this->teams->teamLabel($assigned);
+        $row->assigned_team_date = trim((string) ($assigned->team_date ?? ''));
+        $row->assigned_team = (object) [
+            'id' => (int) ($assigned->team_id ?? 0),
+            'team_date' => trim((string) ($assigned->team_date ?? '')),
+            'driver_name' => trim((string) ($assigned->driver_name ?? '')),
+            'companion_name' => trim((string) ($assigned->companion_name ?? '')),
+        ];
+    }
+
+    /**
+     * @param  list<object>  $teamsInRange
+     * @param  list<object>  $teamsForSetupDate
+     * @return list<object>
+     */
+    private function buildAssignmentTeamOptions(array $teamsInRange, array $teamsForSetupDate): array
+    {
+        $byId = [];
+        foreach (array_merge($teamsInRange, $teamsForSetupDate) as $team) {
+            $id = (int) ($team->id ?? 0);
+            if ($id > 0) {
+                $byId[$id] = $team;
+            }
+        }
+
+        $teams = array_values($byId);
+        usort($teams, static function (object $a, object $b): int {
+            $dateCmp = strcmp((string) ($b->team_date ?? ''), (string) ($a->team_date ?? ''));
+            if ($dateCmp !== 0) {
+                return $dateCmp;
+            }
+
+            return strcmp((string) ($a->driver_name ?? ''), (string) ($b->driver_name ?? ''));
+        });
+
+        return $teams;
+    }
+
+    /**
+     * @param  array<string, object>  $assignmentMap
+     * @return list<object>
+     */
+    private function teamsFromAssignmentMap(array $assignmentMap): array
+    {
+        $teams = [];
+        foreach ($assignmentMap as $assigned) {
+            $id = (int) ($assigned->team_id ?? 0);
+            if ($id <= 0 || isset($teams[$id])) {
+                continue;
+            }
+
+            $teams[$id] = (object) [
+                'id' => $id,
+                'team_date' => trim((string) ($assigned->team_date ?? '')),
+                'driver_name' => trim((string) ($assigned->driver_name ?? '')),
+                'companion_name' => trim((string) ($assigned->companion_name ?? '')),
+            ];
+        }
+
+        return array_values($teams);
+    }
+
+    /**
+     * @param  list<string>  $cities
+     * @param  list<int>  $salesmanIds
+     * @return array<string, mixed>
+     */
+    private function buildNavQuery(
+        DeliveriesReportAccess $access,
+        string $today,
+        string $dateFrom,
+        string $dateTo,
+        int $perPage,
+        array $cities,
+        array $salesmanIds,
+        string $storage,
+        string $deliveryStatus,
+        int $teamId,
+        string $teamDate,
+        string $invoiceSearch,
+        bool $includeAmount,
+        bool $includeWeight,
+    ): array {
+        return $access->snapshotForRedirect([
+            'date_from' => $dateFrom,
+            'date_to' => $dateTo,
+            'per_page' => $perPage,
+            'cities' => $cities,
+            'salesman_ids' => $salesmanIds,
+            'storage' => $storage,
+            'delivery_status' => $deliveryStatus,
+            'team_id' => $teamId > 0 ? $teamId : '',
+            'team_date' => $teamDate,
+            'invoice_search' => $invoiceSearch,
+            'include_amount' => $includeAmount,
+            'include_weight' => $includeWeight,
+        ], $today);
+    }
+
+    /**
+     * @param  array<string, mixed>  $extra
+     * @return array<string, mixed>
+     */
+    private function redirectQuery(Request $request, array $extra = []): array
+    {
+        $today = Carbon::now()->toDateString();
+        $merged = array_merge(
+            $request->query(),
+            $request->only(DeliveriesReportAccess::filterKeys())
+        );
+
+        $snapshot = ReportAuthSession::deliveriesAccess()->snapshotForRedirect($merged, $today);
+
+        return array_merge($snapshot, $extra);
     }
 }

@@ -36,6 +36,8 @@ function Finalize-ReleaseTree([string]$ReleaseRoot, [bool]$WithSqliteData, [stri
     if (Test-Path $dbDir) {
         Get-ChildItem -Path $dbDir -Filter 'damages-test-*.sqlite' -File -ErrorAction SilentlyContinue |
             Remove-Item -Force -ErrorAction SilentlyContinue
+        Get-ChildItem -Path $dbDir -Filter '*-test-*.sqlite' -File -ErrorAction SilentlyContinue |
+            Remove-Item -Force -ErrorAction SilentlyContinue
         Remove-Item (Join-Path $dbDir 'database.sqlite') -Force -ErrorAction SilentlyContinue
     }
 
@@ -57,7 +59,9 @@ function Finalize-ReleaseTree([string]$ReleaseRoot, [bool]$WithSqliteData, [stri
             'reports-users.sqlite',
             'deliveries-local.sqlite',
             'damages-local.sqlite',
-            'operations-tasks.sqlite'
+            'operations-tasks.sqlite',
+            'accounting-local.sqlite',
+            'promotions-local.sqlite'
         )
         $bundled = @()
         $missing = @()
@@ -91,6 +95,19 @@ function Finalize-ReleaseTree([string]$ReleaseRoot, [bool]$WithSqliteData, [stri
                 Write-Host ("  {0} ({1:N0} bytes)" -f $row.name, $row.bytes)
             }
         }
+    } else {
+        $expected = @(
+            'reports-users.sqlite',
+            'deliveries-local.sqlite',
+            'damages-local.sqlite',
+            'operations-tasks.sqlite',
+            'accounting-local.sqlite',
+            'promotions-local.sqlite'
+        )
+        foreach ($name in $expected) {
+            Remove-Item (Join-Path $dbDir $name) -Force -ErrorAction SilentlyContinue
+        }
+        Write-Host 'Update build: SQLite databases omitted from release package (server files are never replaced).' -ForegroundColor Yellow
     }
 
     $envExampleSrc = Join-Path $ProjectRoot 'installer\.env.production.example'
@@ -136,7 +153,7 @@ if (Test-Path $OutputDir) {
 }
 New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
 
-$excludeDirs = @('node_modules', '.git', 'dist', 'tests', '.cursor', '.idea', '.vscode')
+$excludeDirs = @('node_modules', '.git', 'dist', 'tests', '.cursor', '.idea', '.vscode', 'storage\app\sqlite-backups')
 $robocopyArgs = @($Root, $OutputDir, '/MIR', '/NFL', '/NDL', '/NJH', '/NJS', '/nc', '/ns', '/np')
 foreach ($d in $excludeDirs) {
     $robocopyArgs += '/XD'
@@ -144,6 +161,7 @@ foreach ($d in $excludeDirs) {
 }
 $robocopyArgs += '/XF'
 $robocopyArgs += '.env'
+$robocopyArgs += 'sqlite-auto-backup.json'
 
 & robocopy @robocopyArgs | Out-Null
 if ($LASTEXITCODE -ge 8) {
@@ -179,7 +197,7 @@ if ($BundleRuntime) {
     }
 }
 
-& (Join-Path $Root 'scripts\verify-release.ps1') -ReleaseRoot $OutputDir -BundleRuntime:$BundleRuntime
+& (Join-Path $Root 'scripts\verify-release.ps1') -ReleaseRoot $OutputDir -BundleRuntime:$BundleRuntime -UpdateBuild:(-not $IncludeSqliteData)
 
 $version = Get-Date -Format 'yyyyMMdd-HHmm'
 $zipPath = Join-Path (Split-Path $OutputDir -Parent) "ReportingApp-Release-$version.zip"

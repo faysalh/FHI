@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests;
 
+use App\Support\StorageReportAccess;
 use Carbon\Carbon;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
@@ -39,6 +40,9 @@ class StorageReportRequest extends FormRequest
             'show_category' => $this->boolean('show_category'),
             'show_item_code' => $this->boolean('show_item_code'),
         ]);
+
+        $applied = StorageReportAccess::applySessionToValidated($this->all());
+        $this->merge($applied);
     }
 
     public function withValidator(Validator $validator): void

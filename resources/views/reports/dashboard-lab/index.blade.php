@@ -5,7 +5,7 @@
 <header class="page-header">
     <h1>Dashboard</h1>
 </header>
-<p class="lab-desc">Live KPI snapshot for a saved governorate and optional salesman filter. Metrics refresh when you change the toolbar; charts and category tables follow the same scope.</p>
+<p class="lab-desc">Live KPI snapshot for a saved governorate and optional salesman filter. Metrics refresh when you change the toolbar; charts and category tables follow the same scope.@if ($historicalDatesEnabled ?? false) Use <strong>As of date</strong> to review a past day (defaults to today). Add <code>?live=1</code> to the URL to force live mode, or set <code>DASHBOARD_LAB_HISTORICAL_DATES=false</code> in <code>.env</code> to hide date controls entirely.@endif</p>
 
 @if ($governorateError || $dataError)
     <div class="alert alert--error" role="alert">
@@ -14,29 +14,60 @@
     </div>
 @endif
 
+<div id="lab_fetch_error" class="alert alert--error lab-fetch-error" role="alert" hidden></div>
+
 <div class="lab-toolbar">
-    <div>
-        <label for="lab_governorate_id">Governorate</label>
-        <select id="lab_governorate_id" @disabled($governorateOptions === [] || $initialMetrics === null)>
-            @forelse ($governorateOptions as $opt)
-                <option value="{{ $opt['id'] }}" @selected((int) $selectedGovernorateId === (int) $opt['id'])>{{ $opt['label'] }}</option>
-            @empty
-                <option value="">No saved governorates</option>
-            @endforelse
-        </select>
+    <div class="lab-toolbar__row">
+        <div>
+            <label for="lab_governorate_id">Governorate</label>
+            <select id="lab_governorate_id" @disabled($governorateOptions === [] || $initialMetrics === null)>
+                @forelse ($governorateOptions as $opt)
+                    <option value="{{ $opt['id'] }}" @selected((int) $selectedGovernorateId === (int) $opt['id'])>{{ $opt['label'] }}</option>
+                @empty
+                    <option value="">No saved governorates</option>
+                @endforelse
+            </select>
+        </div>
+        <div>
+            <label for="lab_salesman_id">Salesman filter</label>
+            <select id="lab_salesman_id" @disabled($initialMetrics === null)>
+                <option value="">All salesmen</option>
+                @foreach ($salesmanOptions as $opt)
+                    <option value="{{ $opt['id'] }}">{{ $opt['name'] }}</option>
+                @endforeach
+            </select>
+        </div>
+        @if ($historicalDatesEnabled ?? false)
+            <div class="lab-toolbar__dates">
+                <div>
+                    <label for="lab_as_of_date">As of date</label>
+                    <input type="date" id="lab_as_of_date" value="{{ $asOfDate ?? $todayDate ?? '' }}" max="{{ $todayDate ?? '' }}" @disabled($initialMetrics === null)>
+                </div>
+                <div class="lab-date-presets" aria-label="Quick dates">
+                    <button type="button" class="lab-date-preset" data-as-of="{{ $todayDate ?? '' }}">Today</button>
+                    <button type="button" class="lab-date-preset" data-as-of-preset="yesterday">Yesterday</button>
+                </div>
+            </div>
+        @endif
+        <div class="lab-toolbar__meta">
+            @if ($historicalDatesEnabled ?? false)
+                <span id="lab_mode_badge" class="lab-badge {{ ($isLiveView ?? true) ? 'lab-badge--live' : 'lab-badge--historical' }}">{{ ($isLiveView ?? true) ? 'Live' : 'Historical' }}</span>
+                @if (!($isLiveView ?? true))
+                    <a href="{{ route('reports.dashboard-lab.index', array_filter(['saved_governorate_id' => ($selectedGovernorateId ?? 0) > 0 ? $selectedGovernorateId : null, 'live' => 1])) }}" class="lab-reset-live" id="lab_reset_live">Back to live</a>
+                @endif
+            @else
+                <span class="lab-badge lab-badge--disabled">Live only</span>
+            @endif
+            <button type="button" class="lab-toolbar__refresh" id="lab_refresh_btn" @disabled($initialMetrics === null)>Refresh</button>
+            <span class="lab-toolbar__updated" id="lab_last_updated"></span>
+            <span class="muted"><span id="lab_governorate_label">{{ $governorateLabel }}</span> · <span id="lab_as_of_label">{{ $asOfLabel }}</span></span>
+        </div>
     </div>
-    <div>
-        <label for="lab_salesman_id">Salesman filter</label>
-        <select id="lab_salesman_id" @disabled($initialMetrics === null)>
-            <option value="">All salesmen</option>
-            @foreach ($salesmanOptions as $opt)
-                <option value="{{ $opt['id'] }}">{{ $opt['name'] }}</option>
-            @endforeach
-        </select>
-    </div>
-    <div class="muted" style="font-size:12px;padding-bottom:6px;">
-        <span id="lab_governorate_label">{{ $governorateLabel }}</span> · {{ $asOfLabel }}
-    </div>
+</div>
+
+<div id="lab_insights" class="lab-insights" hidden>
+    <p class="lab-insights__title">Insights</p>
+    <ul id="lab_insights_list"></ul>
 </div>
 
 <div id="lab_root" class="lab-grid @if($initialMetrics === null) lab-loading @endif">
@@ -45,7 +76,7 @@
         <h2 class="lab-card__title">Invoices</h2>
         <div class="lab-kpi-rows">
             <div class="lab-kpi-row">
-                <span class="dash-card__eyebrow">Today</span>
+                <span class="dash-card__eyebrow" data-lab-day-label>{{ $daySectionLabel ?? 'Today' }}</span>
                 <div class="lab-kpis">
                     <div>
                         <p class="lab-kpi__label">Count</p>
@@ -94,7 +125,7 @@
     </section>
 
     <section class="lab-card lab-span-6">
-        <h2 class="lab-card__title"><span class="lab-tag">Today</span> Sales by salesman</h2>
+        <h2 class="lab-card__title"><span class="lab-tag" data-lab-day-label>{{ $daySectionLabel ?? 'Today' }}</span> Sales by salesman</h2>
         <p class="lab-desc">
             Pie chart of today's sales amount (document lines, pre-discount unit × qty like the Sales report) split by salesman.
             Helps see who is carrying today's volume at a glance.
@@ -106,7 +137,7 @@
     </section>
 
     <section class="lab-card lab-span-8 lab-card--pace">
-        <h2 class="lab-card__title"><span class="lab-tag">{{ $monthLabel }}</span> Month pace</h2>
+        <h2 class="lab-card__title"><span class="lab-tag" data-lab-month-label>{{ $monthLabel }}</span> Month pace</h2>
         <div class="lab-kpis">
             <div>
                 <p class="lab-kpi__label">MTD amount</p>
@@ -164,7 +195,7 @@
     </section>
 
     <section class="lab-card lab-span-4">
-        <h2 class="lab-card__title"><span class="lab-tag">Month</span> By salesman</h2>
+        <h2 class="lab-card__title"><span class="lab-tag" data-lab-month-label>{{ $monthLabel }}</span> By salesman</h2>
         <p class="lab-desc">
             Horizontal view of who sold the most this month (amount). Complements the today pie when you need the full-month picture.
         </p>
@@ -221,13 +252,90 @@
 (function () {
     var metricsUrl = @json($metricsUrl);
     var initial = @json($initialMetrics);
+    var todayDate = @json($todayDate ?? now()->toDateString());
+    var historicalDatesEnabled = @json($historicalDatesEnabled ?? false);
+    var forceLive = @json($forceLive ?? false);
     var root = document.getElementById('lab_root');
     var governorateSelect = document.getElementById('lab_governorate_id');
     var governorateLabel = document.getElementById('lab_governorate_label');
+    var asOfLabelEl = document.getElementById('lab_as_of_label');
     var salesmanSelect = document.getElementById('lab_salesman_id');
+    var asOfInput = document.getElementById('lab_as_of_date');
+    var fetchErrorEl = document.getElementById('lab_fetch_error');
+    var insightsWrap = document.getElementById('lab_insights');
+    var insightsList = document.getElementById('lab_insights_list');
+    var modeBadge = document.getElementById('lab_mode_badge');
+    var lastUpdatedEl = document.getElementById('lab_last_updated');
+    var refreshBtn = document.getElementById('lab_refresh_btn');
     var pieToday = null, barMonth = null;
     var colors = ['#6366f1','#14b8a6','#f59e0b','#ec4899','#8b5cf6','#06b6d4','#84cc16','#f97316'];
 
+    function shiftDate(iso, days) {
+        var parts = String(iso || '').split('-');
+        if (parts.length !== 3) return todayDate;
+        var d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+        d.setDate(d.getDate() + days);
+        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+    function showFetchError(msg) {
+        if (!fetchErrorEl) return;
+        if (!msg) {
+            fetchErrorEl.hidden = true;
+            fetchErrorEl.textContent = '';
+            return;
+        }
+        fetchErrorEl.hidden = false;
+        fetchErrorEl.textContent = msg;
+    }
+    function setLastUpdated() {
+        if (!lastUpdatedEl) return;
+        var now = new Date();
+        lastUpdatedEl.textContent = 'Updated ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    function updateModeBadge(isLive) {
+        if (!modeBadge) return;
+        modeBadge.textContent = isLive ? 'Live' : 'Historical';
+        modeBadge.className = 'lab-badge ' + (isLive ? 'lab-badge--live' : 'lab-badge--historical');
+    }
+    function updateSectionLabels(meta) {
+        var dayLabel = (meta && meta.day_section_label) ? meta.day_section_label : 'Today';
+        var monthLabel = (meta && meta.month_label) ? meta.month_label : '';
+        document.querySelectorAll('[data-lab-day-label]').forEach(function (el) {
+            el.textContent = dayLabel;
+        });
+        if (monthLabel) {
+            document.querySelectorAll('[data-lab-month-label]').forEach(function (el) {
+                el.textContent = monthLabel;
+            });
+        }
+        if (asOfLabelEl && meta && meta.as_of_label) {
+            asOfLabelEl.textContent = meta.as_of_label;
+        }
+        updateModeBadge(meta && meta.is_live !== false);
+    }
+    function renderInsights(items) {
+        if (!insightsWrap || !insightsList) return;
+        if (!items || !items.length) {
+            insightsWrap.hidden = true;
+            insightsList.innerHTML = '';
+            return;
+        }
+        insightsWrap.hidden = false;
+        insightsList.innerHTML = items.map(function (line) {
+            return '<li>' + esc(line) + '</li>';
+        }).join('');
+    }
+    function syncPresetButtons() {
+        if (!asOfInput) return;
+        var current = asOfInput.value || todayDate;
+        document.querySelectorAll('.lab-date-preset').forEach(function (btn) {
+            var target = btn.getAttribute('data-as-of') || '';
+            if (btn.getAttribute('data-as-of-preset') === 'yesterday') {
+                target = shiftDate(todayDate, -1);
+            }
+            btn.classList.toggle('is-active', target === current);
+        });
+    }
     function fmt(n) {
         return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(Number(n) || 0);
     }
@@ -337,6 +445,12 @@
         var sales = salesmanSelect ? salesmanSelect.value : '';
         if (gov) params.push('saved_governorate_id=' + encodeURIComponent(gov));
         if (sales) params.push('salesman_id=' + encodeURIComponent(sales));
+        if (historicalDatesEnabled && !forceLive && asOfInput && asOfInput.value && asOfInput.value !== todayDate) {
+            params.push('as_of_date=' + encodeURIComponent(asOfInput.value));
+        }
+        if (forceLive) {
+            params.push('live=1');
+        }
         return params;
     }
     function syncUrl() {
@@ -348,6 +462,7 @@
     }
     function apply(data) {
         if (!data) return;
+        showFetchError('');
         if (data.governorate_label && governorateLabel) {
             governorateLabel.textContent = data.governorate_label;
         }
@@ -362,6 +477,10 @@
         var meta = data.meta || {};
         var pace = data.pacing || {};
 
+        updateSectionLabels(meta);
+        renderInsights(data.insights || []);
+        syncPresetButtons();
+        setLastUpdated();
         setText('inv_count', fmt(inv.invoice_count));
         setText('inv_qty', fmt(inv.quantity_total));
         setText('inv_amt', fmt(inv.invoice_amount));
@@ -434,12 +553,37 @@
         if (root) root.classList.add('lab-loading');
         fetch(url, { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
             .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
-            .then(function (res) { if (res.ok && res.body.ok) apply(res.body); })
+            .then(function (res) {
+                if (res.ok && res.body.ok) {
+                    apply(res.body);
+                } else {
+                    showFetchError((res.body && res.body.error) ? res.body.error : 'Could not load dashboard metrics.');
+                }
+            })
+            .catch(function () {
+                showFetchError('Could not load dashboard metrics. Check your connection and try Refresh.');
+            })
             .finally(function () { if (root) root.classList.remove('lab-loading'); });
     }
-    if (initial) apply(initial);
+    if (initial) {
+        apply(initial);
+        syncPresetButtons();
+    }
     if (governorateSelect) governorateSelect.addEventListener('change', load);
     if (salesmanSelect) salesmanSelect.addEventListener('change', load);
+    if (asOfInput) asOfInput.addEventListener('change', load);
+    if (refreshBtn) refreshBtn.addEventListener('click', load);
+    document.querySelectorAll('.lab-date-preset').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            if (!asOfInput) return;
+            var target = btn.getAttribute('data-as-of') || '';
+            if (btn.getAttribute('data-as-of-preset') === 'yesterday') {
+                target = shiftDate(todayDate, -1);
+            }
+            asOfInput.value = target || todayDate;
+            load();
+        });
+    });
 })();
 </script>
 @endpush

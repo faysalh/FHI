@@ -16,6 +16,7 @@
         <p class="hint">
         <strong>Inventory</strong> uses current stock (today). <strong>Sales</strong> sums document quantities in the selected date range (inclusive).
         <strong>Working days</strong> (Fridays excluded) divides period sales to get <strong>Sales average</strong>; <strong>Forecast</strong> is — when period sales are zero.
+        Items with <strong>zero cartons</strong> are hidden unless they had <strong>sales</strong> in the selected date range.
         Rows with <strong>Forecast</strong> under 5 are highlighted <span class="forecast-legend forecast-legend--critical">red</span>; under 10 (and ≥ 5) <span class="forecast-legend forecast-legend--warning">orange</span>.
         For <strong>weight, price/KG, and value</strong> calculations, open <a href="{{ route('reports.storage-items.evaluation', $q) }}">Evaluation (price / KG)</a>.
         </p>

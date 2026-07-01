@@ -94,13 +94,44 @@ final class ReportAuthSession
     /**
      * @param  list<string>  $allowedReportKeys
      */
-    public static function login(int $userId, string $username, bool $isSuperAdmin, array $allowedReportKeys): void
-    {
+    public static function login(
+        int $userId,
+        string $username,
+        bool $isSuperAdmin,
+        array $allowedReportKeys,
+        ?DeliveriesReportAccess $deliveriesAccess = null,
+        ?StorageReportAccess $storageAccess = null,
+    ): void {
         session()->put(self::AUTH_FLAG, true);
         session()->put(self::USER_ID, $userId);
         session()->put(self::USERNAME, $username);
         session()->put(self::SUPER_ADMIN, $isSuperAdmin);
         session()->put(self::ALLOWED_KEYS, array_values(array_unique($allowedReportKeys)));
+        if ($isSuperAdmin) {
+            DeliveriesReportAccess::forgetSession();
+            StorageReportAccess::forgetSession();
+        } else {
+            if ($deliveriesAccess !== null) {
+                DeliveriesReportAccess::putSession($deliveriesAccess);
+            } else {
+                DeliveriesReportAccess::forgetSession();
+            }
+            if ($storageAccess !== null) {
+                StorageReportAccess::putSession($storageAccess);
+            } else {
+                StorageReportAccess::forgetSession();
+            }
+        }
+    }
+
+    public static function deliveriesAccess(): DeliveriesReportAccess
+    {
+        return DeliveriesReportAccess::fromSession();
+    }
+
+    public static function storageAccess(): StorageReportAccess
+    {
+        return StorageReportAccess::fromSession();
     }
 
     public static function logout(Request $request): void
@@ -113,6 +144,8 @@ final class ReportAuthSession
             self::ALLOWED_KEYS,
             'reports_admin_intended_url',
         ]);
+        DeliveriesReportAccess::forgetSession();
+        StorageReportAccess::forgetSession();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
     }

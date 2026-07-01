@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Sign in — Reporting</title>
     @include('reports.partials.theme')
     <style>
@@ -47,5 +47,6 @@
         <button type="submit" class="btn btn--primary">Sign in</button>
     </form>
 </div>
+@include('reports.partials.mobile-reports')
 </body>
 </html>

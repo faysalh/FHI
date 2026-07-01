@@ -13,6 +13,16 @@ class DashboardMetricsRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'live' => $this->boolean('live'),
+            'as_of_date' => $this->filled('as_of_date')
+                ? trim((string) $this->input('as_of_date'))
+                : null,
+        ]);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -21,6 +31,8 @@ class DashboardMetricsRequest extends FormRequest
         return [
             'salesman_id' => ['nullable', 'string', 'max:36'],
             'saved_governorate_id' => ['nullable', 'integer', 'min:1'],
+            'as_of_date' => ['nullable', 'date', 'date_format:Y-m-d'],
+            'live' => ['sometimes', 'boolean'],
         ];
     }
 }

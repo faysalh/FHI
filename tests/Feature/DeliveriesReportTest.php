@@ -39,6 +39,7 @@ class DeliveriesReportTest extends TestCase
 
         $repo = Mockery::mock(DeliveriesReportRepository::class);
         $repo->shouldReceive('normalizeCities')->andReturn([]);
+        $repo->shouldReceive('normalizeSalesmanIds')->andReturn([]);
         $repo->shouldReceive('getStorageOptions')->once()->andReturn(['Main Store']);
         $repo->shouldReceive('getReport')->once()->andReturn($paginator);
         $repo->shouldReceive('getReportTotals')->once()->andReturn((object) [
@@ -49,6 +50,7 @@ class DeliveriesReportTest extends TestCase
 
         $visits = Mockery::mock(VisitsReportRepository::class);
         $visits->shouldReceive('getCityOptions')->andReturn(['Erbil']);
+        $visits->shouldReceive('getSalesmanOptions')->andReturn([]);
         $teams = Mockery::mock(DeliveriesTeamSqliteService::class);
         $teams->shouldReceive('listDrivers')->andReturn([]);
         $teams->shouldReceive('listCompanions')->andReturn([]);
@@ -64,9 +66,78 @@ class DeliveriesReportTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('Deliveries report');
+        $response->assertSee('sales invoices');
         $response->assertSee('Total (all matching filters)', false);
         $response->assertSee('Client One');
         $response->assertSee('Delivered');
+    }
+
+    public function test_invoice_search_loads_invoice_without_date_restriction(): void
+    {
+        $paginator = new LengthAwarePaginator(
+            items: [(object) [
+                'invoice_id' => '1001',
+                'invoice_no' => '8842',
+                'document_date' => '2026-01-15',
+                'client_code' => 'C-100',
+                'client_name' => 'Old Invoice Client',
+                'city_name' => 'Erbil',
+                'storage_name' => 'Main Store',
+                'quantity' => 5,
+                'delivery_status' => 'Not delivered',
+            ]],
+            total: 1,
+            perPage: 25,
+            currentPage: 1
+        );
+
+        $repo = Mockery::mock(DeliveriesReportRepository::class);
+        $repo->shouldReceive('normalizeCities')->andReturn([]);
+        $repo->shouldReceive('normalizeSalesmanIds')->andReturn([]);
+        $repo->shouldReceive('getStorageOptions')->once()->andReturn([]);
+        $repo->shouldReceive('resolveInvoiceIdsByNumberSearch')
+            ->once()
+            ->with('8842')
+            ->andReturn(['1001']);
+        $repo->shouldReceive('getReport')
+            ->once()
+            ->with(
+                Mockery::any(),
+                Mockery::any(),
+                [],
+                [],
+                null,
+                null,
+                ['1001'],
+                1,
+                250,
+                false
+            )
+            ->andReturn($paginator);
+        $repo->shouldReceive('getReportTotals')
+            ->once()
+            ->with(Mockery::any(), Mockery::any(), [], [], null, null, ['1001'], false)
+            ->andReturn((object) ['quantity' => 5, 'amount' => 0, 'weight_total' => 0]);
+
+        $visits = Mockery::mock(VisitsReportRepository::class);
+        $visits->shouldReceive('getCityOptions')->andReturn([]);
+        $visits->shouldReceive('getSalesmanOptions')->andReturn([]);
+        $teams = Mockery::mock(DeliveriesTeamSqliteService::class);
+        $teams->shouldReceive('listDrivers')->andReturn([]);
+        $teams->shouldReceive('listCompanions')->andReturn([]);
+        $teams->shouldReceive('listDailyTeamsForDate')->andReturn([]);
+        $teams->shouldReceive('listDailyTeamsByDateRange')->andReturn([]);
+        $teams->shouldReceive('assignmentsByInvoiceIds')->andReturn([]);
+
+        $this->app->instance(DeliveriesReportRepository::class, $repo);
+        $this->app->instance(VisitsReportRepository::class, $visits);
+        $this->app->instance(DeliveriesTeamSqliteService::class, $teams);
+
+        $response = $this->get('/reports/deliveries?date_from=2026-04-01&date_to=2026-04-20&invoice_search=8842');
+
+        $response->assertOk();
+        $response->assertSee('Old Invoice Client');
+        $response->assertSee('date range ignored', false);
     }
 
     public function test_team_filter_loads_all_assigned_invoices_without_date_restriction(): void
@@ -75,12 +146,14 @@ class DeliveriesReportTest extends TestCase
 
         $repo = Mockery::mock(DeliveriesReportRepository::class);
         $repo->shouldReceive('normalizeCities')->andReturn([]);
+        $repo->shouldReceive('normalizeSalesmanIds')->andReturn([]);
         $repo->shouldReceive('getStorageOptions')->once()->andReturn([]);
         $repo->shouldReceive('getReport')
             ->once()
             ->with(
                 '2026-04-01',
                 '2026-04-20',
+                [],
                 [],
                 null,
                 null,
@@ -92,11 +165,12 @@ class DeliveriesReportTest extends TestCase
             ->andReturn($paginator);
         $repo->shouldReceive('getReportTotals')
             ->once()
-            ->with('2026-04-01', '2026-04-20', [], null, null, ['999'], false)
+            ->with('2026-04-01', '2026-04-20', [], [], null, null, ['999'], false)
             ->andReturn((object) ['quantity' => 0, 'amount' => 0, 'weight_total' => 0]);
 
         $visits = Mockery::mock(VisitsReportRepository::class);
         $visits->shouldReceive('getCityOptions')->andReturn([]);
+        $visits->shouldReceive('getSalesmanOptions')->andReturn([]);
         $teams = Mockery::mock(DeliveriesTeamSqliteService::class);
         $teams->shouldReceive('listDrivers')->andReturn([]);
         $teams->shouldReceive('listCompanions')->andReturn([]);
@@ -145,10 +219,8 @@ class DeliveriesReportTest extends TestCase
         $this->app->instance(DeliveriesTeamSqliteService::class, $teams);
         $this->app->instance(\App\Services\DeliveryInvoicePdfExtractor::class, $extractor);
 
-        $response = $this->post('/reports/deliveries/batch-assign?tab=batch-assignment', [
+        $response = $this->post('/reports/deliveries/batch-assign?tab=batch-assignment&team_date=2026-04-20', [
             'team_id' => 3,
-            'date_from' => '2026-04-01',
-            'date_to' => '2026-04-20',
             'batch_pdf' => \Illuminate\Http\UploadedFile::fake()->create('invoices.pdf', 100, 'application/pdf'),
         ]);
 
@@ -197,6 +269,7 @@ class DeliveriesReportTest extends TestCase
     {
         $repo = Mockery::mock(DeliveriesReportRepository::class);
         $repo->shouldReceive('normalizeCities')->andReturn([]);
+        $repo->shouldReceive('normalizeSalesmanIds')->andReturn([]);
         $repo->shouldReceive('exportRows')->once()->andReturn([
             (object) [
                 'document_date' => '2026-04-20',
@@ -210,6 +283,7 @@ class DeliveriesReportTest extends TestCase
         ]);
         $visits = Mockery::mock(VisitsReportRepository::class);
         $visits->shouldReceive('getCityOptions')->andReturn([]);
+        $visits->shouldReceive('getSalesmanOptions')->andReturn([]);
         $teams = Mockery::mock(DeliveriesTeamSqliteService::class);
         $teams->shouldReceive('assignmentsByInvoiceIds')->andReturn([]);
 

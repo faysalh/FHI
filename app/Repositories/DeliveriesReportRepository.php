@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Repositories;
 
+use App\Support\SalesDocumentMetricsSql;
+use App\Support\SqlServerInClause;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -12,6 +14,10 @@ use stdClass;
 class DeliveriesReportRepository
 {
     private const MAX_EXPORT_ROWS = 10000;
+
+    private const INVOICE_FILTER_TEMP_TABLE = '#deliveries_invoice_filter';
+
+    private bool $invoiceFilterTempReady = false;
 
     public function __construct(
         private readonly VisitsReportRepository $visits
@@ -39,6 +45,31 @@ class DeliveriesReportRepository
         }
 
         return array_values(array_unique($out));
+    }
+
+    /**
+     * @param  list<string>|null  $salesmanIds
+     * @return list<string>
+     */
+    public function normalizeSalesmanIds(?array $salesmanIds): array
+    {
+        if ($salesmanIds === null || $salesmanIds === []) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($salesmanIds as $id) {
+            if (! is_string($id) && ! is_int($id)) {
+                continue;
+            }
+            $id = trim((string) $id);
+            if ($id === '' || mb_strlen($id) > 64) {
+                continue;
+            }
+            $out[$id] = $id;
+        }
+
+        return array_values($out);
     }
 
     /**
@@ -74,6 +105,7 @@ class DeliveriesReportRepository
         string $dateFrom,
         string $dateTo,
         array $cities,
+        array $salesmanIds,
         ?string $storage,
         ?string $deliveryStatus,
         ?array $invoiceIds,
@@ -88,9 +120,10 @@ class DeliveriesReportRepository
         $perPage = max(1, min(100, $perPage));
         $page = max(1, $page);
 
-        [$baseFrom, $bindings] = $this->baseFromAndBindings($dateFrom, $dateTo, $cities, $storage, $deliveryStatus, $invoiceIds, $applyDateFilter);
+        try {
+            [$baseFrom, $bindings] = $this->baseFromAndBindings($dateFrom, $dateTo, $cities, $salesmanIds, $storage, $deliveryStatus, $invoiceIds, $applyDateFilter);
 
-        $countSql = "
+            $countSql = "
             SELECT COUNT(*) AS c
             FROM (
                 SELECT
@@ -157,6 +190,9 @@ class DeliveriesReportRepository
             $page,
             ['path' => request()->url(), 'query' => request()->query()]
         );
+        } finally {
+            $this->dropInvoiceFilterTempTable();
+        }
     }
 
     /**
@@ -169,6 +205,7 @@ class DeliveriesReportRepository
         string $dateFrom,
         string $dateTo,
         array $cities,
+        array $salesmanIds,
         ?string $storage,
         ?string $deliveryStatus,
         ?array $invoiceIds,
@@ -178,9 +215,10 @@ class DeliveriesReportRepository
             throw new RuntimeException('Deliveries report requires SQL Server (sqlsrv).');
         }
 
-        [$baseFrom, $bindings] = $this->baseFromAndBindings($dateFrom, $dateTo, $cities, $storage, $deliveryStatus, $invoiceIds, $applyDateFilter);
+        try {
+            [$baseFrom, $bindings] = $this->baseFromAndBindings($dateFrom, $dateTo, $cities, $salesmanIds, $storage, $deliveryStatus, $invoiceIds, $applyDateFilter);
 
-        $sql = "
+            $sql = "
             SELECT
                 COALESCE(SUM(CAST(d.fld_store_document_quantity AS decimal(24, 6))), 0) AS quantity,
                 COALESCE(SUM(
@@ -194,13 +232,16 @@ class DeliveriesReportRepository
             {$baseFrom}
         ";
 
-        $row = DB::selectOne($sql, $bindings);
+            $row = DB::selectOne($sql, $bindings);
 
-        return $row ?? (object) [
-            'quantity' => 0,
-            'amount' => 0,
-            'weight_total' => 0,
-        ];
+            return $row ?? (object) [
+                'quantity' => 0,
+                'amount' => 0,
+                'weight_total' => 0,
+            ];
+        } finally {
+            $this->dropInvoiceFilterTempTable();
+        }
     }
 
     /**
@@ -211,6 +252,7 @@ class DeliveriesReportRepository
         string $dateFrom,
         string $dateTo,
         array $cities,
+        array $salesmanIds,
         ?string $storage,
         ?string $deliveryStatus,
         ?array $invoiceIds,
@@ -220,10 +262,11 @@ class DeliveriesReportRepository
             throw new RuntimeException('Deliveries report requires SQL Server (sqlsrv).');
         }
 
-        [$baseFrom, $bindings] = $this->baseFromAndBindings($dateFrom, $dateTo, $cities, $storage, $deliveryStatus, $invoiceIds, $applyDateFilter);
-        $limit = self::MAX_EXPORT_ROWS;
-        $invoiceNumberExpr = $this->invoiceNumberExpr();
-        $sql = "
+        try {
+            [$baseFrom, $bindings] = $this->baseFromAndBindings($dateFrom, $dateTo, $cities, $salesmanIds, $storage, $deliveryStatus, $invoiceIds, $applyDateFilter);
+            $limit = self::MAX_EXPORT_ROWS;
+            $invoiceNumberExpr = $this->invoiceNumberExpr();
+            $sql = "
             SELECT
                 CAST(t.fld_store_document_title_id AS NVARCHAR(100)) AS invoice_id,
                 MAX({$invoiceNumberExpr}) AS invoice_no,
@@ -255,7 +298,10 @@ class DeliveriesReportRepository
             OFFSET 0 ROWS FETCH NEXT {$limit} ROWS ONLY
         ";
 
-        return DB::select($sql, $bindings);
+            return DB::select($sql, $bindings);
+        } finally {
+            $this->dropInvoiceFilterTempTable();
+        }
     }
 
     public function updateDeliveryStatus(string $invoiceId, string $currentStatus): int
@@ -275,8 +321,10 @@ class DeliveriesReportRepository
             default => throw new RuntimeException('Invalid delivery status.'),
         };
         $targetValue = $currentStatus === 'delivered' ? 0 : 1;
+        $salesOnlyScopeSql = $this->salesOnlyScopeSql();
+        $salesOnlyTitleScopeSql = $this->salesOnlyTitleScopeSql();
 
-        return DB::transaction(function () use ($invoiceId, $currentStatusSql, $targetValue): int {
+        return DB::transaction(function () use ($invoiceId, $currentStatusSql, $targetValue, $salesOnlyScopeSql, $salesOnlyTitleScopeSql): int {
             $detailUpdated = DB::update(
                 "
                 UPDATE d
@@ -287,13 +335,14 @@ class DeliveriesReportRepository
                 WHERE CAST(t.fld_store_document_title_id AS NVARCHAR(100)) = ?
                   AND ISNULL(t.fld_is_cancelled, 0) = 0
                   AND ISNULL(d.fld_is_cancelled, 0) = 0
+                  {$salesOnlyScopeSql}
                   {$currentStatusSql}
                 ",
                 [$targetValue, $invoiceId]
             );
 
             DB::update(
-                '
+                "
                 UPDATE t
                 SET t.fld_is_delivered = CASE
                     WHEN EXISTS (
@@ -307,7 +356,8 @@ class DeliveriesReportRepository
                 FROM dbo.tbl_store_document_titles AS t
                 WHERE CAST(t.fld_store_document_title_id AS NVARCHAR(100)) = ?
                   AND ISNULL(t.fld_is_cancelled, 0) = 0
-                ',
+                  {$salesOnlyTitleScopeSql}
+                ",
                 [$invoiceId]
             );
 
@@ -334,17 +384,19 @@ class DeliveriesReportRepository
         }
 
         $invoiceNumberExpr = $this->invoiceNumberExpr();
-        $placeholders = implode(',', array_fill(0, count($normalized), '?'));
-        $bindings = $normalized;
+        $dateBindings = [];
         $dateSql = '';
         if ($dateFrom !== null && $dateTo !== null) {
             $dateSql = '
               AND CAST(t.fld_store_document_title_date AS date) >= CAST(? AS date)
               AND CAST(t.fld_store_document_title_date AS date) <= CAST(? AS date)';
-            $bindings = array_merge([$dateFrom, $dateTo], $normalized);
+            $dateBindings = [$dateFrom, $dateTo];
         }
 
-        $sql = "
+        return $this->selectWithInChunks(
+            $invoiceNumberExpr,
+            $normalized,
+            fn (string $inSql): string => "
             SELECT
                 CAST(t.fld_store_document_title_id AS NVARCHAR(100)) AS invoice_id,
                 MAX({$invoiceNumberExpr}) AS invoice_no,
@@ -354,14 +406,16 @@ class DeliveriesReportRepository
                 ON t.fld_store_document_title_id = d.fld_store_document_title_id_ref
             WHERE ISNULL(t.fld_is_cancelled, 0) = 0
               AND ISNULL(d.fld_is_cancelled, 0) = 0
+              {$this->salesOnlyScopeSql()}
               {$dateSql}
-              AND {$invoiceNumberExpr} IN ({$placeholders})
+              AND {$inSql}
             GROUP BY
                 CAST(t.fld_store_document_title_id AS NVARCHAR(100)),
                 CAST(t.fld_store_document_title_date AS date)
-        ";
-
-        return DB::select($sql, $bindings);
+        ",
+            $dateBindings,
+            static fn (stdClass $row): string => (string) ($row->invoice_id ?? '').'|'.(string) ($row->document_date ?? '')
+        );
     }
 
     /**
@@ -383,22 +437,56 @@ class DeliveriesReportRepository
         }
 
         $invoiceNumberExpr = $this->invoiceNumberExpr();
-        $placeholders = implode(',', array_fill(0, count($lookupNumbers), '?'));
-
-        $sql = "
+        $numberColumn = "LTRIM(RTRIM(CAST({$invoiceNumberExpr} AS NVARCHAR(100))))";
+        $rows = $this->selectWithInChunks(
+            $numberColumn,
+            $lookupNumbers,
+            fn (string $inSql): string => "
             SELECT
                 CAST(t.fld_store_document_title_id AS NVARCHAR(100)) AS invoice_id,
                 MAX({$invoiceNumberExpr}) AS invoice_no,
                 MAX(CAST(t.fld_store_document_title_date AS date)) AS document_date
             FROM dbo.tbl_store_document_titles AS t
             WHERE ISNULL(t.fld_is_cancelled, 0) = 0
-              AND LTRIM(RTRIM(CAST({$invoiceNumberExpr} AS NVARCHAR(100)))) IN ({$placeholders})
+              {$this->salesOnlyTitleScopeSql()}
+              AND {$inSql}
             GROUP BY CAST(t.fld_store_document_title_id AS NVARCHAR(100))
-        ";
-
-        $rows = DB::select($sql, $lookupNumbers);
+        "
+        );
 
         return $this->filterInvoiceRowsMatchingExtractedNumbers($rows, $invoiceNumbers);
+    }
+
+    /**
+     * Resolve sales invoice ID(s) by invoice number or internal ID (no date limit).
+     *
+     * @return list<string>
+     */
+    public function resolveInvoiceIdsByNumberSearch(string $search): array
+    {
+        if (DB::getDriverName() !== 'sqlsrv') {
+            throw new RuntimeException('Deliveries report requires SQL Server (sqlsrv).');
+        }
+
+        $search = trim($search);
+        if ($search === '') {
+            return [];
+        }
+
+        $rows = $this->findInvoicesByInvoiceNumbersForBatch([$search]);
+        if ($rows === []) {
+            $rows = $this->findInvoicesByInvoiceIds([$search]);
+        }
+
+        $ids = [];
+        foreach ($rows as $row) {
+            $id = trim((string) ($row->invoice_id ?? ''));
+            if ($id !== '') {
+                $ids[$id] = $id;
+            }
+        }
+
+        return array_values($ids);
     }
 
     /**
@@ -420,20 +508,32 @@ class DeliveriesReportRepository
         }
 
         $invoiceNumberExpr = $this->invoiceNumberExpr();
-        $placeholders = implode(',', array_fill(0, count($invoiceIds), '?'));
 
-        $sql = "
+        return $this->selectWithInChunks(
+            'CAST(t.fld_store_document_title_id AS NVARCHAR(100))',
+            $invoiceIds,
+            fn (string $inSql): string => "
             SELECT
                 CAST(t.fld_store_document_title_id AS NVARCHAR(100)) AS invoice_id,
                 MAX({$invoiceNumberExpr}) AS invoice_no,
                 MAX(CAST(t.fld_store_document_title_date AS date)) AS document_date
             FROM dbo.tbl_store_document_titles AS t
             WHERE ISNULL(t.fld_is_cancelled, 0) = 0
-              AND CAST(t.fld_store_document_title_id AS NVARCHAR(100)) IN ({$placeholders})
+              {$this->salesOnlyTitleScopeSql()}
+              AND {$inSql}
             GROUP BY CAST(t.fld_store_document_title_id AS NVARCHAR(100))
-        ";
+        "
+        );
+    }
 
-        return DB::select($sql, $invoiceIds);
+    private function salesOnlyScopeSql(string $titleAlias = 't', string $detailAlias = 'd'): string
+    {
+        return (new SalesDocumentMetricsSql)->postedSalesScopeSql(false, $titleAlias, $detailAlias);
+    }
+
+    private function salesOnlyTitleScopeSql(string $titleAlias = 't'): string
+    {
+        return " AND COALESCE({$titleAlias}.fld_type_alias, N'') = N'S' ";
     }
 
     /**
@@ -519,6 +619,7 @@ class DeliveriesReportRepository
         string $dateFrom,
         string $dateTo,
         array $cities,
+        array $salesmanIds,
         ?string $storage,
         ?string $deliveryStatus,
         ?array $invoiceIds,
@@ -540,6 +641,16 @@ class DeliveriesReportRepository
             $storageSql = ' AND LTRIM(RTRIM(CAST(COALESCE(s.fld_store_name, N\'\') AS NVARCHAR(500)))) = ? ';
             $bindings[] = $storageValue;
         }
+        $salesmanSql = '';
+        $normalizedSalesmen = $this->normalizeSalesmanIds($salesmanIds);
+        if ($normalizedSalesmen !== []) {
+            [$inSql, $inBindings] = SqlServerInClause::condition(
+                'CAST(a.fld_sales_man_id_ref AS NVARCHAR(100))',
+                $normalizedSalesmen
+            );
+            $salesmanSql = " AND {$inSql} ";
+            $bindings = array_merge($bindings, $inBindings);
+        }
         $statusSql = '';
         if ($deliveryStatus === 'delivered') {
             $statusSql = ' AND ISNULL(d.fld_is_delivered, 0) = 1 ';
@@ -557,10 +668,16 @@ class DeliveriesReportRepository
                 ))));
                 if ($normalized === []) {
                     $invoiceSql = ' AND 1 = 0 ';
+                } elseif (count($normalized) > SqlServerInClause::CHUNK_SIZE) {
+                    $this->ensureInvoiceFilterTempTable($normalized);
+                    $invoiceSql = ' AND CAST(t.fld_store_document_title_id AS NVARCHAR(100)) IN (SELECT invoice_id FROM '.self::INVOICE_FILTER_TEMP_TABLE.') ';
                 } else {
-                    $placeholders = implode(',', array_fill(0, count($normalized), '?'));
-                    $invoiceSql = " AND CAST(t.fld_store_document_title_id AS NVARCHAR(100)) IN ({$placeholders}) ";
-                    $bindings = array_merge($bindings, $normalized);
+                    [$inSql, $inBindings] = SqlServerInClause::condition(
+                        'CAST(t.fld_store_document_title_id AS NVARCHAR(100))',
+                        $normalized
+                    );
+                    $invoiceSql = " AND {$inSql} ";
+                    $bindings = array_merge($bindings, $inBindings);
                 }
             }
         }
@@ -581,9 +698,11 @@ class DeliveriesReportRepository
                 ON w.fld_item_id_ref = d.fld_item_id_ref
             WHERE ISNULL(t.fld_is_cancelled, 0) = 0
               AND ISNULL(d.fld_is_cancelled, 0) = 0
+              {$this->salesOnlyScopeSql()}
               {$dateSql}
               {$citySql}
               {$storageSql}
+              {$salesmanSql}
               {$statusSql}
               {$invoiceSql}
         ";
@@ -639,5 +758,82 @@ class DeliveriesReportRepository
     private function bracketSqlIdentifier(string $name): string
     {
         return '['.str_replace(']', ']]', $name).']';
+    }
+
+    /**
+     * @param  list<string>  $values
+     * @param  callable(string $inSql): string  $buildSql
+     * @param  list<string>  $leadingBindings
+     * @param  callable(stdClass): string|null  $rowKey
+     * @return list<stdClass>
+     */
+    private function selectWithInChunks(
+        string $columnExpression,
+        array $values,
+        callable $buildSql,
+        array $leadingBindings = [],
+        ?callable $rowKey = null
+    ): array {
+        $values = SqlServerInClause::normalizeValues($values);
+        if ($values === []) {
+            return [];
+        }
+
+        $rowKey ??= static fn (stdClass $row): string => (string) ($row->invoice_id ?? '');
+
+        $out = [];
+        $seen = [];
+        foreach (SqlServerInClause::conditionChunks($columnExpression, $values) as [$inSql, $chunkBindings]) {
+            $sql = $buildSql($inSql);
+            $bindings = array_merge($leadingBindings, $chunkBindings);
+            foreach (DB::select($sql, $bindings) as $row) {
+                $key = $rowKey($row);
+                if ($key === '' || isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $out[] = $row;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  list<string>  $invoiceIds
+     */
+    private function ensureInvoiceFilterTempTable(array $invoiceIds): void
+    {
+        if ($this->invoiceFilterTempReady) {
+            return;
+        }
+
+        $this->dropInvoiceFilterTempTable();
+
+        DB::statement(
+            'CREATE TABLE '.self::INVOICE_FILTER_TEMP_TABLE.' (invoice_id NVARCHAR(100) NOT NULL PRIMARY KEY)'
+        );
+
+        foreach (array_chunk($invoiceIds, SqlServerInClause::CHUNK_SIZE) as $chunk) {
+            $placeholders = implode(',', array_fill(0, count($chunk), '(?)'));
+            DB::insert(
+                'INSERT INTO '.self::INVOICE_FILTER_TEMP_TABLE.' (invoice_id) VALUES '.$placeholders,
+                $chunk
+            );
+        }
+
+        $this->invoiceFilterTempReady = true;
+    }
+
+    private function dropInvoiceFilterTempTable(): void
+    {
+        if (! $this->invoiceFilterTempReady) {
+            return;
+        }
+
+        DB::statement(
+            'IF OBJECT_ID(\'tempdb..'.self::INVOICE_FILTER_TEMP_TABLE.'\') IS NOT NULL DROP TABLE '.self::INVOICE_FILTER_TEMP_TABLE
+        );
+        $this->invoiceFilterTempReady = false;
     }
 }

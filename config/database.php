@@ -92,6 +92,30 @@ return [
             'transaction_mode' => 'DEFERRED',
         ],
 
+        'accounting_sqlite' => [
+            'driver' => 'sqlite',
+            'url' => null,
+            'database' => env('ACCOUNTING_SQLITE_DATABASE', database_path('accounting-local.sqlite')),
+            'prefix' => '',
+            'foreign_key_constraints' => true,
+            'busy_timeout' => null,
+            'journal_mode' => null,
+            'synchronous' => null,
+            'transaction_mode' => 'DEFERRED',
+        ],
+
+        'promotions_sqlite' => [
+            'driver' => 'sqlite',
+            'url' => null,
+            'database' => env('PROMOTIONS_SQLITE_DATABASE', database_path('promotions-local.sqlite')),
+            'prefix' => '',
+            'foreign_key_constraints' => true,
+            'busy_timeout' => null,
+            'journal_mode' => null,
+            'synchronous' => null,
+            'transaction_mode' => 'DEFERRED',
+        ],
+
         'mysql' => [
             'driver' => 'mysql',
             'url' => env('DB_URL'),

@@ -3,6 +3,9 @@
 @section('container-class', 'report-container--wide')
 
 @section('content')
+@php
+    $storageAccess = $storageAccess ?? \App\Support\StorageReportAccess::full();
+@endphp
 <header class="page-header"><h1>Storage report</h1></header>
 <p class="hint">Inventory as of selected date. Zero-quantity items hidden. <a href="{{ route('reports.storage-items.index') }}">Storage items</a> for sales and pricing.</p>
 
@@ -34,7 +37,19 @@
                     </div>
                     <div>
                         <label>Storage</label>
-                        <div class="multi-picker" id="picker-storages" data-input-name="storages[]" data-placeholder="Search storage…"></div>
+                        @if ($storageAccess->canFilterStorage)
+                            <div class="multi-picker" id="picker-storages" data-input-name="storages[]" data-placeholder="Search storage…"></div>
+                            @if ($storageAccess->isRestricted())
+                                <p class="muted" style="margin:4px 0 0;">Showing only storages assigned to your account.</p>
+                            @endif
+                        @elseif ($storageAccess->isRestricted())
+                            <div class="muted">{{ ($filters['storages'] ?? []) !== [] ? implode(', ', $filters['storages']) : 'None' }} (assigned for your account)</div>
+                            @foreach ($filters['storages'] ?? [] as $assignedStorage)
+                                <input type="hidden" name="storages[]" value="{{ $assignedStorage }}">
+                            @endforeach
+                        @else
+                            <div class="muted">All storages (storage filter locked for your account)</div>
+                        @endif
                     </div>
                     <div>
                         <label>Categories</label>

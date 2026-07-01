@@ -8,6 +8,7 @@ The release package includes local SQLite databases from `database\` when you bu
 | `deliveries-local.sqlite` | Delivery teams, governorates, non-working holidays |
 | `damages-local.sqlite` | Damages report entries |
 | `operations-tasks.sqlite` | Operations task notes |
+| `accounting-local.sqlite` | Accounting cash sheets and incoming transfers |
 
 After `scripts\build-release.ps1`, see `installer\BUNDLED-SQLITE.json` in the release folder for file sizes and timestamps.
 

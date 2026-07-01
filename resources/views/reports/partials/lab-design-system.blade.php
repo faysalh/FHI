@@ -404,6 +404,118 @@
     .holidays-table__actions { text-align: right; white-space: nowrap; }
 
     /* Loading & misc */
+    .lab-toolbar__row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 16px;
+        align-items: flex-end;
+        width: 100%;
+    }
+    .lab-toolbar__dates {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 12px;
+        align-items: flex-end;
+    }
+    .lab-toolbar__dates input[type="date"] {
+        min-width: 150px;
+    }
+    .lab-date-presets {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+    }
+    .lab-date-presets button {
+        font-size: 12px;
+        padding: 6px 10px;
+        border: 1px solid var(--rp-border);
+        border-radius: 6px;
+        background: #fff;
+        cursor: pointer;
+        color: var(--rp-text, #0f172a);
+    }
+    .lab-date-presets button:hover { background: #f8fafc; border-color: #94a3b8; }
+    .lab-date-presets button.is-active {
+        background: #eef2ff;
+        border-color: #6366f1;
+        color: #4338ca;
+        font-weight: 600;
+    }
+    .lab-toolbar__meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 12px;
+        align-items: center;
+        margin-left: auto;
+        font-size: 12px;
+        padding-bottom: 6px;
+    }
+    .lab-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+    }
+    .lab-badge--live {
+        background: #dcfce7;
+        color: #166534;
+    }
+    .lab-badge--historical {
+        background: #fef3c7;
+        color: #92400e;
+    }
+    .lab-badge--disabled {
+        background: #f1f5f9;
+        color: #64748b;
+    }
+    .lab-toolbar__refresh {
+        font-size: 12px;
+        padding: 6px 10px;
+        border: 1px solid var(--rp-border);
+        border-radius: 6px;
+        background: #fff;
+        cursor: pointer;
+    }
+    .lab-toolbar__refresh:hover { background: #f8fafc; }
+    .lab-toolbar__updated { color: var(--rp-muted); white-space: nowrap; }
+    .lab-reset-live {
+        font-size: 12px;
+        color: #4f46e5;
+        text-decoration: underline;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+    .lab-insights {
+        margin: 0 0 16px;
+        padding: 12px 14px;
+        background: #f8fafc;
+        border: 1px solid var(--rp-border);
+        border-left: 3px solid #6366f1;
+        border-radius: 0 8px 8px 0;
+    }
+    .lab-insights__title {
+        margin: 0 0 8px;
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #64748b;
+    }
+    .lab-insights ul {
+        margin: 0;
+        padding-left: 18px;
+        font-size: 13px;
+        color: #334155;
+        line-height: 1.55;
+    }
+    .lab-insights li + li { margin-top: 4px; }
+    .lab-fetch-error {
+        margin: 0 0 16px;
+    }
     .lab-loading,
     .dash-loading {
         opacity: 0.5;

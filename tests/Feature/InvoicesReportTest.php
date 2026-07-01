@@ -65,6 +65,7 @@ class InvoicesReportTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('Invoices report');
+        $response->assertSee('sales invoices');
         $response->assertSee('Client One');
         $response->assertSee('1001');
         $response->assertSee('Last print date');

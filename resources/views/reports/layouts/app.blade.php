@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>@yield('title', 'Reports') — Reporting</title>
     @include('reports.partials.theme')
     @include('reports.partials.lab-design-system')
@@ -23,6 +24,7 @@
     @if ($canReceiveTaskNotifications ?? false)
         @include('reports.partials.tasks-browser-notifications')
     @endif
+    @include('reports.partials.mobile-reports')
     @stack('scripts')
 </body>
 </html>

@@ -467,6 +467,33 @@ function Enable-FirewallPort([int]$Port, [string]$SiteName) {
     Write-Host "  Opened Windows Firewall TCP port $Port"
 }
 
+function Backup-InstallSqlite([string]$InstallPath) {
+    $dbDir = Join-Path $InstallPath 'database'
+    $names = @(
+        'reports-users.sqlite',
+        'deliveries-local.sqlite',
+        'damages-local.sqlite',
+        'operations-tasks.sqlite',
+        'accounting-local.sqlite',
+        'promotions-local.sqlite'
+    )
+    $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $backupDir = Join-Path $InstallPath "storage\app\sqlite-backups\pre-install-$timestamp"
+    $copied = 0
+    foreach ($name in $names) {
+        $src = Join-Path $dbDir $name
+        if (-not (Test-Path $src)) { continue }
+        if (-not (Test-Path $backupDir)) {
+            New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+        }
+        Copy-Item $src (Join-Path $backupDir $name) -Force
+        $copied++
+    }
+    if ($copied -gt 0) {
+        Write-Host "  Backed up $copied SQLite file(s) to $backupDir" -ForegroundColor DarkGray
+    }
+}
+
 function Show-BundledSqliteStatus([string]$InstallPath) {
     $manifestPath = Join-Path $InstallPath 'installer\BUNDLED-SQLITE.json'
     $dbDir = Join-Path $InstallPath 'database'
@@ -474,7 +501,9 @@ function Show-BundledSqliteStatus([string]$InstallPath) {
         @{ key = 'reports-users.sqlite'; label = 'Users & permissions' },
         @{ key = 'deliveries-local.sqlite'; label = 'Deliveries, governorates & holidays' },
         @{ key = 'damages-local.sqlite'; label = 'Damages entries' },
-        @{ key = 'operations-tasks.sqlite'; label = 'Operations tasks' }
+        @{ key = 'operations-tasks.sqlite'; label = 'Operations tasks' },
+        @{ key = 'accounting-local.sqlite'; label = 'Accounting cash & transfers' },
+        @{ key = 'promotions-local.sqlite'; label = 'Promotions promoters & schedules' }
     )
 
     Write-Step 'Local SQLite databases'
@@ -530,6 +559,8 @@ DELIVERIES_SQLITE_DATABASE="$dbPath/database/deliveries-local.sqlite"
 DAMAGES_SQLITE_DATABASE="$dbPath/database/damages-local.sqlite"
 REPORTS_USERS_SQLITE_DATABASE="$dbPath/database/reports-users.sqlite"
 OPERATIONS_TASKS_SQLITE_DATABASE="$dbPath/database/operations-tasks.sqlite"
+ACCOUNTING_SQLITE_DATABASE="$dbPath/database/accounting-local.sqlite"
+PROMOTIONS_SQLITE_DATABASE="$dbPath/database/promotions-local.sqlite"
 
 REPORTS_BOOTSTRAP_ADMIN_USERNAME=$AdminUsername
 REPORTS_BOOTSTRAP_ADMIN_PASSWORD="$adminEscaped"
@@ -627,16 +658,42 @@ if ($SkipOdbc) {
 }
 
 if (-not $installInPlace) {
+    $sqliteExclude = @(
+        'reports-users.sqlite',
+        'deliveries-local.sqlite',
+        'damages-local.sqlite',
+        'operations-tasks.sqlite',
+        'accounting-local.sqlite',
+        'promotions-local.sqlite'
+    )
+    $envPathForUpgrade = Join-Path $InstallPath '.env'
+    $isUpgradeCopy = Test-Path $envPathForUpgrade
+
     Write-Step "Copying application to $InstallPath"
     if (Test-Path $InstallPath) {
-        if (-not $Quiet) {
-            $confirm = Read-Host "Folder exists. Overwrite? (y/N)"
+        if ($isUpgradeCopy) {
+            Write-Host '  Existing installation detected — upgrading in place.' -ForegroundColor Yellow
+            Write-Host '  Preserving: .env, database\*.sqlite, storage\app\sqlite-backups\' -ForegroundColor Yellow
+            Backup-InstallSqlite -InstallPath $InstallPath
+        } elseif (-not $Quiet) {
+            $confirm = Read-Host 'Folder exists but no .env was found. Overwrite entire folder? (y/N)'
             if ($confirm -notmatch '^y') { throw 'Installation cancelled.' }
+            Remove-Item $InstallPath -Recurse -Force
+            New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
+        } else {
+            throw "Install path exists without .env: $InstallPath. Remove the folder or run interactively."
         }
-        Remove-Item $InstallPath -Recurse -Force
+    } else {
+        New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
     }
-    New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
-    robocopy $PackageRoot $InstallPath /MIR /XD node_modules .git dist /XF .env reports-users.sqlite deliveries-local.sqlite damages-local.sqlite operations-tasks.sqlite /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+
+    $robocopyArgs = @(
+        $PackageRoot, $InstallPath,
+        '/MIR',
+        '/XD', 'node_modules', '.git', 'dist', 'storage\app\sqlite-backups',
+        '/XF', '.env', 'sqlite-auto-backup.json'
+    ) + $sqliteExclude + @('/NFL', '/NDL', '/NJH', '/NJS', '/nc', '/ns', '/np')
+    & robocopy @robocopyArgs | Out-Null
     if ($LASTEXITCODE -ge 8) { throw "File copy failed (robocopy exit $LASTEXITCODE)" }
 } else {
     Write-Step "Configuring application in place at $InstallPath"

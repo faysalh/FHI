@@ -5,7 +5,8 @@
 #>
 param(
     [string]$ReleaseRoot = '',
-    [switch]$BundleRuntime
+    [switch]$BundleRuntime,
+    [switch]$UpdateBuild
 )
 
 Set-StrictMode -Version Latest
@@ -70,26 +71,32 @@ if (-not (Test-Path (Join-Path $ReleaseRoot '.env'))) {
     $warnings += '.env should not be in the release package'
 }
 
-# SQLite bundle
-$sqliteExpected = @(
-    'reports-users.sqlite',
-    'deliveries-local.sqlite',
-    'damages-local.sqlite',
-    'operations-tasks.sqlite'
-)
-foreach ($name in $sqliteExpected) {
-    $rel = "database\$name"
-    if (Require-File $rel "SQLite: $name") {
-        $len = (Get-Item (Join-Path $ReleaseRoot $rel)).Length
-        if ($len -lt 1024) {
-            $warnings += "$name is very small ($len bytes)"
+# SQLite bundle (optional for update builds — server keeps existing files)
+if (-not $UpdateBuild) {
+    $sqliteExpected = @(
+        'reports-users.sqlite',
+        'deliveries-local.sqlite',
+        'damages-local.sqlite',
+        'operations-tasks.sqlite',
+        'accounting-local.sqlite',
+        'promotions-local.sqlite'
+    )
+    foreach ($name in $sqliteExpected) {
+        $rel = "database\$name"
+        if (Require-File $rel "SQLite: $name") {
+            $len = (Get-Item (Join-Path $ReleaseRoot $rel)).Length
+            if ($len -lt 1024) {
+                $warnings += "$name is very small ($len bytes)"
+            }
         }
     }
+} else {
+    Write-Host '  OK: update build — SQLite databases not bundled (existing server files preserved)' -ForegroundColor DarkGray
 }
 
-$testDbs = Get-ChildItem (Join-Path $ReleaseRoot 'database') -Filter 'damages-test-*.sqlite' -ErrorAction SilentlyContinue
+$testDbs = Get-ChildItem (Join-Path $ReleaseRoot 'database') -Filter '*-test-*.sqlite' -ErrorAction SilentlyContinue
 if ($testDbs) {
-    $warnings += "Test SQLite files should be removed: $($testDbs.Count) damages-test-*.sqlite"
+    $warnings += "Test SQLite files should be removed: $($testDbs.Count) *-test-*.sqlite"
 }
 
 if (Test-Path (Join-Path $ReleaseRoot 'database\database.sqlite')) {
