@@ -27,16 +27,20 @@ trait UsesPostedSalesDocumentMetrics
      *     weightSub: string
      * }
      */
-    protected function postedSalesQueryContext(string $weightAlias = 'w'): array
+    protected function postedSalesQueryContext(string $weightAlias = 'w', ?string $clientTierIndexSql = null): array
     {
         $metrics = $this->postedSalesMetrics();
         $fragments = $metrics->metricFragments($weightAlias);
+
+        $lineAmountExpr = $clientTierIndexSql !== null
+            ? $metrics->salesmanTierReportLineAmountExpr($clientTierIndexSql)
+            : $fragments['lineAmount'];
 
         return [
             'postedSalesScopeSql' => $metrics->postedSalesScopeSql(false),
             'invoiceJoin' => $fragments['invoiceJoin'],
             'lineQtyExpr' => $fragments['lineQty'],
-            'lineAmountExpr' => $fragments['lineAmount'],
+            'lineAmountExpr' => $lineAmountExpr,
             'lineNetAmountExpr' => $fragments['lineNetAmount'],
             'lineWeightExpr' => $fragments['lineWeight'],
             'weightSubquery' => $fragments['weightSubquery'],

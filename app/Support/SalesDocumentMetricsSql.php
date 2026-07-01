@@ -128,6 +128,36 @@ final class SalesDocumentMetricsSql
                 * (CAST(COALESCE('.$invJoinAlias.'.inv_hdr, 0) AS decimal(24, 6)) + CAST(COALESCE('.$invJoinAlias.'.inv_extra, 0) AS decimal(24, 6)))';
     }
 
+    /**
+     * Line gross minus proportional invoice header discount only ({@code fld_store_document_title_total_discount}).
+     */
+    public function salesLineHeaderDiscountAmountExpr(string $detailAlias = 'd', string $invJoinAlias = 'inv'): string
+    {
+        $gross = $this->lineGrossAmountExpr($detailAlias);
+
+        return '('.$gross.') - (('.$gross.') / NULLIF(CAST('.$invJoinAlias.'.inv_gross AS decimal(24, 6)), 0))
+                * CAST(COALESCE('.$invJoinAlias.'.inv_hdr, 0) AS decimal(24, 6))';
+    }
+
+    /**
+     * Line amount for salesman / client price-tier breakdown reports (matches ERP salesman totals).
+     *
+     * ماركيت (tier index 3): line net when the invoice has no header discount; otherwise proportional
+     * header discount only, rounded per line (extra discount excluded).
+     * Other tiers: qty × unit price after line discount % only (no header/extra spread).
+     */
+    public function salesmanTierReportLineAmountExpr(
+        string $clientTierIndexSql,
+        string $detailAlias = 'd',
+        string $invJoinAlias = 'inv'
+    ): string {
+        $hdrRounded = 'CAST(ROUND(('.$this->salesLineHeaderDiscountAmountExpr($detailAlias, $invJoinAlias).'), 0) AS decimal(24, 6))';
+        $lineNet = $this->lineNetAmountExpr($detailAlias);
+        $marketAmount = '(CASE WHEN COALESCE('.$invJoinAlias.'.inv_hdr, 0) = 0 THEN '.$lineNet.' ELSE '.$hdrRounded.' END)';
+
+        return '(CASE WHEN ('.$clientTierIndexSql.') = 3 THEN '.$marketAmount.' ELSE '.$lineNet.' END)';
+    }
+
     public function lineWeightExpr(string $detailAlias = 'd', string $weightAlias = 'w'): string
     {
         return 'CAST('.$detailAlias.'.fld_store_document_quantity AS decimal(24, 6))

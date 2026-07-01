@@ -59,6 +59,17 @@ final class ReportGuide
                         'reports.sales-item-average.index'
                     ),
                     self::topic(
+                        'sales-by-item',
+                        'Sales by item',
+                        'Category totals for one salesman, split by each client’s assigned price group (وكيل … كي).',
+                        [
+                            'Choose date range, salesman, and optional city, storage, category, price group, or column filters.',
+                            'Amounts follow the same ERP tier rules as Sales by salesman (invoice salesman, ماركيت hybrid header discount).',
+                            'Export PDF or CSV with the same filters as on screen.',
+                        ],
+                        'reports.sales-by-item.index'
+                    ),
+                    self::topic(
                         'sales-by-salesman',
                         'By salesman',
                         'Sales totals grouped by salesman for a period.',

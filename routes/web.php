@@ -18,6 +18,7 @@ use App\Http\Controllers\ReportAssemblyController;
 use App\Http\Controllers\ReportGuideController;
 use App\Http\Controllers\ReportUsersController;
 use App\Http\Controllers\SalesByItemAverageReportController;
+use App\Http\Controllers\SalesByItemReportController;
 use App\Http\Controllers\SalesBySalesmanReportController;
 use App\Http\Controllers\SalesReportController;
 use App\Http\Controllers\SchemaExplorerController;
@@ -55,6 +56,9 @@ Route::prefix('reports')->middleware(['reports.admin', 'reports.permission'])->g
     Route::get('/sales-by-salesman', [SalesBySalesmanReportController::class, 'index'])->name('reports.sales-by-salesman.index');
     Route::get('/sales-by-salesman/export/pdf', [SalesBySalesmanReportController::class, 'exportPdf'])->name('reports.sales-by-salesman.export.pdf');
     Route::get('/sales-by-salesman/export/csv', [SalesBySalesmanReportController::class, 'exportCsv'])->name('reports.sales-by-salesman.export.csv');
+    Route::get('/sales-by-item', [SalesByItemReportController::class, 'index'])->name('reports.sales-by-item.index');
+    Route::get('/sales-by-item/export/pdf', [SalesByItemReportController::class, 'exportPdf'])->name('reports.sales-by-item.export.pdf');
+    Route::get('/sales-by-item/export/csv', [SalesByItemReportController::class, 'exportCsv'])->name('reports.sales-by-item.export.csv');
     Route::get('/storage-items', [StorageItemsReportController::class, 'index'])->name('reports.storage-items.index');
     Route::get('/storage-items/evaluation', [StorageItemsReportController::class, 'evaluation'])->name('reports.storage-items.evaluation');
     Route::get('/storage-items/export/pdf', [StorageItemsReportController::class, 'exportPdf'])->name('reports.storage-items.export.pdf');

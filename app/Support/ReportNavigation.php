@@ -36,6 +36,7 @@ final class ReportNavigation
                     ['key' => 'dashboard-lab', 'route' => 'reports.dashboard-lab.index', 'label' => 'Dashboard', 'title' => 'Governorate sales and invoice snapshot'],
                     ['key' => 'sales', 'route' => 'reports.sales.index', 'label' => 'Sales', 'title' => 'Sales by client and period'],
                     ['key' => 'sales-item-average', 'route' => 'reports.sales-item-average.index', 'label' => 'Item average', 'title' => 'Sales by item average'],
+                    ['key' => 'sales-by-item', 'route' => 'reports.sales-by-item.index', 'label' => 'Sales by item', 'title' => 'Category sales split by client price group'],
                     ['key' => 'sales-by-salesman', 'route' => 'reports.sales-by-salesman.index', 'label' => 'By salesman', 'title' => 'Sales by salesman'],
                     ['key' => 'comparison', 'route' => 'reports.comparison.index', 'label' => 'Comparison', 'title' => 'Compare two periods'],
                     ['key' => 'cities', 'route' => 'reports.cities.index', 'label' => 'Cities', 'title' => 'Sales by city'],
@@ -166,6 +167,7 @@ final class ReportNavigation
         return match (true) {
             str_starts_with($routeName, 'reports.dashboard-lab') => 'dashboard-lab',
             str_starts_with($routeName, 'reports.sales-item-average') => 'sales-item-average',
+            str_starts_with($routeName, 'reports.sales-by-item') => 'sales-by-item',
             str_starts_with($routeName, 'reports.sales-by-salesman') => 'sales-by-salesman',
             str_starts_with($routeName, 'reports.sales') => 'sales',
             str_starts_with($routeName, 'reports.storage-items') => 'storage-items',

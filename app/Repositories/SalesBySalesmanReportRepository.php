@@ -81,7 +81,7 @@ class SalesBySalesmanReportRepository
             return 0;
         }
 
-        $join = $this->priceTierJoinSql();
+        $join = $this->priceTierJoinSqlPrivate();
         $sql = '
             SELECT CAST(ROUND(CAST(('.$tierNum.') AS FLOAT), 0) AS int) AS tier
             FROM '.self::ACCOUNTS.' AS a
@@ -123,9 +123,10 @@ class SalesBySalesmanReportRepository
         $page = max(1, $page);
 
         $priceGroupExpr = $this->clientPriceGroupSelectExpression();
-        $tierJoin = $this->priceTierJoinSql();
+        $tierJoin = $this->priceTierJoinSqlPrivate();
+        $clientTierIndexSql = $this->clientPriceTierIndexSql();
         $bindings = [$dateFrom, $dateTo, $salesmanId];
-        extract($this->postedSalesQueryContext('w'));
+        extract($this->postedSalesQueryContext('w', $clientTierIndexSql));
         $baseFrom = $this->clientDetailBaseFrom($tierJoin, $invoiceJoin, $postedSalesScopeSql);
 
         $countSql = "
@@ -183,9 +184,10 @@ class SalesBySalesmanReportRepository
             throw new RuntimeException('Sales by salesman report requires SQL Server (sqlsrv).');
         }
 
-        $tierJoin = $this->priceTierJoinSql();
+        $tierJoin = $this->priceTierJoinSqlPrivate();
+        $clientTierIndexSql = $this->clientPriceTierIndexSql();
         $bindings = [$dateFrom, $dateTo, $salesmanId];
-        extract($this->postedSalesQueryContext('w'));
+        extract($this->postedSalesQueryContext('w', $clientTierIndexSql));
         $baseFrom = $this->clientDetailBaseFrom($tierJoin, $invoiceJoin, $postedSalesScopeSql);
 
         $sql = "
@@ -226,10 +228,11 @@ class SalesBySalesmanReportRepository
         }
 
         $priceGroupExpr = $this->clientPriceGroupSelectExpression();
-        $tierJoin = $this->priceTierJoinSql();
+        $tierJoin = $this->priceTierJoinSqlPrivate();
+        $clientTierIndexSql = $this->clientPriceTierIndexSql();
         $bindings = [$dateFrom, $dateTo, $salesmanId];
         $limit = self::MAX_EXPORT_ROWS;
-        extract($this->postedSalesQueryContext('w'));
+        extract($this->postedSalesQueryContext('w', $clientTierIndexSql));
         $baseFrom = $this->clientDetailBaseFrom($tierJoin, $invoiceJoin, $postedSalesScopeSql);
 
         $sql = "
@@ -252,8 +255,23 @@ class SalesBySalesmanReportRepository
         return DB::select($sql, $bindings);
     }
 
+    /**
+     * Filter sales to a salesman using the invoice title field (same as the ERP salesman report).
+     * Falls back to account salesman when the title column is missing.
+     */
+    public function salesmanFilterWhereSql(string $titleAlias = 't', string $accountAlias = 'a'): string
+    {
+        if ($this->columnExists('dbo', 'tbl_store_document_titles', 'fld_sales_man_id_ref')) {
+            return " AND {$titleAlias}.fld_sales_man_id_ref = CAST(? AS UNIQUEIDENTIFIER) ";
+        }
+
+        return " AND {$accountAlias}.fld_sales_man_id_ref = CAST(? AS UNIQUEIDENTIFIER) ";
+    }
+
     private function clientDetailBaseFrom(string $tierJoin, string $invoiceJoin, string $postedSalesScopeSql): string
     {
+        $salesmanFilter = $this->salesmanFilterWhereSql();
+
         return '
             FROM dbo.tbl_store_document_detail AS d
             INNER JOIN dbo.tbl_store_document_titles AS t
@@ -267,7 +285,7 @@ class SalesBySalesmanReportRepository
               AND ISNULL(t.fld_is_cancelled, 0) = 0
               AND ISNULL(d.fld_is_cancelled, 0) = 0
               {$postedSalesScopeSql}
-              AND a.fld_sales_man_id_ref = CAST(? AS UNIQUEIDENTIFIER)
+              {$salesmanFilter}
         ";
     }
 
@@ -299,7 +317,32 @@ SQL;
     /**
      * LEFT JOIN aggregated tier from account details (when that table has the column).
      */
-    private function priceTierJoinSql(): string
+    public function priceTierJoinSql(): string
+    {
+        return $this->priceTierJoinSqlPrivate();
+    }
+
+    /**
+     * Client price tier as 1–5 (وكيل … كي), or 0 when unknown. DB stores 0–4 on the account.
+     */
+    public function clientPriceTierIndexSql(): string
+    {
+        $tierNum = $this->tierNumericSourceSql();
+        if ($tierNum === null) {
+            return '0';
+        }
+
+        $ti = 'CAST(ROUND(CAST(('.$tierNum.') AS FLOAT), 0) AS int)';
+
+        return "(CASE
+            WHEN ({$tierNum}) IS NULL THEN 0
+            WHEN {$ti} < 0 THEN 1
+            WHEN {$ti} > 4 THEN 5
+            ELSE {$ti} + 1
+        END)";
+    }
+
+    private function priceTierJoinSqlPrivate(): string
     {
         $this->resolvePriceGroupSources();
         if ($this->priceGroupDetailsColumn === null) {
