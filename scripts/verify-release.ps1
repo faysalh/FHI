@@ -60,7 +60,10 @@ Write-Host "Verifying release: $ReleaseRoot" -ForegroundColor Cyan
     'installer\start-reporting-app.ps1',
     'installer\reporting-app.iss',
     'installer\.env.production.example',
-    'installer\BUNDLED-DATA.md'
+    'installer\BUNDLED-DATA.md',
+    'installer\enable-https.ps1',
+    'installer\enable-https.cmd',
+    'installer\HTTPS-INTERNAL-NETWORK.md'
 ) | ForEach-Object { [void](Require-File $_) }
 
 [void](Require-File '.env.example' 'Environment example')
