@@ -3,7 +3,7 @@
 ; Run: scripts\build-setup-exe.ps1 -BundleRuntime
 
 #define MyAppName "Reporting App"
-#define MyAppVersion "1.0.8"
+#define MyAppVersion "1.0.20"
 #define MyAppPublisher "Reporting"
 #define MyAppURL "http://localhost"
 
@@ -28,7 +28,7 @@ SetupLogging=yes
 
 [Files]
 ; Never overwrite live SQLite files on upgrade (see database\*.sqlite entries below).
-Source: "..\dist\ReportingApp-Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: ".env,database\reports-users.sqlite,database\deliveries-local.sqlite,database\damages-local.sqlite,database\operations-tasks.sqlite,database\accounting-local.sqlite,database\promotions-local.sqlite,storage\app\sqlite-auto-backup.json,storage\app\sqlite-backups\*"
+Source: "..\dist\ReportingApp-Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: ".env,database\reports-users.sqlite,database\deliveries-local.sqlite,database\damages-local.sqlite,database\operations-tasks.sqlite,database\accounting-local.sqlite,database\promotions-local.sqlite,database\face-id-local.sqlite,storage\app\sqlite-auto-backup.json,storage\app\pda-auto-sync.json,storage\app\sqlite-backups\*"
 #ifexist "..\dist\ReportingApp-Release\database\reports-users.sqlite"
 Source: "..\dist\ReportingApp-Release\database\reports-users.sqlite"; DestDir: "{app}\database"; Flags: onlyifdoesntexist uninsneveruninstall
 #endif
@@ -53,6 +53,7 @@ Name: "{group}\Open Reporting App"; Filename: "{code:GetAppUrl}"; IconFilename: 
 Name: "{group}\Start Reporting App"; Filename: "{app}\start-reporting-app.bat"; WorkingDir: "{app}"
 Name: "{group}\Install folder"; Filename: "{app}"
 Name: "{group}\Diagnose install"; Filename: "{app}\installer\diagnose.cmd"; WorkingDir: "{app}"
+Name: "{group}\Repair web (IIS)"; Filename: "{app}\installer\repair-web.cmd"; WorkingDir: "{app}"
 Name: "{group}\Create .env (recovery)"; Filename: "{app}\installer\create-env.cmd"; WorkingDir: "{app}"
 
 [Run]
@@ -89,12 +90,83 @@ begin
     Result := 'http://localhost:' + PortPage.Values[0] + '/login';
 end;
 
+function ReadExistingEnvValue(const EnvPath, Key: String): String;
+var
+  Lines: TArrayOfString;
+  I, EqPos: Integer;
+  Line, LeftPart: String;
+begin
+  Result := '';
+  if not FileExists(EnvPath) then
+    Exit;
+  if not LoadStringsFromFile(EnvPath, Lines) then
+    Exit;
+  for I := 0 to GetArrayLength(Lines) - 1 do
+  begin
+    Line := Trim(Lines[I]);
+    if (Line = '') or (Copy(Line, 1, 1) = '#') then
+      Continue;
+    EqPos := Pos('=', Line);
+    if EqPos < 2 then
+      Continue;
+    LeftPart := Trim(Copy(Line, 1, EqPos - 1));
+    if LeftPart = Key then
+    begin
+      Result := Trim(Copy(Line, EqPos + 1, MaxInt));
+      if (Length(Result) >= 2) and (Result[1] = '"') and (Result[Length(Result)] = '"') then
+        Result := Copy(Result, 2, Length(Result) - 2);
+      Exit;
+    end;
+  end;
+end;
+
+function ExtractPortFromUrl(const Url: String): String;
+var
+  I: Integer;
+  C: String;
+begin
+  Result := '8090';
+  for I := Length(Url) downto 1 do
+  begin
+    C := Copy(Url, I, 1);
+    if C = ':' then
+    begin
+      Result := Copy(Url, I + 1, MaxInt);
+      if Pos('/', Result) > 0 then
+        Result := Copy(Result, 1, Pos('/', Result) - 1);
+      Exit;
+    end;
+  end;
+end;
+
+procedure PrefillFromExistingInstall;
+var
+  AppDir, EnvPath, ExistingUrl: String;
+  PortValue: Integer;
+begin
+  AppDir := WizardForm.DirEdit.Text;
+  if AppDir = '' then
+    Exit;
+  EnvPath := AppDir + '\.env';
+  if not FileExists(EnvPath) then
+    Exit;
+
+  ExistingUrl := ReadExistingEnvValue(EnvPath, 'APP_URL');
+  if ExistingUrl <> '' then
+  begin
+    UrlPage.Values[0] := ExistingUrl;
+    PortValue := StrToIntDef(ExtractPortFromUrl(ExistingUrl), 8090);
+    if PortValue > 0 then
+      PortPage.Values[0] := IntToStr(PortValue);
+  end;
+end;
+
 procedure InitializeWizard;
 begin
   SqlPage := CreateInputQueryPage(wpSelectDir,
     'SQL Server connection',
     'Read-only reporting database',
-    'Enter the SQL Server credentials your DBA provided. The app only runs SELECT queries.');
+    'Enter the SQL Server credentials your DBA provided. On upgrade you may leave SQL password blank to keep the existing .env.');
   SqlPage.Add('SQL Server host (IP or name):', False);
   SqlPage.Add('Database name:', False);
   SqlPage.Add('SQL username:', False);
@@ -106,7 +178,7 @@ begin
   AdminPage := CreateInputQueryPage(SqlPage.ID,
     'Admin login',
     'First sign-in account',
-    'This account is created on first run if no users exist yet.');
+    'This account is created on first run if no users exist yet. On upgrade you may leave the password blank to keep existing users.');
   AdminPage.Add('Admin username:', False);
   AdminPage.Add('Admin password:', True);
   AdminPage.Values[0] := 'admin';
@@ -131,6 +203,8 @@ var
   PortValue: Integer;
 begin
   Result := True;
+  if CurPageID = wpSelectDir then
+    PrefillFromExistingInstall;
   if CurPageID = PortPage.ID then
   begin
     PortValue := StrToIntDef(PortPage.Values[0], 0);
@@ -144,9 +218,11 @@ begin
   end;
   if CurPageID = UrlPage.ID then
   begin
-    if (Length(UrlPage.Values[0]) < 8) or (Copy(LowerCase(UrlPage.Values[0]), 1, 7) <> 'http://') then
+    if (Length(UrlPage.Values[0]) < 8) or
+       ((Copy(LowerCase(UrlPage.Values[0]), 1, 7) <> 'http://') and
+        (Copy(LowerCase(UrlPage.Values[0]), 1, 8) <> 'https://')) then
     begin
-      MsgBox('Enter a full URL starting with http:// (include port if not 80).', mbError, MB_OK);
+      MsgBox('Enter a full URL starting with http:// or https:// (include port if not 80/443).', mbError, MB_OK);
       Result := False;
     end;
   end;
@@ -191,13 +267,14 @@ begin
   if not DirExists(AppDir) then
     Exit;
 
-  SetArrayLength(Names, 6);
+  SetArrayLength(Names, 7);
   Names[0] := 'reports-users.sqlite';
   Names[1] := 'deliveries-local.sqlite';
   Names[2] := 'damages-local.sqlite';
   Names[3] := 'operations-tasks.sqlite';
   Names[4] := 'accounting-local.sqlite';
   Names[5] := 'promotions-local.sqlite';
+  Names[6] := 'face-id-local.sqlite';
 
   Timestamp := GetDateTimeString('yyyyMMdd-HHmmss', #0, #0);
   BackupDir := AppDir + '\storage\app\sqlite-backups\pre-install-' + Timestamp;
@@ -232,8 +309,7 @@ begin
     'SQL host: ' + SqlPage.Values[0] + NewLine +
     'Database: ' + SqlPage.Values[1] + NewLine +
     'Site URL: ' + UrlPage.Values[0] + '/login' + NewLine + NewLine +
-    'SQLite data (users, deliveries, damages, tasks, accounting) is seeded on first install only.' + NewLine +
-    'Existing database files are backed up and never overwritten on upgrade.' + NewLine + NewLine +
+    'Upgrade installs keep your existing .env, SQLite databases, and auto-sync settings.' + NewLine + NewLine +
     'The installer will enable IIS (if needed), install PHP + drivers, and configure the site.';
 end;
 

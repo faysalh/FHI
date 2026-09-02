@@ -12,6 +12,7 @@ use App\Http\Requests\FaceIdFaceDescriptorRequest;
 use App\Http\Requests\FaceIdIndexRequest;
 use App\Services\FaceIdSqliteService;
 use App\Support\ReportPdfBranding;
+use App\Support\ReportingTime;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
@@ -38,9 +39,11 @@ class FaceIdController extends Controller
         $attendance = [];
         $kioskUrl = '';
         $errorMessage = null;
+        $faceIdReady = false;
 
         try {
             $this->faceId->ensureReady();
+            $faceIdReady = true;
             $employees = $this->faceId->listEmployees();
             if ($tab === 'logs') {
                 $attendance = $this->faceId->listAttendance($filters['date_from'], $filters['date_to']);
@@ -59,6 +62,11 @@ class FaceIdController extends Controller
             'attendance' => $attendance,
             'kioskUrl' => $kioskUrl,
             'errorMessage' => $errorMessage,
+            'faceIdReady' => $faceIdReady,
+            'faceIdDatabasePath' => (string) config('database.connections.face_id_sqlite.database'),
+            'faceIdEmployeeCount' => count($employees),
+            'reportingTimezone' => ReportingTime::timezone(),
+            'reportingNow' => ReportingTime::now()->format('Y-m-d H:i:s'),
         ]);
     }
 
@@ -112,7 +120,11 @@ class FaceIdController extends Controller
         try {
             $this->faceId->saveFaceDescriptor($employee, $request->descriptor());
         } catch (Throwable $e) {
-            return response()->json(['ok' => false, 'message' => $e->getMessage()], 422);
+            return response()->json([
+                'ok' => false,
+                'message' => $e->getMessage(),
+                'errors' => ['descriptor' => [$e->getMessage()]],
+            ], 422);
         }
 
         return response()->json(['ok' => true, 'message' => 'Face enrolled.']);

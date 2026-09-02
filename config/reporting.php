@@ -6,6 +6,13 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Application timezone (attendance logs, report dates)
+    |--------------------------------------------------------------------------
+    */
+    'timezone' => env('APP_TIMEZONE', 'Asia/Baghdad'),
+
+    /*
+    |--------------------------------------------------------------------------
     | City column on dbo.tbl_accounting_accounts
     |--------------------------------------------------------------------------
     |
@@ -137,6 +144,33 @@ return [
     'pda_pricing_sp' => env('REPORTING_PDA_PRICING_SP', 'dbo.SP_PDA_Get_Item_All_Units'),
 
     'pda_pricing_pick_unit' => env('REPORTING_PDA_PRICING_PICK_UNIT', 'max_scale'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Storage quantity report stored procedures (read-only EXEC)
+    |--------------------------------------------------------------------------
+    */
+    'storage_quantity_sp_normal' => env('REPORTING_STORAGE_QUANTITY_SP_NORMAL', 'dbo.SP_Get_Item_Balance'),
+    'storage_quantity_sp_adv' => env('REPORTING_STORAGE_QUANTITY_SP_ADV', 'dbo.SP_Get_Item_Balance_Adv'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Database synchronize (admin write exception)
+    |--------------------------------------------------------------------------
+    |
+    | Super-admins can run the SQL sync workflow from Settings. Uses the
+    | sqlsrv_write connection (not the read-only reporting connection).
+    | Default step is dbo.SP_Pda_Sync (@AgentID) — imports PDA client invoices from
+    | tbl_pda_store_title into the main system (desktop "Sync" for PDA).
+    |
+    */
+    'database_sync_steps' => array_values(array_filter(array_map(
+        static fn (string $step): string => trim($step),
+        explode(',', (string) env('REPORTING_DATABASE_SYNC_STEPS', 'dbo.SP_Pda_Sync'))
+    ))),
+    'database_sync_agent_id' => env('REPORTING_DATABASE_SYNC_AGENT_ID', ''),
+    'database_sync_connection' => env('REPORTING_DATABASE_SYNC_CONNECTION', 'sqlsrv_write'),
+    'database_sync_deadlock_retries' => (int) env('REPORTING_DATABASE_SYNC_DEADLOCK_RETRIES', 3),
 
     /*
     |--------------------------------------------------------------------------
@@ -287,6 +321,10 @@ return [
         'promotions' => [
             'label' => 'Promotions (promoters & visit schedules)',
             'connection' => 'promotions_sqlite',
+        ],
+        'face_id' => [
+            'label' => 'Face ID (employees & attendance)',
+            'connection' => 'face_id_sqlite',
         ],
     ],
 

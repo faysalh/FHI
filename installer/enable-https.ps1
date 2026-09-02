@@ -100,7 +100,7 @@ if (-not (Test-Path $phpExe)) {
 }
 
 Write-Host ''
-Write-Host 'Reporting App — Enable HTTPS' -ForegroundColor Green
+Write-Host 'Reporting App - Enable HTTPS' -ForegroundColor Green
 Write-Host "Install path: $InstallPath"
 Write-Host "IIS site:     $SiteName"
 
@@ -118,7 +118,7 @@ if ($HttpsPort -le 0) {
         Write-Host '  Using port 443 (not in use for listening)'
     } elseif (-not (Test-PortListening -Port 8443)) {
         $HttpsPort = 8443
-        Write-Host '  Port 443 is in use — using 8443'
+        Write-Host '  Port 443 is in use - using 8443'
     } else {
         throw 'Both ports 443 and 8443 appear to be in use. Pass -HttpsPort explicitly.'
     }
@@ -159,7 +159,7 @@ if ($CertificateThumbprint -ne '') {
         if ($hash) {
             $cert = Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Thumbprint -eq $hash } | Select-Object -First 1
             if ($cert) {
-                Write-Host "  HTTPS binding already exists on port $HttpsPort — reusing cert $($cert.Subject)"
+                Write-Host "  HTTPS binding already exists on port $HttpsPort - reusing cert $($cert.Subject)"
             }
         }
     }
@@ -247,8 +247,8 @@ Write-Host ''
 Write-Host 'Test URLs (accept certificate warning once if self-signed):' -ForegroundColor Yellow
 Write-Host "  Login:    $appUrl/login"
 Write-Host "  Face ID:  $appUrl/reports/face-id"
-Write-Host "  Kiosk:    $appUrl/attendance/{token}  (copy token from Face ID tab)"
+Write-Host ('  Kiosk:    ' + $appUrl + '/attendance/{token}  (copy token from Face ID tab)')
 Write-Host ''
-Write-Host 'On Android/iPhone: open the login URL, tap Advanced → Proceed, then use Face ID kiosk link.' -ForegroundColor DarkGray
+Write-Host 'On Android/iPhone: open the login URL, tap Advanced -> Proceed, then use Face ID kiosk link.' -ForegroundColor DarkGray
 Write-Host 'See installer\HTTPS-INTERNAL-NETWORK.md for trusted internal CA setup.' -ForegroundColor DarkGray
 Write-Host ''

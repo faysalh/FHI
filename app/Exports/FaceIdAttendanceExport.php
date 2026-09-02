@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Exports;
 
-use Illuminate\Support\Collection;
+use App\Support\ReportingTime;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\WithCustomCsvSettings;
 use Maatwebsite\Excel\Concerns\WithHeadings;
@@ -40,6 +40,9 @@ class FaceIdAttendanceExport implements FromCollection, WithCustomCsvSettings, W
             'Code',
             'Event',
             'Recorded at',
+            'Latitude',
+            'Longitude',
+            'Location accuracy (m)',
             'Confidence',
         ];
     }
@@ -53,11 +56,18 @@ class FaceIdAttendanceExport implements FromCollection, WithCustomCsvSettings, W
         $event = (string) ($row->event_type ?? '');
         $eventLabel = $event === 'clock_in' ? 'Clock in' : ($event === 'clock_out' ? 'Clock out' : $event);
 
+        $latitude = isset($row->latitude) ? (float) $row->latitude : null;
+        $longitude = isset($row->longitude) ? (float) $row->longitude : null;
+        $accuracy = isset($row->location_accuracy) ? (float) $row->location_accuracy : null;
+
         return [
             (string) ($row->employee_name ?? ''),
             (string) ($row->employee_code ?? ''),
             $eventLabel,
-            (string) ($row->recorded_at ?? ''),
+            ReportingTime::formatStored(isset($row->recorded_at) ? (string) $row->recorded_at : null),
+            $latitude !== null ? (string) $latitude : '',
+            $longitude !== null ? (string) $longitude : '',
+            $accuracy !== null ? (string) $accuracy : '',
             $row->confidence !== null ? number_format((float) $row->confidence, 4) : '',
         ];
     }

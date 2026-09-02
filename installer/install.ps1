@@ -93,6 +93,45 @@ function Read-InstallConfig([string]$Path) {
     return $map
 }
 
+function Read-EnvValue([string]$EnvPath, [string]$Key) {
+    foreach ($line in Get-Content $EnvPath -ErrorAction SilentlyContinue) {
+        if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
+            if ($Matches[1] -ne $Key) { continue }
+            return $Matches[2].Trim().Trim('"')
+        }
+    }
+    return ''
+}
+
+function Get-CollectionLength($value) {
+    if ($null -eq $value) {
+        return 0
+    }
+    return @($value).Length
+}
+
+function Ensure-EnvSqliteKeys([string]$EnvPath, [string]$InstallPath) {
+    if (-not (Test-Path $EnvPath)) { return @() }
+    $dbPath = ($InstallPath -replace '\\', '/').TrimEnd('/')
+    $required = [ordered]@{
+        'APP_TIMEZONE'               = 'Asia/Baghdad'
+        'ACCOUNTING_SQLITE_DATABASE' = "$dbPath/database/accounting-local.sqlite"
+        'PROMOTIONS_SQLITE_DATABASE' = "$dbPath/database/promotions-local.sqlite"
+        'FACE_ID_SQLITE_DATABASE'    = "$dbPath/database/face-id-local.sqlite"
+    }
+    $added = @()
+    $lines = @(Get-Content $EnvPath -ErrorAction SilentlyContinue)
+    foreach ($key in $required.Keys) {
+        if (-not [string]::IsNullOrWhiteSpace((Read-EnvValue -EnvPath $EnvPath -Key $key))) { continue }
+        $lines += "$key=`"$($required[$key])`""
+        $added += $key
+    }
+    if (Get-CollectionLength $added -gt 0) {
+        Set-Content -Path $EnvPath -Value $lines -Encoding UTF8
+    }
+    return ,@($added)
+}
+
 function Install-UrlRewrite([string]$AssetsRoot) {
     if (Get-WebGlobalModule -Name 'RewriteModule' -ErrorAction SilentlyContinue) {
         Write-Host 'IIS URL Rewrite already installed.'
@@ -100,12 +139,100 @@ function Install-UrlRewrite([string]$AssetsRoot) {
     }
     $msi = Join-Path $AssetsRoot 'rewrite_amd64.msi'
     if (-not (Test-Path $msi)) {
-        Write-Warning 'URL Rewrite MSI not bundled. Laravel routes need the IIS URL Rewrite module.'
-        return
+        throw 'IIS URL Rewrite is required for Laravel routes (/login, /reports/*) but rewrite_amd64.msi was not found in installer\assets.'
     }
     Write-Step 'Installing IIS URL Rewrite...'
     $p = Start-Process msiexec.exe -ArgumentList @('/i', "`"$msi`"", '/qn', 'REBOOT=ReallySuppress') -Wait -PassThru
     if ($p.ExitCode -ne 0) { throw "URL Rewrite installer exited with code $($p.ExitCode)" }
+    if (-not (Get-WebGlobalModule -Name 'RewriteModule' -ErrorAction SilentlyContinue)) {
+        throw 'IIS URL Rewrite did not register after install. Reboot the server, then run installer\repair-web.cmd as Administrator.'
+    }
+}
+
+function Invoke-InstallerWebRequest([string]$Uri) {
+    if ($Uri -match '^https://') {
+        $previousCallback = [System.Net.ServicePointManager]::ServerCertificateValidationCallback
+        try {
+            [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+            return Invoke-WebRequest -Uri $Uri -UseBasicParsing -TimeoutSec 20 -ErrorAction Stop
+        } finally {
+            [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $previousCallback
+        }
+    }
+
+    return Invoke-WebRequest -Uri $Uri -UseBasicParsing -TimeoutSec 20 -ErrorAction Stop
+}
+
+function Test-IisWebSetup(
+    [string]$SiteName,
+    [int]$Port,
+    [string]$InstallPath,
+    [string]$AppUrl
+) {
+    Import-Module WebAdministration -ErrorAction Stop
+
+    $expectedPublic = Join-Path $InstallPath 'public'
+    $site = Get-Website -Name $SiteName -ErrorAction SilentlyContinue
+    if (-not $site) {
+        throw "IIS site '$SiteName' was not created."
+    }
+    if ($site.State -ne 'Started') {
+        Start-Website -Name $SiteName
+    }
+    if ($site.physicalPath -ne $expectedPublic) {
+        throw "IIS physical path is wrong: $($site.physicalPath). Expected: $expectedPublic. Run installer\repair-web.cmd as Administrator."
+    }
+
+    $rewrite = Get-WebGlobalModule -Name 'RewriteModule' -ErrorAction SilentlyContinue
+    if (-not $rewrite) {
+        throw 'IIS URL Rewrite is not installed. Without it, /login returns 404. Run installer\repair-web.cmd as Administrator.'
+    }
+
+    $portsToCheck = @($Port)
+    if ($AppUrl -match '^https://' -and $AppUrl -match ':(\d+)') {
+        $httpsPort = [int]$Matches[1]
+        if ($portsToCheck -notcontains $httpsPort) { $portsToCheck += $httpsPort }
+    } elseif ($AppUrl -match '^https://') {
+        if ($portsToCheck -notcontains 443) { $portsToCheck += 443 }
+    }
+    $anyListening = $false
+    foreach ($checkPort in $portsToCheck) {
+        $listening = netstat -an | Select-String 'LISTENING' | Select-String ":$checkPort\s"
+        if ($listening) { $anyListening = $true }
+    }
+    if (-not $anyListening) {
+        throw "Nothing is listening on TCP port(s) $($portsToCheck -join ', '). Check for a port conflict or re-run installer\repair-web.cmd."
+    }
+
+    $probeUrls = [System.Collections.Generic.List[string]]::new()
+    if (-not [string]::IsNullOrWhiteSpace($AppUrl)) {
+        $probeUrls.Add($AppUrl.TrimEnd('/') + '/login')
+    }
+    $probeUrls.Add("http://127.0.0.1:$Port/login")
+
+    $lastError = 'No probe URL attempted.'
+    $selfSignedHttps = $false
+    foreach ($probeUrl in $probeUrls) {
+        try {
+            $resp = Invoke-InstallerWebRequest -Uri $probeUrl
+            if ($resp.StatusCode -lt 200 -or $resp.StatusCode -ge 400) {
+                $lastError = "HTTP $($resp.StatusCode) from $probeUrl"
+                continue
+            }
+            if ($probeUrl -match '^https://') {
+                $selfSignedHttps = $true
+            }
+            Write-Host "  Verified login page: $probeUrl (status $($resp.StatusCode))" -ForegroundColor Green
+            if ($selfSignedHttps) {
+                Write-Host '  Note: HTTPS uses a self-signed certificate. Browsers show a warning once - tap Advanced -> Proceed.' -ForegroundColor Yellow
+            }
+            return
+        } catch {
+            $lastError = "$probeUrl - $($_.Exception.Message)"
+        }
+    }
+
+    throw "Could not load login page. Last error: $lastError. Run installer\diagnose.cmd as Administrator."
 }
 
 function Enable-IisWindowsFeatures {
@@ -428,9 +555,20 @@ function Install-IisSite(
     }
 
     if (Get-Website -Name $SiteName -ErrorAction SilentlyContinue) {
-        Remove-Website -Name $SiteName
+        Write-Host "  Updating existing IIS site '$SiteName' (physical path + app pool)."
+        Set-ItemProperty "IIS:\Sites\$SiteName" -Name physicalPath -Value $PublicPath
+        Set-ItemProperty "IIS:\Sites\$SiteName" -Name applicationPool -Value $AppPoolName
+        $binding = Get-WebBinding -Name $SiteName -Protocol 'http' -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($binding -and $binding.bindingInformation -notmatch ":$Port`:") {
+            Remove-WebBinding -Name $SiteName -Protocol 'http' -ErrorAction SilentlyContinue
+            New-WebBinding -Name $SiteName -Protocol 'http' -Port $Port -IPAddress '*'
+        }
+        if ((Get-Website -Name $SiteName).State -ne 'Started') {
+            Start-Website -Name $SiteName
+        }
+    } else {
+        New-Website -Name $SiteName -Port $Port -PhysicalPath $PublicPath -ApplicationPool $AppPoolName | Out-Null
     }
-    New-Website -Name $SiteName -Port $Port -PhysicalPath $PublicPath -ApplicationPool $AppPoolName | Out-Null
 
     # The handlers section is locked at the server level by default, so register the
     # PHP FastCGI handler in applicationHost.config (global) rather than per-site.
@@ -475,7 +613,8 @@ function Backup-InstallSqlite([string]$InstallPath) {
         'damages-local.sqlite',
         'operations-tasks.sqlite',
         'accounting-local.sqlite',
-        'promotions-local.sqlite'
+        'promotions-local.sqlite',
+        'face-id-local.sqlite'
     )
     $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $backupDir = Join-Path $InstallPath "storage\app\sqlite-backups\pre-install-$timestamp"
@@ -503,7 +642,8 @@ function Show-BundledSqliteStatus([string]$InstallPath) {
         @{ key = 'damages-local.sqlite'; label = 'Damages entries' },
         @{ key = 'operations-tasks.sqlite'; label = 'Operations tasks' },
         @{ key = 'accounting-local.sqlite'; label = 'Accounting cash & transfers' },
-        @{ key = 'promotions-local.sqlite'; label = 'Promotions promoters & schedules' }
+        @{ key = 'promotions-local.sqlite'; label = 'Promotions promoters & schedules' },
+        @{ key = 'face-id-local.sqlite'; label = 'Face ID employees & attendance' }
     )
 
     Write-Step 'Local SQLite databases'
@@ -561,6 +701,7 @@ REPORTS_USERS_SQLITE_DATABASE="$dbPath/database/reports-users.sqlite"
 OPERATIONS_TASKS_SQLITE_DATABASE="$dbPath/database/operations-tasks.sqlite"
 ACCOUNTING_SQLITE_DATABASE="$dbPath/database/accounting-local.sqlite"
 PROMOTIONS_SQLITE_DATABASE="$dbPath/database/promotions-local.sqlite"
+FACE_ID_SQLITE_DATABASE="$dbPath/database/face-id-local.sqlite"
 
 REPORTS_BOOTSTRAP_ADMIN_USERNAME=$AdminUsername
 REPORTS_BOOTSTRAP_ADMIN_PASSWORD="$adminEscaped"
@@ -664,7 +805,8 @@ if (-not $installInPlace) {
         'damages-local.sqlite',
         'operations-tasks.sqlite',
         'accounting-local.sqlite',
-        'promotions-local.sqlite'
+        'promotions-local.sqlite',
+        'face-id-local.sqlite'
     )
     $envPathForUpgrade = Join-Path $InstallPath '.env'
     $isUpgradeCopy = Test-Path $envPathForUpgrade
@@ -672,7 +814,7 @@ if (-not $installInPlace) {
     Write-Step "Copying application to $InstallPath"
     if (Test-Path $InstallPath) {
         if ($isUpgradeCopy) {
-            Write-Host '  Existing installation detected — upgrading in place.' -ForegroundColor Yellow
+            Write-Host '  Existing installation detected - upgrading in place.' -ForegroundColor Yellow
             Write-Host '  Preserving: .env, database\*.sqlite, storage\app\sqlite-backups\' -ForegroundColor Yellow
             Backup-InstallSqlite -InstallPath $InstallPath
         } elseif (-not $Quiet) {
@@ -691,7 +833,7 @@ if (-not $installInPlace) {
         $PackageRoot, $InstallPath,
         '/MIR',
         '/XD', 'node_modules', '.git', 'dist', 'storage\app\sqlite-backups',
-        '/XF', '.env', 'sqlite-auto-backup.json'
+        '/XF', '.env', 'sqlite-auto-backup.json', 'pda-auto-sync.json'
     ) + $sqliteExclude + @('/NFL', '/NDL', '/NJH', '/NJS', '/nc', '/ns', '/np')
     & robocopy @robocopyArgs | Out-Null
     if ($LASTEXITCODE -ge 8) { throw "File copy failed (robocopy exit $LASTEXITCODE)" }
@@ -705,16 +847,42 @@ Install-SqlPhpDrivers -ExtDir (Join-Path $RuntimePhpDir 'ext') -AllowDownload:$A
 Initialize-PhpIni -PhpRoot $RuntimePhpDir
 $phpCgi = Join-Path $RuntimePhpDir 'php-cgi.exe'
 
-Write-Step 'Collecting configuration'
-if ([string]::IsNullOrWhiteSpace($SqlHost)) { $SqlHost = Read-Required 'SQL Server host' '10.10.10.250' }
-if ([string]::IsNullOrWhiteSpace($SqlPassword)) { $SqlPassword = Read-Secret 'SQL Server password' $SqlPassword }
-if ([string]::IsNullOrWhiteSpace($AdminPassword)) { $AdminPassword = Read-Secret 'Bootstrap admin password' $AdminPassword }
-if ([string]::IsNullOrWhiteSpace($AppUrl)) { $AppUrl = "http://localhost:$SitePort" }
-
 $envPath = Join-Path $InstallPath '.env'
 $isUpdateInstall = Test-Path $envPath
+
+Write-Step 'Collecting configuration'
+if ([string]::IsNullOrWhiteSpace($SqlHost)) { $SqlHost = Read-Required 'SQL Server host' '10.10.10.250' }
+if ($isUpdateInstall) {
+    if ([string]::IsNullOrWhiteSpace($SqlPassword)) {
+        Write-Host '  Upgrade: keeping SQL credentials from existing .env (installer SQL password left blank).'
+    }
+    if ([string]::IsNullOrWhiteSpace($AdminPassword)) {
+        Write-Host '  Upgrade: keeping admin credentials from existing .env (installer admin password left blank).'
+    }
+    $envAppUrl = Read-EnvValue -EnvPath $envPath -Key 'APP_URL'
+    if (-not [string]::IsNullOrWhiteSpace($envAppUrl)) {
+        if ($AppUrl -ne $envAppUrl) {
+            Write-Host "  Upgrade: using APP_URL from existing .env ($envAppUrl)."
+        }
+        $AppUrl = $envAppUrl
+        if ($AppUrl -match ':(\d+)') {
+            $SitePort = [int]$Matches[1]
+        }
+    } elseif ([string]::IsNullOrWhiteSpace($AppUrl)) {
+        $AppUrl = Read-EnvValue -EnvPath $envPath -Key 'APP_URL'
+    }
+} else {
+    if ([string]::IsNullOrWhiteSpace($SqlPassword)) { $SqlPassword = Read-Secret 'SQL Server password' $SqlPassword }
+    if ([string]::IsNullOrWhiteSpace($AdminPassword)) { $AdminPassword = Read-Secret 'Bootstrap admin password' $AdminPassword }
+}
+if ([string]::IsNullOrWhiteSpace($AppUrl)) { $AppUrl = "http://localhost:$SitePort" }
+
 if ($isUpdateInstall) {
     Write-Step 'Keeping existing .env (upgrade install)'
+    $addedEnvKeys = Ensure-EnvSqliteKeys -EnvPath $envPath -InstallPath $InstallPath
+    if (Get-CollectionLength $addedEnvKeys -gt 0) {
+        Write-Host ("  Added missing .env keys: {0}" -f ($addedEnvKeys -join ', ')) -ForegroundColor Yellow
+    }
 } else {
     Write-Step 'Writing .env'
     Write-EnvFile -Path $envPath -AppUrl $AppUrl -SqlHost $SqlHost `
@@ -727,6 +895,12 @@ if ($isUpdateInstall) {
 
 Write-Step 'Laravel setup'
 Push-Location $InstallPath
+if ($isUpdateInstall) {
+    Write-Host '  Upgrade: clearing cached config/routes/views before rebuild.'
+    & $phpExe artisan config:clear
+    & $phpExe artisan route:clear
+    & $phpExe artisan view:clear
+}
 $envText = if (Test-Path $envPath) { Get-Content $envPath -Raw } else { '' }
 if ($envText -match 'APP_KEY=base64:[A-Za-z0-9+/=]{20,}') {
     Write-Host '  APP_KEY already set - skipping key:generate'
@@ -789,6 +963,8 @@ if (-not $SkipIis) {
         Write-Warning "Could not add firewall rule for port ${SitePort}: $($_.Exception.Message)"
     }
     iisreset /start | Out-Null
+    Write-Step 'Verifying IIS + Laravel routing'
+    Test-IisWebSetup -SiteName $SiteName -Port $SitePort -InstallPath $InstallPath -AppUrl $AppUrl
 }
 
 if (-not $SkipDbHealth) {

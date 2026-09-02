@@ -125,6 +125,35 @@ if ($BundleRuntime) {
     }
 }
 
+# Face ID (enrollment modal + face-api model weights)
+@(
+    'app\Http\Controllers\FaceIdController.php',
+    'app\Services\FaceIdSqliteService.php',
+    'public\js\face-id-detector.js',
+    'public\js\face-id-enroll.js',
+    'public\js\face-id-kiosk.js',
+    'public\js\face-api.min.js',
+    'resources\views\reports\face-id\index.blade.php',
+    'resources\views\reports\face-id\partials\enroll-modal.blade.php',
+    'public\face-api-models\tiny_face_detector_model-shard1.bin',
+    'public\face-api-models\face_landmark_68_model-shard1.bin',
+    'public\face-api-models\face_recognition_model-shard1.bin',
+    'public\face-api-models\face_recognition_model-shard2.bin'
+) | ForEach-Object { [void](Require-File $_ 'Face ID') }
+
+$faceIdBlades = @(
+    (Join-Path $ReleaseRoot 'resources\views\reports\face-id\index.blade.php'),
+    (Join-Path $ReleaseRoot 'resources\views\face-id\kiosk.blade.php')
+)
+foreach ($blade in $faceIdBlades) {
+    if (Test-Path $blade) {
+        $text = Get-Content $blade -Raw
+        if ($text -match 'cdn\.jsdelivr\.net.*face-api') {
+            $errors += "$blade must use bundled face-api.min.js, not jsDelivr CDN"
+        }
+    }
+}
+
 # Identifier glossary route (missing import caused HTTP 500 on /reports/identifier)
 @(
     'app\Http\Controllers\IdentifierController.php',
@@ -140,6 +169,12 @@ if (Test-Path $webRoutes) {
     }
     if ($webRoutesText -notmatch 'reports\.identifier\.index') {
         $errors += 'routes\web.php must register reports.identifier.index'
+    }
+    if ($webRoutesText -notmatch 'reports\.face-id\.index') {
+        $errors += 'routes\web.php must register reports.face-id.index'
+    }
+    if ($webRoutesText -notmatch 'reports\.accounting\.index') {
+        $errors += 'routes\web.php must register reports.accounting.index'
     }
 }
 

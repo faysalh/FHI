@@ -34,7 +34,10 @@ class FaceIdKioskController extends Controller
             throw new NotFoundHttpException;
         }
 
-        $result = $this->faceId->processPunch($request->descriptor());
+        $result = $this->faceId->processPunch(
+            $request->descriptor(),
+            $request->location()
+        );
 
         return response()->json($result);
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Support\ReportingTime;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
@@ -50,7 +51,7 @@ class FaceIdSqliteService
         $this->ensureReady();
 
         $token = Str::random(64);
-        $now = now()->toDateTimeString();
+        $now = ReportingTime::now()->toDateTimeString();
 
         $existing = $this->settingsRow();
         if ($existing === null) {
@@ -138,7 +139,7 @@ class FaceIdSqliteService
             throw new InvalidArgumentException('Employee name is required.');
         }
 
-        $now = now()->toDateTimeString();
+        $now = ReportingTime::now()->toDateTimeString();
         DB::connection(self::CONNECTION)->insert(
             'INSERT INTO '.self::EMPLOYEES_TABLE.' (name, employee_code, is_active, face_descriptor, created_at, updated_at)
              VALUES (?, ?, 1, NULL, ?, ?)',
@@ -166,7 +167,7 @@ class FaceIdSqliteService
             'UPDATE '.self::EMPLOYEES_TABLE.'
              SET name = ?, employee_code = ?, is_active = ?, updated_at = ?
              WHERE id = ?',
-            [$name, $employeeCode, $isActive ? 1 : 0, now()->toDateTimeString(), $id]
+            [$name, $employeeCode, $isActive ? 1 : 0, ReportingTime::now()->toDateTimeString(), $id]
         );
     }
 
@@ -189,6 +190,37 @@ class FaceIdSqliteService
     }
 
     /**
+     * @param  list<list<float|int>>  $descriptorSets
+     * @return list<float>
+     */
+    public static function averageDescriptors(array $descriptorSets): array
+    {
+        if ($descriptorSets === []) {
+            throw new InvalidArgumentException('At least one face descriptor is required.');
+        }
+
+        $length = self::DESCRIPTOR_LENGTH;
+        $count = count($descriptorSets);
+        $averaged = array_fill(0, $length, 0.0);
+
+        foreach ($descriptorSets as $set) {
+            if (count($set) !== $length) {
+                throw new InvalidArgumentException('Each face descriptor must contain exactly '.$length.' values.');
+            }
+
+            for ($i = 0; $i < $length; $i++) {
+                $averaged[$i] += (float) $set[$i];
+            }
+        }
+
+        for ($i = 0; $i < $length; $i++) {
+            $averaged[$i] /= $count;
+        }
+
+        return $averaged;
+    }
+
+    /**
      * @param  list<float|int>  $descriptor
      */
     public function saveFaceDescriptor(int $id, array $descriptor): void
@@ -204,7 +236,7 @@ class FaceIdSqliteService
             'UPDATE '.self::EMPLOYEES_TABLE.'
              SET face_descriptor = ?, updated_at = ?
              WHERE id = ?',
-            [json_encode(array_map('floatval', $descriptor), JSON_THROW_ON_ERROR), now()->toDateTimeString(), $id]
+            [json_encode(array_map('floatval', $descriptor), JSON_THROW_ON_ERROR), ReportingTime::now()->toDateTimeString(), $id]
         );
     }
 
@@ -220,7 +252,7 @@ class FaceIdSqliteService
             'UPDATE '.self::EMPLOYEES_TABLE.'
              SET face_descriptor = NULL, updated_at = ?
              WHERE id = ?',
-            [now()->toDateTimeString(), $id]
+            [ReportingTime::now()->toDateTimeString(), $id]
         );
     }
 
@@ -271,6 +303,7 @@ class FaceIdSqliteService
 
     /**
      * @param  list<float|int>  $descriptor
+     * @param  array{latitude: float, longitude: float, accuracy: ?float}  $location
      * @return array{
      *     recognized: bool,
      *     employee_id?: int,
@@ -278,10 +311,12 @@ class FaceIdSqliteService
      *     event_type?: string,
      *     recorded_at?: string,
      *     confidence?: float,
+     *     latitude?: float,
+     *     longitude?: float,
      *     debounced?: bool
      * }
      */
-    public function processPunch(array $descriptor): array
+    public function processPunch(array $descriptor, array $location): array
     {
         $match = $this->matchDescriptor($descriptor);
         if ($match === null) {
@@ -289,7 +324,7 @@ class FaceIdSqliteService
         }
 
         $employeeId = (int) $match['employee']->id;
-        $now = now();
+        $now = ReportingTime::now();
         $today = $now->toDateString();
 
         $lastToday = DB::connection(self::CONNECTION)->selectOne(
@@ -319,9 +354,17 @@ class FaceIdSqliteService
 
         $recordedAt = $now->toDateTimeString();
         DB::connection(self::CONNECTION)->insert(
-            'INSERT INTO '.self::ATTENDANCE_TABLE.' (employee_id, event_type, recorded_at, confidence)
-             VALUES (?, ?, ?, ?)',
-            [$employeeId, $eventType, $recordedAt, round($match['confidence'], 4)]
+            'INSERT INTO '.self::ATTENDANCE_TABLE.' (employee_id, event_type, recorded_at, confidence, latitude, longitude, location_accuracy)
+             VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [
+                $employeeId,
+                $eventType,
+                $recordedAt,
+                round($match['confidence'], 4),
+                $location['latitude'],
+                $location['longitude'],
+                $location['accuracy'],
+            ]
         );
 
         return [
@@ -331,6 +374,8 @@ class FaceIdSqliteService
             'event_type' => $eventType,
             'recorded_at' => $recordedAt,
             'confidence' => $match['confidence'],
+            'latitude' => $location['latitude'],
+            'longitude' => $location['longitude'],
         ];
     }
 
@@ -343,6 +388,7 @@ class FaceIdSqliteService
 
         return DB::connection(self::CONNECTION)->select(
             'SELECT a.id, a.employee_id, a.event_type, a.recorded_at, a.confidence,
+                    a.latitude, a.longitude, a.location_accuracy,
                     e.name AS employee_name, e.employee_code
              FROM '.self::ATTENDANCE_TABLE.' a
              INNER JOIN '.self::EMPLOYEES_TABLE.' e ON e.id = a.employee_id
@@ -453,9 +499,14 @@ class FaceIdSqliteService
                 event_type TEXT NOT NULL CHECK (event_type IN (\'clock_in\', \'clock_out\')),
                 recorded_at TEXT NOT NULL,
                 confidence REAL,
+                latitude REAL,
+                longitude REAL,
+                location_accuracy REAL,
                 FOREIGN KEY (employee_id) REFERENCES '.self::EMPLOYEES_TABLE.' (id) ON DELETE CASCADE
             )'
         );
+
+        $this->ensureAttendanceLocationColumns();
 
         DB::connection(self::CONNECTION)->statement(
             'CREATE INDEX IF NOT EXISTS idx_face_id_attendance_employee_date
@@ -464,7 +515,7 @@ class FaceIdSqliteService
 
         if ($this->settingsRow() === null) {
             $token = Str::random(64);
-            $now = now()->toDateTimeString();
+            $now = ReportingTime::now()->toDateTimeString();
             DB::connection(self::CONNECTION)->insert(
                 'INSERT INTO '.self::SETTINGS_TABLE.' (id, kiosk_token, match_threshold, created_at, updated_at)
                  VALUES (1, ?, ?, ?, ?)',
@@ -473,6 +524,30 @@ class FaceIdSqliteService
         }
 
         $this->schemaChecked = true;
+    }
+
+    private function ensureAttendanceLocationColumns(): void
+    {
+        $columns = DB::connection(self::CONNECTION)->select(
+            'PRAGMA table_info('.self::ATTENDANCE_TABLE.')'
+        );
+        $names = array_map(static fn (object $column): string => (string) $column->name, $columns);
+
+        if (! in_array('latitude', $names, true)) {
+            DB::connection(self::CONNECTION)->statement(
+                'ALTER TABLE '.self::ATTENDANCE_TABLE.' ADD COLUMN latitude REAL'
+            );
+        }
+        if (! in_array('longitude', $names, true)) {
+            DB::connection(self::CONNECTION)->statement(
+                'ALTER TABLE '.self::ATTENDANCE_TABLE.' ADD COLUMN longitude REAL'
+            );
+        }
+        if (! in_array('location_accuracy', $names, true)) {
+            DB::connection(self::CONNECTION)->statement(
+                'ALTER TABLE '.self::ATTENDANCE_TABLE.' ADD COLUMN location_accuracy REAL'
+            );
+        }
     }
 
     private function ensureDatabaseFileExists(): void

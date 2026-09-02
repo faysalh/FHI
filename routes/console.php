@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Services\PdaAutoSyncService;
 use App\Services\SqliteAutoBackupService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -140,3 +141,30 @@ Artisan::command('reports:sqlite-auto-backup', function (SqliteAutoBackupService
     }
 })->purpose('Run scheduled SQLite backup when daily time is due')
     ->addOption('force', null, InputOption::VALUE_NONE, 'Run immediately using the saved backup folder');
+
+Artisan::command('reports:pda-auto-sync', function (PdaAutoSyncService $autoSync): int {
+    try {
+        if ($this->option('force')) {
+            $ran = $autoSync->runNow();
+            $this->info($ran
+                ? 'PDA auto sync completed.'
+                : 'No pending PDA work — sync was skipped.');
+
+            return self::SUCCESS;
+        }
+
+        if (! $autoSync->runIfDue()) {
+            return self::SUCCESS;
+        }
+
+        $this->info('PDA auto sync completed.');
+
+        return self::SUCCESS;
+    } catch (Throwable $e) {
+        Log::error('pda_auto_sync.command_failed', ['message' => $e->getMessage()]);
+        $this->error('PDA auto sync failed: '.$e->getMessage());
+
+        return self::FAILURE;
+    }
+})->purpose('Run scheduled PDA sync when interval is due and work is pending')
+    ->addOption('force', null, InputOption::VALUE_NONE, 'Run immediately if pending PDA work exists');

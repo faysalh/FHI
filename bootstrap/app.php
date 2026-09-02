@@ -27,5 +27,10 @@ return Application::configure(basePath: dirname(__DIR__))
             ->everyMinute()
             ->withoutOverlapping()
             ->runInBackground();
+
+        $schedule->command('reports:pda-auto-sync')
+            ->everyMinute()
+            ->withoutOverlapping(15)
+            ->runInBackground();
     })
     ->create();

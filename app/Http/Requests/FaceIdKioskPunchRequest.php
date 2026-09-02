@@ -22,6 +22,9 @@ class FaceIdKioskPunchRequest extends FormRequest
         return [
             'descriptor' => ['required', 'array', 'size:'.FaceIdSqliteService::DESCRIPTOR_LENGTH],
             'descriptor.*' => ['required', 'numeric'],
+            'latitude' => ['required', 'numeric', 'between:-90,90'],
+            'longitude' => ['required', 'numeric', 'between:-180,180'],
+            'location_accuracy' => ['nullable', 'numeric', 'min:0', 'max:100000'],
         ];
     }
 
@@ -31,5 +34,21 @@ class FaceIdKioskPunchRequest extends FormRequest
     public function descriptor(): array
     {
         return array_map('floatval', $this->validated('descriptor'));
+    }
+
+    /**
+     * @return array{latitude: float, longitude: float, accuracy: ?float}
+     */
+    public function location(): array
+    {
+        $validated = $this->validated();
+
+        return [
+            'latitude' => (float) $validated['latitude'],
+            'longitude' => (float) $validated['longitude'],
+            'accuracy' => isset($validated['location_accuracy'])
+                ? (float) $validated['location_accuracy']
+                : null,
+        ];
     }
 }

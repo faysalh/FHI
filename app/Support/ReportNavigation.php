@@ -47,7 +47,15 @@ final class ReportNavigation
                 'label' => 'Inventory',
                 'items' => [
                     ['key' => 'storage-items', 'route' => 'reports.storage-items.index', 'label' => 'Items & forecast', 'title' => 'Inventory, sales averages, and forecast'],
+                    ['key' => 'storage-quantity', 'route' => 'reports.storage-quantity.index', 'label' => 'Storage quantity', 'title' => 'Item balance from stored procedures (Normal / Adv)'],
                     ['key' => 'storage', 'route' => 'reports.storage.index', 'label' => 'Stock snapshot', 'title' => 'Current stock by storage and category'],
+                ],
+            ],
+            [
+                'label' => 'Finance',
+                'items' => [
+                    ['key' => 'accounting', 'route' => 'reports.accounting.index', 'label' => 'Accounting', 'title' => 'Daily cash, transfers, and receipt booklets'],
+                    ['key' => 'promotions', 'route' => 'reports.promotions.index', 'label' => 'Promotions', 'title' => 'Promoter schedules and client visit assignments'],
                 ],
             ],
             [
@@ -57,6 +65,7 @@ final class ReportNavigation
                     ['key' => 'invoices', 'route' => 'reports.invoices.index', 'label' => 'Invoices', 'title' => 'Invoice search and details'],
                     ['key' => 'tasks', 'route' => 'reports.tasks.index', 'label' => 'Tasks', 'title' => 'Task notes and invoice-day reminders'],
                     ['key' => 'damages', 'route' => 'reports.damages.index', 'label' => 'Damages', 'title' => 'Damaged goods entries'],
+                    ['key' => 'face-id', 'route' => 'reports.face-id.index', 'label' => 'Face ID', 'title' => 'Employee face enrollment and attendance'],
                     ['key' => 'report-assembly', 'route' => 'reports.report-assembly.index', 'label' => 'Assembly order', 'title' => 'Category and item sort priority'],
                 ],
             ],
@@ -71,6 +80,7 @@ final class ReportNavigation
                     ['key' => 'identifier', 'route' => 'reports.identifier.index', 'label' => 'Glossary', 'title' => 'Field and term definitions'],
                     ['key' => 'users', 'route' => 'reports.users.index', 'label' => 'Users', 'title' => 'App users and report access', 'super_admin_only' => true],
                     ['key' => 'sqlite-backups', 'route' => 'reports.sqlite-backups.index', 'label' => 'SQLite backups', 'title' => 'Back up and restore local app databases', 'super_admin_only' => true],
+                    ['key' => 'database-sync', 'route' => 'reports.database-sync.index', 'label' => 'PDA sync', 'title' => 'Import PDA client invoices into the main system', 'super_admin_only' => true],
                 ],
             ],
         ];
@@ -170,6 +180,7 @@ final class ReportNavigation
             str_starts_with($routeName, 'reports.sales-by-item') => 'sales-by-item',
             str_starts_with($routeName, 'reports.sales-by-salesman') => 'sales-by-salesman',
             str_starts_with($routeName, 'reports.sales') => 'sales',
+            str_starts_with($routeName, 'reports.storage-quantity') => 'storage-quantity',
             str_starts_with($routeName, 'reports.storage-items') => 'storage-items',
             str_starts_with($routeName, 'reports.storage') => 'storage',
             str_starts_with($routeName, 'reports.deliveries') => 'deliveries',
@@ -183,11 +194,15 @@ final class ReportNavigation
             str_starts_with($routeName, 'reports.cities') => 'cities',
             str_starts_with($routeName, 'reports.visits') => 'visits',
             str_starts_with($routeName, 'reports.damages') => 'damages',
+            str_starts_with($routeName, 'reports.accounting') => 'accounting',
+            str_starts_with($routeName, 'reports.promotions') => 'promotions',
+            str_starts_with($routeName, 'reports.face-id') => 'face-id',
             str_starts_with($routeName, 'reports.schema') => 'schema',
             str_starts_with($routeName, 'reports.guide') => 'guide',
             str_starts_with($routeName, 'reports.identifier') => 'identifier',
             str_starts_with($routeName, 'reports.users') => 'users',
             str_starts_with($routeName, 'reports.sqlite-backups') => 'sqlite-backups',
+            str_starts_with($routeName, 'reports.database-sync') => 'database-sync',
             default => '',
         };
     }

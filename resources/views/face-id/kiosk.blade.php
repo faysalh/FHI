@@ -77,19 +77,29 @@
     <div class="kiosk-video-wrap">
         <video id="kiosk-video" autoplay muted playsinline></video>
     </div>
-    <div id="kiosk-status" class="kiosk-status kiosk-loading">{{ __('Starting camera…') }}</div>
-    <p class="kiosk-hint">{{ __('Look at the camera. Only enrolled faces are logged.') }}</p>
+    <div id="kiosk-status" class="kiosk-status kiosk-loading">{{ __('Starting…') }}</div>
+    <p class="kiosk-hint">{{ __('Look at the camera. Only enrolled faces are logged. Allow camera and location when prompted — GPS is saved with each punch.') }}</p>
+    <p id="kiosk-debug" class="kiosk-hint" hidden></p>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script src="/js/face-api.min.js?v=3"></script>
+<script src="/js/face-id-detector.js?v=4"></script>
 <script>
 window.FaceIdKioskConfig = {
-    modelsUrl: @json(asset('face-api-models')),
+    modelsUrl: '/face-api-models',
     punchUrl: @json($punchUrl),
     csrfToken: @json(csrf_token()),
-    scanIntervalMs: 2000,
+    scanIntervalIdleMs: 2000,
+    scanIntervalActiveMs: 500,
     labels: {
-        starting: @json(__('Starting camera…')),
+        starting: @json(__('Starting…')),
+        requestingLocation: @json(__('Allow location access…')),
+        requestingCamera: @json(__('Allow camera access…')),
+        waitingLocation: @json(__('Waiting for location…')),
+        locationDenied: @json(__('Location permission denied. Enable location for this site in browser settings.')),
+        locationUnavailable: @json(__('Location unavailable on this device.')),
+        locationTimeout: @json(__('Location request timed out. Try again.')),
+        locationUnsupported: @json(__('Geolocation is not supported on this device.')),
         ready: @json(__('Ready')),
         clockIn: @json(__('Clocked in')),
         clockOut: @json(__('Clocked out')),
@@ -97,6 +107,14 @@ window.FaceIdKioskConfig = {
     }
 };
 </script>
-<script src="{{ asset('js/face-id-kiosk.js') }}"></script>
+<script src="{{ asset('js/face-id-kiosk.js') }}?v=3"></script>
+<script>
+(function () {
+    if (/[?&]debug=1(?:&|$)/.test(window.location.search)) {
+        var el = document.getElementById('kiosk-debug');
+        if (el) el.hidden = false;
+    }
+})();
+</script>
 </body>
 </html>

@@ -8,7 +8,10 @@ use App\Http\Controllers\CitiesReportController;
 use App\Http\Controllers\ComparisonReportController;
 use App\Http\Controllers\DashboardLabController;
 use App\Http\Controllers\DamagesReportController;
+use App\Http\Controllers\DatabaseSynchronizeController;
 use App\Http\Controllers\DeliveriesReportController;
+use App\Http\Controllers\FaceIdController;
+use App\Http\Controllers\FaceIdKioskController;
 use App\Http\Controllers\GovernoratesSettingsController;
 use App\Http\Controllers\IdentifierController;
 use App\Http\Controllers\InvoiceBrandingSettingsController;
@@ -27,6 +30,7 @@ use App\Http\Controllers\SalesReportController;
 use App\Http\Controllers\SchemaExplorerController;
 use App\Http\Controllers\SqliteBackupSettingsController;
 use App\Http\Controllers\StorageItemsReportController;
+use App\Http\Controllers\StorageQuantityReportController;
 use App\Http\Controllers\StorageReportController;
 use App\Http\Controllers\VisitsReportController;
 use Illuminate\Support\Facades\Route;
@@ -38,6 +42,11 @@ Route::get('/', function () {
 Route::get('/login', [AdminAuthController::class, 'showLoginForm'])->name('login');
 Route::post('/login', [AdminAuthController::class, 'login'])->name('login.attempt');
 Route::post('/logout', [AdminAuthController::class, 'logout'])->name('logout');
+
+Route::get('/attendance/{token}', [FaceIdKioskController::class, 'show'])->name('face-id.kiosk.show');
+Route::post('/attendance/{token}/punch', [FaceIdKioskController::class, 'punch'])
+    ->middleware('throttle:30,1')
+    ->name('face-id.kiosk.punch');
 
 Route::prefix('reports')->middleware(['reports.admin', 'reports.permission'])->group(function (): void {
     Route::get('/no-access', [AdminAuthController::class, 'noAccess'])->name('reports.no-access');
@@ -69,6 +78,9 @@ Route::prefix('reports')->middleware(['reports.admin', 'reports.permission'])->g
     Route::get('/storage-items/evaluation', [StorageItemsReportController::class, 'evaluation'])->name('reports.storage-items.evaluation');
     Route::get('/storage-items/export/pdf', [StorageItemsReportController::class, 'exportPdf'])->name('reports.storage-items.export.pdf');
     Route::get('/storage-items/export/csv', [StorageItemsReportController::class, 'exportCsv'])->name('reports.storage-items.export.csv');
+    Route::get('/storage-quantity', [StorageQuantityReportController::class, 'index'])->name('reports.storage-quantity.index');
+    Route::get('/storage-quantity/export/pdf', [StorageQuantityReportController::class, 'exportPdf'])->name('reports.storage-quantity.export.pdf');
+    Route::get('/storage-quantity/export/csv', [StorageQuantityReportController::class, 'exportCsv'])->name('reports.storage-quantity.export.csv');
     Route::get('/storage', [StorageReportController::class, 'index'])->name('reports.storage.index');
     Route::get('/storage/export/pdf', [StorageReportController::class, 'exportPdf'])->name('reports.storage.export.pdf');
     Route::get('/storage/export/csv', [StorageReportController::class, 'exportCsv'])->name('reports.storage.export.csv');
@@ -154,6 +166,15 @@ Route::prefix('reports')->middleware(['reports.admin', 'reports.permission'])->g
     Route::delete('/tasks/{task}', [OperationsTasksController::class, 'destroy'])->name('reports.tasks.destroy');
     Route::post('/tasks/due', [OperationsTasksController::class, 'dueNow'])->name('reports.tasks.due');
     Route::post('/tasks/due/ack', [OperationsTasksController::class, 'ackDueNotifications'])->name('reports.tasks.due-ack');
+    Route::get('/face-id', [FaceIdController::class, 'index'])->name('reports.face-id.index');
+    Route::post('/face-id/employees', [FaceIdController::class, 'storeEmployee'])->name('reports.face-id.employees.store');
+    Route::put('/face-id/employees/{employee}', [FaceIdController::class, 'updateEmployee'])->name('reports.face-id.employees.update');
+    Route::delete('/face-id/employees/{employee}', [FaceIdController::class, 'destroyEmployee'])->name('reports.face-id.employees.destroy');
+    Route::post('/face-id/employees/{employee}/face', [FaceIdController::class, 'storeFace'])->name('reports.face-id.employees.face.store');
+    Route::delete('/face-id/employees/{employee}/face', [FaceIdController::class, 'destroyFace'])->name('reports.face-id.employees.face.destroy');
+    Route::post('/face-id/kiosk-token/regenerate', [FaceIdController::class, 'regenerateKioskToken'])->name('reports.face-id.kiosk-token.regenerate');
+    Route::get('/face-id/export/pdf', [FaceIdController::class, 'exportPdf'])->name('reports.face-id.export.pdf');
+    Route::get('/face-id/export/csv', [FaceIdController::class, 'exportCsv'])->name('reports.face-id.export.csv');
     Route::get('/schema', [SchemaExplorerController::class, 'index'])->name('reports.schema.index');
     Route::get('/guide', [ReportGuideController::class, 'index'])->name('reports.guide.index');
     Route::get('/identifier', [IdentifierController::class, 'index'])->name('reports.identifier.index');
@@ -169,4 +190,8 @@ Route::prefix('reports')->middleware(['reports.admin', 'reports.permission'])->g
     Route::post('/sqlite-backups/restore-upload', [SqliteBackupSettingsController::class, 'restoreUpload'])->name('reports.sqlite-backups.restore-upload');
     Route::post('/sqlite-backups/restore-stored', [SqliteBackupSettingsController::class, 'restoreStored'])->name('reports.sqlite-backups.restore-stored');
     Route::delete('/sqlite-backups/{filename}', [SqliteBackupSettingsController::class, 'destroy'])->name('reports.sqlite-backups.destroy');
+    Route::get('/database-sync', [DatabaseSynchronizeController::class, 'index'])->name('reports.database-sync.index');
+    Route::post('/database-sync/run', [DatabaseSynchronizeController::class, 'run'])->name('reports.database-sync.run');
+    Route::post('/database-sync/auto-settings', [DatabaseSynchronizeController::class, 'updateAutoSync'])->name('reports.database-sync.auto-settings');
+    Route::post('/database-sync/auto-run', [DatabaseSynchronizeController::class, 'runAutoSyncNow'])->name('reports.database-sync.auto-run');
 });

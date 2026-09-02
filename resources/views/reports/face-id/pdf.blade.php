@@ -1,5 +1,7 @@
 @php
     use App\Support\ArabicPdfText as Ar;
+    use App\Support\FaceIdLocation;
+    use App\Support\ReportingTime;
 
     $dateFrom = $filters['date_from'] ?? '';
     $dateTo = $filters['date_to'] ?? '';
@@ -35,6 +37,7 @@
         <th>Code</th>
         <th>Event</th>
         <th>Recorded at</th>
+        <th>Location</th>
         <th class="num">Confidence</th>
     </tr>
     </thead>
@@ -44,11 +47,16 @@
             <td>{{ Ar::glyphs((string) ($row->employee_name ?? '')) }}</td>
             <td>{{ Ar::glyphs((string) ($row->employee_code ?? '')) }}</td>
             <td>{{ ($row->event_type ?? '') === 'clock_in' ? 'Clock in' : 'Clock out' }}</td>
-            <td>{{ $row->recorded_at }}</td>
+            <td>{{ ReportingTime::formatStored($row->recorded_at ?? null) }}</td>
+            <td>{{ FaceIdLocation::format(
+                isset($row->latitude) ? (float) $row->latitude : null,
+                isset($row->longitude) ? (float) $row->longitude : null,
+                isset($row->location_accuracy) ? (float) $row->location_accuracy : null
+            ) }}</td>
             <td class="num">{{ $row->confidence !== null ? number_format((float) $row->confidence, 2) : '' }}</td>
         </tr>
     @empty
-        <tr><td colspan="5">No records for this period.</td></tr>
+        <tr><td colspan="6">No records for this period.</td></tr>
     @endforelse
     </tbody>
 </table>
