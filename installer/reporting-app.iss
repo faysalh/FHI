@@ -3,7 +3,7 @@
 ; Run: scripts\build-setup-exe.ps1 -BundleRuntime
 
 #define MyAppName "Reporting App"
-#define MyAppVersion "1.0.20"
+#define MyAppVersion "1.0.21"
 #define MyAppPublisher "Reporting"
 #define MyAppURL "http://localhost"
 
@@ -28,7 +28,7 @@ SetupLogging=yes
 
 [Files]
 ; Never overwrite live SQLite files on upgrade (see database\*.sqlite entries below).
-Source: "..\dist\ReportingApp-Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: ".env,database\reports-users.sqlite,database\deliveries-local.sqlite,database\damages-local.sqlite,database\operations-tasks.sqlite,database\accounting-local.sqlite,database\promotions-local.sqlite,database\face-id-local.sqlite,storage\app\sqlite-auto-backup.json,storage\app\pda-auto-sync.json,storage\app\sqlite-backups\*"
+Source: "..\dist\ReportingApp-Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: ".env,database\reports-users.sqlite,database\deliveries-local.sqlite,database\damages-local.sqlite,database\operations-tasks.sqlite,database\accounting-local.sqlite,database\promotions-local.sqlite,database\face-id-local.sqlite,database\manufacturing-local.sqlite,storage\app\sqlite-auto-backup.json,storage\app\pda-auto-sync.json,storage\app\sqlite-backups\*"
 #ifexist "..\dist\ReportingApp-Release\database\reports-users.sqlite"
 Source: "..\dist\ReportingApp-Release\database\reports-users.sqlite"; DestDir: "{app}\database"; Flags: onlyifdoesntexist uninsneveruninstall
 #endif
@@ -267,7 +267,7 @@ begin
   if not DirExists(AppDir) then
     Exit;
 
-  SetArrayLength(Names, 7);
+  SetArrayLength(Names, 8);
   Names[0] := 'reports-users.sqlite';
   Names[1] := 'deliveries-local.sqlite';
   Names[2] := 'damages-local.sqlite';
@@ -275,6 +275,7 @@ begin
   Names[4] := 'accounting-local.sqlite';
   Names[5] := 'promotions-local.sqlite';
   Names[6] := 'face-id-local.sqlite';
+  Names[7] := 'manufacturing-local.sqlite';
 
   Timestamp := GetDateTimeString('yyyyMMdd-HHmmss', #0, #0);
   BackupDir := AppDir + '\storage\app\sqlite-backups\pre-install-' + Timestamp;

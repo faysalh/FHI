@@ -326,6 +326,10 @@ return [
             'label' => 'Face ID (employees & attendance)',
             'connection' => 'face_id_sqlite',
         ],
+        'manufacturing' => [
+            'label' => 'Manufacturing storage (items, purchases, exports)',
+            'connection' => 'manufacturing_sqlite',
+        ],
     ],
 
 ];

@@ -83,6 +83,7 @@ OPERATIONS_TASKS_SQLITE_DATABASE="$dbPath/database/operations-tasks.sqlite"
 ACCOUNTING_SQLITE_DATABASE="$dbPath/database/accounting-local.sqlite"
 PROMOTIONS_SQLITE_DATABASE="$dbPath/database/promotions-local.sqlite"
 FACE_ID_SQLITE_DATABASE="$dbPath/database/face-id-local.sqlite"
+MANUFACTURING_SQLITE_DATABASE="$dbPath/database/manufacturing-local.sqlite"
 
 REPORTS_BOOTSTRAP_ADMIN_USERNAME=$AdminUsername
 REPORTS_BOOTSTRAP_ADMIN_PASSWORD="$adminEscaped"

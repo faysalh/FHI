@@ -101,7 +101,8 @@ $sqliteKeys = @(
     @{ Key = 'OPERATIONS_TASKS_SQLITE_DATABASE'; Label = 'Tasks' },
     @{ Key = 'ACCOUNTING_SQLITE_DATABASE'; Label = 'Accounting' },
     @{ Key = 'PROMOTIONS_SQLITE_DATABASE'; Label = 'Promotions' },
-    @{ Key = 'FACE_ID_SQLITE_DATABASE'; Label = 'Face ID' }
+    @{ Key = 'FACE_ID_SQLITE_DATABASE'; Label = 'Face ID' },
+    @{ Key = 'MANUFACTURING_SQLITE_DATABASE'; Label = 'Manufacturing storage' }
 )
 if (Test-Path $envPath) {
     Write-Host ''

@@ -59,6 +59,19 @@ final class ReportNavigation
                 ],
             ],
             [
+                'label' => 'Manufacturing Storage',
+                'items' => [
+                    ['key' => 'manufacturing', 'route' => 'reports.manufacturing.index', 'label' => 'Manufacturing Storage', 'title' => 'Manufacturing items, purchases, exports, and stock'],
+                    [
+                        'key' => 'manufacturing-delete',
+                        'route' => 'reports.manufacturing.index',
+                        'label' => 'Delete manufacturing records',
+                        'title' => 'Allow deleting items, purchases, and exports (supervisor)',
+                        'permission_only' => true,
+                    ],
+                ],
+            ],
+            [
                 'label' => 'Operations',
                 'items' => [
                     ['key' => 'deliveries', 'route' => 'reports.deliveries.index', 'label' => 'Deliveries', 'title' => 'Delivery status and teams'],
@@ -112,6 +125,9 @@ final class ReportNavigation
             $items = [];
             foreach ($section['items'] as $item) {
                 if (! empty($item['super_admin_only']) && ! $isSuperAdmin) {
+                    continue;
+                }
+                if (! empty($item['permission_only'])) {
                     continue;
                 }
                 if (! $isSuperAdmin) {
@@ -196,6 +212,7 @@ final class ReportNavigation
             str_starts_with($routeName, 'reports.damages') => 'damages',
             str_starts_with($routeName, 'reports.accounting') => 'accounting',
             str_starts_with($routeName, 'reports.promotions') => 'promotions',
+            str_starts_with($routeName, 'reports.manufacturing') => 'manufacturing',
             str_starts_with($routeName, 'reports.face-id') => 'face-id',
             str_starts_with($routeName, 'reports.schema') => 'schema',
             str_starts_with($routeName, 'reports.guide') => 'guide',

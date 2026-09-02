@@ -128,6 +128,18 @@ return [
             'transaction_mode' => 'DEFERRED',
         ],
 
+        'manufacturing_sqlite' => [
+            'driver' => 'sqlite',
+            'url' => null,
+            'database' => env('MANUFACTURING_SQLITE_DATABASE', database_path('manufacturing-local.sqlite')),
+            'prefix' => '',
+            'foreign_key_constraints' => true,
+            'busy_timeout' => null,
+            'journal_mode' => null,
+            'synchronous' => null,
+            'transaction_mode' => 'DEFERRED',
+        ],
+
         'mysql' => [
             'driver' => 'mysql',
             'url' => env('DB_URL'),
