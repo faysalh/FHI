@@ -162,6 +162,7 @@ foreach ($d in $excludeDirs) {
 $robocopyArgs += '/XF'
 $robocopyArgs += '.env'
 $robocopyArgs += 'sqlite-auto-backup.json'
+$robocopyArgs += 'pda-auto-sync.json'
 
 & robocopy @robocopyArgs | Out-Null
 if ($LASTEXITCODE -ge 8) {

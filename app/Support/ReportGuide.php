@@ -137,6 +137,17 @@ final class ReportGuide
                         ],
                         'reports.storage.index'
                     ),
+                    self::topic(
+                        'storage-quantity',
+                        'Storage quantity',
+                        'Item balances from SP_Get_Item_Balance (Normal) or SP_Get_Item_Balance_Adv (Adv).',
+                        [
+                            'Choose Normal or Adv mode, year, storage, and optional serial/batch or as-of datetime.',
+                            'Use Hide zero balances or Hide negative balances to trim the table.',
+                            'Export PDF/CSV with the same filters.',
+                        ],
+                        'reports.storage-quantity.index'
+                    ),
                 ],
             ],
             [
@@ -274,6 +285,18 @@ final class ReportGuide
                         ],
                         'reports.sqlite-backups.index'
                     ),
+                    self::topic(
+                        'database-sync',
+                        'PDA sync',
+                        'Import invoices and customers sent from PDA devices (administrators only).',
+                        [
+                            'Runs dbo.SP_Pda_Sync — the same as Sync in AsanAccounting for PDA data.',
+                            'Automatic mode: set interval in seconds; skips when no PDA invoices or customers are waiting.',
+                            'Requires the Windows Laravel scheduler task (see the page for setup).',
+                            'Do not run while AsanAccounting PDA sync is open on another PC.',
+                        ],
+                        'reports.database-sync.index'
+                    ),
                 ],
             ],
         ];
@@ -337,7 +360,7 @@ final class ReportGuide
             $topics = [];
             foreach ($section['topics'] as $topic) {
                 $key = $topic['key'];
-                if (($key === 'users' || $key === 'sqlite-backups') && ! $isSuperAdmin) {
+                if (in_array($key, ['users', 'sqlite-backups', 'database-sync'], true) && ! $isSuperAdmin) {
                     continue;
                 }
                 if (! $isSuperAdmin) {

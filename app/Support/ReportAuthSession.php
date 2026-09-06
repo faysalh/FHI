@@ -68,6 +68,11 @@ final class ReportAuthSession
         return array_values(array_unique($out));
     }
 
+    public static function canDeleteManufacturing(): bool
+    {
+        return self::canAccessReport('manufacturing-delete');
+    }
+
     public static function canAccessReport(string $reportKey): bool
     {
         if ($reportKey === '') {

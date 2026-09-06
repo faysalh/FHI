@@ -431,6 +431,7 @@
                         @include('reports.partials.filters-reset-link', ['route' => 'reports.deliveries.index', 'params' => ['tab' => 'report']])
                         <span class="muted">Export:</span>
                         <a href="#" class="deliveries-export-link export-link" data-export-base="{{ route('reports.deliveries.export.pdf') }}">PDF</a>
+                        <a href="#" class="deliveries-export-link export-link" data-export-base="{{ route('reports.deliveries.export.items.pdf') }}">Item export</a>
                         <a href="#" class="deliveries-export-link export-link" data-export-base="{{ route('reports.deliveries.export.csv') }}">CSV</a>
                     </div>
                 </div>
