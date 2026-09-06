@@ -99,6 +99,7 @@ Route::prefix('reports')->middleware(['reports.admin', 'reports.permission'])->g
     Route::post('/deliveries/batch-assign', [DeliveriesReportController::class, 'batchAssignFromPdf'])->name('reports.deliveries.batch-assign');
     Route::post('/deliveries/clear-team-assignments', [DeliveriesReportController::class, 'clearTeamAssignments'])->name('reports.deliveries.clear-team-assignments');
     Route::get('/deliveries/export/pdf', [DeliveriesReportController::class, 'exportPdf'])->name('reports.deliveries.export.pdf');
+    Route::get('/deliveries/export/items/pdf', [DeliveriesReportController::class, 'exportItemsPdf'])->name('reports.deliveries.export.items.pdf');
     Route::get('/deliveries/export/csv', [DeliveriesReportController::class, 'exportCsv'])->name('reports.deliveries.export.csv');
     Route::get('/invoices', [InvoicesReportController::class, 'index'])->name('reports.invoices.index');
     Route::get('/invoices/items', [InvoicesReportController::class, 'items'])->name('reports.invoices.items');

@@ -272,6 +272,8 @@ class DeliveriesReportTest extends TestCase
         $repo->shouldReceive('normalizeSalesmanIds')->andReturn([]);
         $repo->shouldReceive('exportRows')->once()->andReturn([
             (object) [
+                'invoice_id' => '1001',
+                'invoice_no' => '8842',
                 'document_date' => '2026-04-20',
                 'client_code' => 'C-100',
                 'client_name' => 'Client One',
@@ -281,17 +283,38 @@ class DeliveriesReportTest extends TestCase
                 'delivery_status' => 'Delivered',
             ],
         ]);
-        $visits = Mockery::mock(VisitsReportRepository::class);
-        $visits->shouldReceive('getCityOptions')->andReturn([]);
-        $visits->shouldReceive('getSalesmanOptions')->andReturn([]);
-        $teams = Mockery::mock(DeliveriesTeamSqliteService::class);
-        $teams->shouldReceive('assignmentsByInvoiceIds')->andReturn([]);
 
         $this->app->instance(DeliveriesReportRepository::class, $repo);
-        $this->app->instance(VisitsReportRepository::class, $visits);
-        $this->app->instance(DeliveriesTeamSqliteService::class, $teams);
 
         $response = $this->get('/reports/deliveries/export/pdf?date_from=2026-04-01&date_to=2026-04-20');
+
+        $response->assertOk();
+        $response->assertHeader('content-type', 'application/pdf');
+    }
+
+    public function test_deliveries_items_pdf_export_returns_file(): void
+    {
+        $repo = Mockery::mock(DeliveriesReportRepository::class);
+        $repo->shouldReceive('normalizeCities')->andReturn([]);
+        $repo->shouldReceive('normalizeSalesmanIds')->andReturn([]);
+        $repo->shouldReceive('exportItemRows')->once()->andReturn([
+            (object) [
+                'category_name' => 'Poultry',
+                'item_name' => 'Whole chicken',
+                'quantity' => 40,
+                'weight_total' => 80,
+            ],
+        ]);
+
+        $assembly = Mockery::mock(\App\Services\ReportAssemblyPriorityService::class);
+        $assembly->shouldReceive('sortRows')
+            ->once()
+            ->andReturnUsing(static fn (array $rows): array => $rows);
+
+        $this->app->instance(DeliveriesReportRepository::class, $repo);
+        $this->app->instance(\App\Services\ReportAssemblyPriorityService::class, $assembly);
+
+        $response = $this->get('/reports/deliveries/export/items/pdf?date_from=2026-04-01&date_to=2026-04-20');
 
         $response->assertOk();
         $response->assertHeader('content-type', 'application/pdf');

@@ -294,7 +294,78 @@ class DeliveriesReportRepository
                 {$this->cityExprSql()},
                 LTRIM(RTRIM(CAST(COALESCE(s.fld_store_name, N'') AS NVARCHAR(500)))),
                 CASE WHEN ISNULL(d.fld_is_delivered, 0) = 1 THEN N'Delivered' ELSE N'Not delivered' END
-            ORDER BY document_date DESC
+            ORDER BY
+                TRY_CAST(MAX({$invoiceNumberExpr}) AS bigint) ASC,
+                MAX({$invoiceNumberExpr}) ASC,
+                document_date ASC
+            OFFSET 0 ROWS FETCH NEXT {$limit} ROWS ONLY
+        ";
+
+            return DB::select($sql, $bindings);
+        } finally {
+            $this->dropInvoiceFilterTempTable();
+        }
+    }
+
+    /**
+     * Aggregate quantity and weight by item across the same deliveries filters.
+     *
+     * @param  list<string>  $cities
+     * @param  list<string>  $salesmanIds
+     * @return list<stdClass>
+     */
+    public function exportItemRows(
+        string $dateFrom,
+        string $dateTo,
+        array $cities,
+        array $salesmanIds,
+        ?string $storage,
+        ?string $deliveryStatus,
+        ?array $invoiceIds,
+        bool $applyDateFilter = true
+    ): array {
+        if (DB::getDriverName() !== 'sqlsrv') {
+            throw new RuntimeException('Deliveries report requires SQL Server (sqlsrv).');
+        }
+
+        try {
+            [$baseFrom, $bindings] = $this->baseFromAndBindings(
+                $dateFrom,
+                $dateTo,
+                $cities,
+                $salesmanIds,
+                $storage,
+                $deliveryStatus,
+                $invoiceIds,
+                $applyDateFilter
+            );
+
+            $itemsTable = (string) config('reporting.store_items_table', 'dbo.tbl_store_items');
+            $pkCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_pk_column', 'fld_item_id'));
+            $descCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_description_column', 'fld_description'));
+            $nameCol = $this->bracketSqlIdentifier((string) config('reporting.store_items_name_column', 'fld_item_name'));
+            $categoryExpr = 'COALESCE(NULLIF(LTRIM(RTRIM(CAST(i.'.$descCol.' AS NVARCHAR(500)))), N\'\'), N\'(uncategorized)\')';
+            $itemExpr = 'COALESCE(NULLIF(LTRIM(RTRIM(CAST(i.'.$nameCol.' AS NVARCHAR(500)))), N\'\'), N\'(unnamed item)\')';
+
+            $itemJoin = ' LEFT JOIN '.$itemsTable.' AS i ON i.'.$pkCol.' = d.fld_item_id_ref ';
+            $baseFromWithItems = preg_replace('/\s+WHERE\s+/i', $itemJoin.' WHERE ', $baseFrom, 1);
+            if (! is_string($baseFromWithItems) || $baseFromWithItems === $baseFrom) {
+                throw new RuntimeException('Could not attach item join to deliveries base query.');
+            }
+
+            $limit = self::MAX_EXPORT_ROWS;
+            $sql = "
+            SELECT
+                {$categoryExpr} AS category_name,
+                {$itemExpr} AS item_name,
+                SUM(CAST(d.fld_store_document_quantity AS decimal(24, 6))) AS quantity,
+                SUM(
+                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
+                    * CAST(COALESCE(w.fld_weight, 0) AS float)
+                ) AS weight_total
+            {$baseFromWithItems}
+            GROUP BY d.fld_item_id_ref, {$categoryExpr}, {$itemExpr}
+            ORDER BY {$categoryExpr} ASC, {$itemExpr} ASC
             OFFSET 0 ROWS FETCH NEXT {$limit} ROWS ONLY
         ";
 

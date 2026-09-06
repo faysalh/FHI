@@ -10,8 +10,10 @@ use App\Repositories\DeliveriesReportRepository;
 use App\Repositories\VisitsReportRepository;
 use App\Services\DeliveriesTeamSqliteService;
 use App\Services\DeliveryInvoicePdfExtractor;
+use App\Services\ReportAssemblyPriorityService;
 use App\Support\DeliveriesReportAccess;
 use App\Support\ReportAuthSession;
+use App\Support\ReportPdfBranding;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
@@ -29,7 +31,8 @@ class DeliveriesReportController extends Controller
         private readonly DeliveriesReportRepository $repository,
         private readonly VisitsReportRepository $visitsRepository,
         private readonly DeliveriesTeamSqliteService $teams,
-        private readonly DeliveryInvoicePdfExtractor $pdfExtractor
+        private readonly DeliveryInvoicePdfExtractor $pdfExtractor,
+        private readonly ReportAssemblyPriorityService $assemblyPriority
     ) {}
 
     public function index(DeliveriesReportRequest $request): View|RedirectResponse
@@ -284,21 +287,6 @@ class DeliveriesReportController extends Controller
                 $invoiceIds,
                 $applyDateFilter
             );
-            $invoiceIdsFromRows = array_values(array_filter(array_map(
-                static fn (object $row): string => trim((string) ($row->invoice_id ?? '')),
-                $rows
-            )));
-            try {
-                $assignmentMap = $this->teams->assignmentsByInvoiceIds($invoiceIdsFromRows);
-            } catch (Throwable $e) {
-                Log::warning('Deliveries PDF team mapping failed.', ['message' => $e->getMessage()]);
-                $assignmentMap = [];
-            }
-            foreach ($rows as $row) {
-                $invoiceId = trim((string) ($row->invoice_id ?? ''));
-                $assigned = $assignmentMap[$invoiceId] ?? null;
-                $row->team_name = $assigned !== null ? $this->teams->teamLabel($assigned) : '';
-            }
         } catch (Throwable $e) {
             Log::error('Deliveries PDF export failed.', ['message' => $e->getMessage()]);
 
@@ -317,10 +305,70 @@ class DeliveriesReportController extends Controller
             'teamId' => $teamId > 0 ? $teamId : null,
             'includeAmount' => $includeAmount,
             'includeWeight' => $includeWeight,
-            ...\App\Support\ReportPdfBranding::viewData(),
-        ])->setPaper('a4', 'landscape');
+            ...ReportPdfBranding::viewData(),
+        ])->setPaper('a4', 'portrait');
 
         return $pdf->download('deliveries-'.$dateFrom.'-'.$dateTo.'.pdf');
+    }
+
+    public function exportItemsPdf(DeliveriesReportRequest $request): Response|RedirectResponse
+    {
+        $input = $request->validated();
+        $dateFrom = (string) $input['date_from'];
+        $dateTo = (string) $input['date_to'];
+        $storage = trim((string) ($input['storage'] ?? ''));
+        $deliveryStatus = trim((string) ($input['delivery_status'] ?? ''));
+        $teamId = (int) ($input['team_id'] ?? 0);
+        $invoiceSearch = trim((string) ($input['invoice_search'] ?? ''));
+        $cities = $this->repository->normalizeCities(
+            is_array($input['cities'] ?? null) ? $input['cities'] : []
+        );
+        $salesmanIds = $this->repository->normalizeSalesmanIds(
+            is_array($input['salesman_ids'] ?? null) ? $input['salesman_ids'] : []
+        );
+        [$invoiceIds, $applyDateFilter] = $this->resolveReportInvoiceFilter($teamId, $invoiceSearch);
+
+        try {
+            $rows = $this->repository->exportItemRows(
+                $dateFrom,
+                $dateTo,
+                $cities,
+                $salesmanIds,
+                $storage !== '' ? $storage : null,
+                $deliveryStatus !== '' ? $deliveryStatus : null,
+                $invoiceIds,
+                $applyDateFilter
+            );
+            $rows = $this->assemblyPriority->sortRows($rows, 'category_name', 'item_name');
+        } catch (Throwable $e) {
+            Log::error('Deliveries item PDF export failed.', ['message' => $e->getMessage()]);
+
+            return redirect()
+                ->to(route('reports.deliveries.index', $this->redirectQuery($request)))
+                ->with('error', 'Could not export item PDF.');
+        }
+
+        $totalQty = 0.0;
+        $totalWeight = 0.0;
+        foreach ($rows as $row) {
+            $totalQty += (float) ($row->quantity ?? 0);
+            $totalWeight += (float) ($row->weight_total ?? 0);
+        }
+
+        $pdf = Pdf::loadView('reports.deliveries.items-pdf', [
+            'rows' => $rows,
+            'dateFrom' => $dateFrom,
+            'dateTo' => $dateTo,
+            'cities' => $cities,
+            'storage' => $storage,
+            'deliveryStatus' => $deliveryStatus,
+            'teamId' => $teamId > 0 ? $teamId : null,
+            'totalQty' => $totalQty,
+            'totalWeight' => $totalWeight,
+            ...ReportPdfBranding::viewData(),
+        ])->setPaper('a4', 'portrait');
+
+        return $pdf->download('deliveries-items-'.$dateFrom.'-'.$dateTo.'.pdf');
     }
 
     public function exportCsv(DeliveriesReportRequest $request): BinaryFileResponse|RedirectResponse
