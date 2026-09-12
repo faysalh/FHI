@@ -202,9 +202,9 @@
     @elseif (($filters['tab'] ?? 'report') === 'batch-assignment')
         @include('reports.deliveries.partials.active-filters-note', ['filters' => $filters, 'deliveriesAccess' => $deliveriesAccess ?? null])
         <p class="hint">
-            Upload a PDF containing invoice numbers and choose a team for the selected day. Every matched invoice is assigned to that team,
+            Upload a PDF or Excel/CSV listing invoice numbers, then choose a team for the selected day. Every matched invoice is assigned to that team,
             including invoices already assigned to a different team (for example returned items you batch again).
-            Invoice matching ignores dates — only the PDF numbers matter.
+            Invoice matching ignores dates — only the numbers in your file matter.
         </p>
 
         <div class="lab-card deliveries-setup-card">
@@ -223,8 +223,8 @@
         </div>
 
         <div class="lab-card deliveries-setup-card">
-            <h3 class="section-title">Batch assignment from PDF</h3>
-            <form method="POST" action="{{ route('reports.deliveries.batch-assign', request()->query()) }}" enctype="multipart/form-data" class="mini-grid">
+            <h3 class="section-title">Batch assignment from PDF or Excel</h3>
+            <form method="POST" action="{{ route('reports.deliveries.batch-assign', request()->query()) }}" enctype="multipart/form-data" class="mini-grid" id="batch-assign-form">
                 @csrf
                 @include('reports.deliveries.partials.filter-hidden', ['filters' => $filters, 'deliveriesAccess' => $deliveriesAccess ?? null, 'excludeFilterKeys' => ['team_id']])
                 <div>
@@ -238,12 +238,31 @@
                 </div>
                 <div>
                     <label for="batch_pdf">PDF file</label>
-                    <input type="file" id="batch_pdf" name="batch_pdf" accept="application/pdf" required>
+                    <input type="file" id="batch_pdf" name="batch_pdf" accept="application/pdf,.pdf">
+                    <p class="muted" style="margin:4px 0 0;font-size:12px;">Delivery report PDF (same as before).</p>
+                </div>
+                <div>
+                    <label for="batch_excel">Excel / CSV file</label>
+                    <input type="file" id="batch_excel" name="batch_excel" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv">
+                    <p class="muted" style="margin:4px 0 0;font-size:12px;">One invoice number per row (first column). Optional header row such as “Invoice Number” is skipped.</p>
                 </div>
                 <div class="inline-action-row" style="align-items:flex-end;">
                     @include('reports.partials.icon-button', ['action' => 'run', 'label' => 'Run batch assignment'])
                 </div>
             </form>
+            <script>
+                (function () {
+                    var pdf = document.getElementById('batch_pdf');
+                    var excel = document.getElementById('batch_excel');
+                    if (!pdf || !excel) return;
+                    function sync() {
+                        if (pdf.files && pdf.files.length) excel.removeAttribute('required');
+                        else if (excel.files && excel.files.length) pdf.removeAttribute('required');
+                    }
+                    pdf.addEventListener('change', function () { if (pdf.files.length) excel.value = ''; sync(); });
+                    excel.addEventListener('change', function () { if (excel.files.length) pdf.value = ''; sync(); });
+                })();
+            </script>
             @if (($teamFilterOptions ?? []) === [])
                 <p class="hint muted" style="margin-bottom:0;">No teams for this date. Create one on the <strong>Setup daily teams</strong> tab.</p>
             @endif
@@ -252,7 +271,7 @@
         <div class="lab-card deliveries-setup-card">
             <h3 class="section-title">Clear team assignments</h3>
             <p class="hint" style="margin-top:0;">
-                Remove every invoice assigned to a team so you can batch-assign again from a PDF.
+                Remove every invoice assigned to a team so you can batch-assign again from a PDF or spreadsheet.
             </p>
             <form
                 method="POST"
@@ -521,17 +540,18 @@
                             @endif
                         </td>
                         <td>
-                            <form method="POST" action="{{ route('reports.deliveries.assign-team', request()->query()) }}">
+                            <form method="POST" action="{{ route('reports.deliveries.assign-team', request()->query()) }}" class="team-assign-form">
                                 @csrf
                                 @include('reports.deliveries.partials.filter-hidden', ['filters' => $filters, 'deliveriesAccess' => $deliveriesAccess ?? null, 'excludeFilterKeys' => ['team_id']])
                                 <input type="hidden" name="invoice_id" value="{{ $row->invoice_id ?? '' }}">
                                 <input type="hidden" name="document_date" value="{{ $row->document_date ?? '' }}">
                                 <div class="inline-action-row">
-                                    <select name="team_id" required>
+                                    <select name="team_id" class="team-assign-select" required data-team-assign-select>
                                         <option value="">Select team</option>
                                         @foreach (($assignmentTeamOptions ?? []) as $team)
                                             <option value="{{ (int) ($team->id ?? 0) }}" @selected($assignedTeamId === (int) ($team->id ?? 0))>{{ app(\App\Services\DeliveriesTeamSqliteService::class)->teamAssignmentOptionLabel($team) }}</option>
                                         @endforeach
+                                        <option value="0" class="team-assign-clear-option">Remove assignment</option>
                                     </select>
                                     @include('reports.partials.icon-button', ['action' => 'save', 'label' => 'Save team'])
                                 </div>
@@ -599,6 +619,34 @@ table { width: 100%; border-collapse: collapse; font-size: 14px; }
             margin: 0;
             flex: 0 0 auto;
         }
+        .team-assign-select.team-assign-select--clear {
+            border-color: #b91c1c;
+            background: #fee2e2;
+            color: #991b1b;
+            font-weight: 600;
+        }
+        .team-assign-clear-option {
+            color: #991b1b;
+            font-weight: 600;
+        }
 </style>
+@endpush
+
+@push('scripts')
+<script>
+(function () {
+    function syncTeamAssignSelect(select) {
+        if (!select) return;
+        select.classList.toggle('team-assign-select--clear', select.value === '0');
+    }
+
+    document.querySelectorAll('[data-team-assign-select]').forEach(function (select) {
+        syncTeamAssignSelect(select);
+        select.addEventListener('change', function () {
+            syncTeamAssignSelect(select);
+        });
+    });
+})();
+</script>
 @endpush
 

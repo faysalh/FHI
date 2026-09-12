@@ -156,12 +156,12 @@ final class ReportGuide
                     self::topic(
                         'deliveries',
                         'Deliveries',
-                        'Delivery status per invoice, driver/companion teams, and batch PDF assignment.',
+                        'Delivery status per invoice, driver/companion teams, and batch PDF/Excel assignment.',
                         [
                             'Report tab: mark delivered / not delivered and assign a daily team per invoice.',
                             'Setup drivers & companions: maintain people and car details (local SQLite).',
                             'Setup daily teams: pair driver + companion per date; delete removes assignments.',
-                            'Batch assignment: upload a PDF — all matched invoices move to the selected team, even if previously assigned elsewhere.',
+                            'Batch assignment: upload a PDF or Excel/CSV — all matched invoices move to the selected team, even if previously assigned elsewhere.',
                         ],
                         'reports.deliveries.index'
                     ),
