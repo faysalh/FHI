@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Controllers\AdminAuthController;
 use App\Http\Controllers\AccountingController;
 use App\Http\Controllers\CitiesReportController;
+use App\Http\Controllers\ComparisonAsanReportController;
 use App\Http\Controllers\ComparisonReportController;
 use App\Http\Controllers\DashboardLabController;
 use App\Http\Controllers\DamagesReportController;
@@ -60,6 +61,9 @@ Route::prefix('reports')->middleware(['reports.admin', 'reports.permission'])->g
     Route::get('/comparison', [ComparisonReportController::class, 'index'])->name('reports.comparison.index');
     Route::get('/comparison/export/pdf', [ComparisonReportController::class, 'exportPdf'])->name('reports.comparison.export.pdf');
     Route::get('/comparison/export/csv', [ComparisonReportController::class, 'exportCsv'])->name('reports.comparison.export.csv');
+    Route::get('/comparison/asan', [ComparisonAsanReportController::class, 'index'])->name('reports.comparison.asan.index');
+    Route::get('/comparison/asan/export/pdf', [ComparisonAsanReportController::class, 'exportPdf'])->name('reports.comparison.asan.export.pdf');
+    Route::get('/comparison/asan/export/csv', [ComparisonAsanReportController::class, 'exportCsv'])->name('reports.comparison.asan.export.csv');
     Route::get('/rankings', [RankingsReportController::class, 'index'])->name('reports.rankings.index');
     Route::get('/rankings/export/pdf', [RankingsReportController::class, 'exportPdf'])->name('reports.rankings.export.pdf');
     Route::get('/rankings/export/csv', [RankingsReportController::class, 'exportCsv'])->name('reports.rankings.export.csv');

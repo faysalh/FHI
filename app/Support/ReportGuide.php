@@ -84,8 +84,9 @@ final class ReportGuide
                         'Comparison',
                         'Compare two date ranges side by side (quantities, amounts, weights).',
                         [
-                            'Enter period A and period B, then Apply.',
-                            'Use exports to share the comparison outside the app.',
+                            'Posted sales tab: invoice lines (type S) with discount-aware amounts, same basis as Sales.',
+                            'Asan tab: same two-period layout, but totals come from tbl_multi_store_item_summary like AsanMax Items By Sales.',
+                            'Enter period A and period B, then Apply. Use exports to share outside the app.',
                         ],
                         'reports.comparison.index'
                     ),

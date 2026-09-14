@@ -7,7 +7,7 @@ namespace App\Http\Controllers;
 use App\Exports\ComparisonReportExport;
 use App\Http\Controllers\Concerns\BuildsComparisonPeriodView;
 use App\Http\Requests\ComparisonReportRequest;
-use App\Repositories\ComparisonReportRepository;
+use App\Repositories\ComparisonAsanReportRepository;
 use App\Repositories\VisitsReportRepository;
 use App\Services\CitiesGovernorateSqliteService;
 use App\Services\ReportAssemblyPriorityService;
@@ -20,12 +20,12 @@ use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Throwable;
 
-class ComparisonReportController extends Controller
+class ComparisonAsanReportController extends Controller
 {
     use BuildsComparisonPeriodView;
 
     public function __construct(
-        private readonly ComparisonReportRepository $repository,
+        private readonly ComparisonAsanReportRepository $repository,
         private readonly VisitsReportRepository $visitsRepository,
         private readonly CitiesGovernorateSqliteService $governorates,
         private readonly ReportAssemblyPriorityService $assemblyPriorityService
@@ -35,27 +35,27 @@ class ComparisonReportController extends Controller
     {
         $viewData = $this->buildViewData($request);
 
-        return view('reports.comparison.index', $viewData);
+        return view('reports.comparison.asan.index', $viewData);
     }
 
     public function exportPdf(ComparisonReportRequest $request): Response|RedirectResponse
     {
         $viewData = $this->buildViewData($request);
         if (($viewData['errorMessage'] ?? null) !== null) {
-            return redirect()->to(route('reports.comparison.index', $request->query()))
+            return redirect()->to(route('reports.comparison.asan.index', $request->query()))
                 ->with('error', 'Could not export PDF. Check logs and try again.');
         }
 
-        $pdf = Pdf::loadView('reports.comparison.pdf', $viewData)->setPaper('a4', 'landscape');
+        $pdf = Pdf::loadView('reports.comparison.asan.pdf', $viewData)->setPaper('a4', 'landscape');
 
-        return $pdf->download('comparison-report.pdf');
+        return $pdf->download('comparison-asan-report.pdf');
     }
 
     public function exportCsv(ComparisonReportRequest $request): BinaryFileResponse|RedirectResponse
     {
         $viewData = $this->buildViewData($request);
         if (($viewData['errorMessage'] ?? null) !== null) {
-            return redirect()->to(route('reports.comparison.index', $request->query()))
+            return redirect()->to(route('reports.comparison.asan.index', $request->query()))
                 ->with('error', 'Could not export CSV.');
         }
 
@@ -63,7 +63,7 @@ class ComparisonReportController extends Controller
 
         return Excel::download(
             new ComparisonReportExport($rows, $headings),
-            'comparison-report.csv',
+            'comparison-asan-report.csv',
             \Maatwebsite\Excel\Excel::CSV
         );
     }
@@ -109,7 +109,7 @@ class ComparisonReportController extends Controller
                 }
             }
         } catch (Throwable $e) {
-            Log::warning('comparison.governorates_unavailable', ['message' => $e->getMessage()]);
+            Log::warning('comparison_asan.governorates_unavailable', ['message' => $e->getMessage()]);
             $savedGovernorates = [];
             $governorateCities = [];
         }
@@ -142,8 +142,8 @@ class ComparisonReportController extends Controller
                 $salesmanId !== '' ? $salesmanId : null
             );
         } catch (Throwable $e) {
-            Log::error('comparison.report_failed', ['message' => $e->getMessage()]);
-            $errorMessage = 'Unable to load comparison report. Check logs and try again.';
+            Log::error('comparison_asan.report_failed', ['message' => $e->getMessage()]);
+            $errorMessage = 'Unable to load Asan comparison report. Check logs and try again.';
         }
 
         return [
@@ -167,7 +167,7 @@ class ComparisonReportController extends Controller
             'rows' => $comparisonRows,
             'groupedRows' => $this->groupRowsByCategoryWithGrowth($comparisonRows),
             'totals' => $this->enrichTotalsWithGrowth($this->calculateTotals($comparisonRows)),
-            'activeComparisonTab' => 'posted',
+            'activeComparisonTab' => 'asan',
             ...\App\Support\ReportPdfBranding::viewData($branding),
             'errorMessage' => $errorMessage,
         ];

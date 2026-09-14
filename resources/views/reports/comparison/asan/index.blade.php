@@ -1,12 +1,12 @@
 @extends('reports.layouts.app')
-@section('title', 'Comparison report')
+@section('title', 'Comparison report — Asan')
 
 @section('content')
 <header class="page-header"><h1>Comparison report</h1></header>
 @include('reports.comparison.partials.subtabs')
-<p class="hint">Posted sales tab: compare two periods side by side. Sales metrics use posted invoices (<code>S</code>) with discount-aware amounts (same basis as the Sales report). Difference shows as period 2 minus period 1. Growth % is <code>(P2 − P1) / P1 × 100</code> when period 1 is not zero. Green means positive change, red means negative change.</p>
+<p class="hint">Asan tab: two-period comparison using AsanMax <strong>Items By Sales / ItemSalesMatrix</strong> data path — <code>tbl_multi_store_item_summary</code> with <code>fld_type_alias = S</code>. Quantity uses absolute scaled qty; amount uses line price minus percent and extra unit discount (same formulas as AsanMax). Category matches the Posted sales tab (item description). Rows follow Assembly order. Salesman filters the summary salesman field. Difference is period 2 minus period 1.</p>
 
-    <form id="comparison-filter-form" method="GET" action="{{ route('reports.comparison.index') }}">
+    <form id="comparison-asan-filter-form" method="GET" action="{{ route('reports.comparison.asan.index') }}">
         <details class="filters-panel" open>
             <summary>Filters</summary>
                 <div class="filters-body">
@@ -81,23 +81,23 @@
                 </div>
                 <div class="filters-actions">
                     @include('reports.partials.icon-button', ['action' => 'apply', 'label' => 'Apply filters'])
-                    @include('reports.partials.filters-reset-link', ['route' => 'reports.comparison.index'])
+                    @include('reports.partials.filters-reset-link', ['route' => 'reports.comparison.asan.index'])
                     <span class="muted">Export:</span>
-                    <a href="#" class="comparison-export-link export-link" data-export-base="{{ route('reports.comparison.export.csv') }}">CSV</a>
-                    <a href="#" class="comparison-export-link export-link" data-export-base="{{ route('reports.comparison.export.pdf') }}">PDF</a>
+                    <a href="#" class="comparison-asan-export-link export-link" data-export-base="{{ route('reports.comparison.asan.export.csv') }}">CSV</a>
+                    <a href="#" class="comparison-asan-export-link export-link" data-export-base="{{ route('reports.comparison.asan.export.pdf') }}">PDF</a>
                 </div>
             </div>
         </details>
     </form>
 
     @include('reports.partials.quick-date-buttons-script', [
-        'formId' => 'comparison-filter-form',
+        'formId' => 'comparison-asan-filter-form',
         'fromId' => 'date_from_1',
         'toId' => 'date_to_1',
         'from2Id' => 'date_from_2',
         'to2Id' => 'date_to_2',
     ])
-    @include('reports.partials.export-from-form-script', ['formId' => 'comparison-filter-form', 'linkClass' => 'comparison-export-link'])
+    @include('reports.partials.export-from-form-script', ['formId' => 'comparison-asan-filter-form', 'linkClass' => 'comparison-asan-export-link'])
 
     @include('reports.comparison.partials.results-table')
 @endsection
