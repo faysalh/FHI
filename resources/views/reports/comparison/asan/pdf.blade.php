@@ -11,7 +11,7 @@
 @include('reports.partials.pdf-title-block', [
     'title' => 'Comparison report — Asan',
     'meta' => [
-        'Source: tbl_multi_store_item_summary (fld_type_alias = S)',
+        'Source: tbl_multi_store_item_summary (S); amount = gross − line% − |qty|×|extra|',
         'Period 1: '.$filters['date_from_1'].' to '.$filters['date_to_1'],
         'Period 2: '.$filters['date_from_2'].' to '.$filters['date_to_2'],
         'City: '.(($filters['city'] ?? '') !== '' ? (string) $filters['city'] : 'All'),

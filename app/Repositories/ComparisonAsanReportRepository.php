@@ -10,8 +10,9 @@ use RuntimeException;
 use stdClass;
 
 /**
- * Period item totals using AsanMax "Items By Sales" / ItemSalesMatrix data path:
+ * Period item totals from AsanMax summary ledger:
  * {@see tbl_multi_store_item_summary} with {@code fld_type_alias = 'S'}.
+ * Amount uses monthly-style net (line % + per-unit extra × qty).
  */
 class ComparisonAsanReportRepository
 {
@@ -85,8 +86,9 @@ class ComparisonAsanReportRepository
             $bindings[] = $excluded;
         }
 
-        // Qty / amount match AsanMax ItemSalesMatrix.mrt (summary type S).
-        // Weight is qty × item setting weight (UI parity; not in the MRT).
+        // Qty from scaled summary qty. Amount matches monthly-style Asan math for type S:
+        // gross − (qty × price × disc%) − (ABS(qty) × ABS(extra_unit_discount)).
+        // Weight is qty × item setting weight (UI parity).
         $sql = "
             SELECT
                 {$categoryExpr} AS category_name,
@@ -95,10 +97,11 @@ class ComparisonAsanReportRepository
                 SUM(
                     ABS(CAST(COALESCE(m.fld_quantity, 0) AS decimal(24, 6)))
                     * CAST(COALESCE(m.fld_unit_price, 0) AS decimal(24, 6))
-                    - CAST(COALESCE(m.fld_unit_price, 0) AS decimal(24, 6))
-                      * ABS(CAST(COALESCE(m.fld_quantity, 0) AS decimal(24, 6)))
+                    - ABS(CAST(COALESCE(m.fld_quantity, 0) AS decimal(24, 6)))
+                      * CAST(COALESCE(m.fld_unit_price, 0) AS decimal(24, 6))
                       * (CAST(COALESCE(m.fld_discount_percent, 0) AS decimal(24, 6)) / CAST(100.0 AS decimal(24, 6)))
-                    - ABS(CAST(COALESCE(m.fld_extra_unit_discount, 0) AS decimal(24, 6)))
+                    - ABS(CAST(COALESCE(m.fld_quantity, 0) AS decimal(24, 6)))
+                      * ABS(CAST(COALESCE(m.fld_extra_unit_discount, 0) AS decimal(24, 6)))
                 ) AS amount_total,
                 SUM(
                     ABS(CAST(COALESCE(m.fld_scaled_qty, 0) AS decimal(24, 6)))

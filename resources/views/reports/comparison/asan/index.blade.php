@@ -4,7 +4,7 @@
 @section('content')
 <header class="page-header"><h1>Comparison report</h1></header>
 @include('reports.comparison.partials.subtabs')
-<p class="hint">Asan tab: two-period comparison using AsanMax <strong>Items By Sales / ItemSalesMatrix</strong> data path — <code>tbl_multi_store_item_summary</code> with <code>fld_type_alias = S</code>. Quantity uses absolute scaled qty; amount uses line price minus percent and extra unit discount (same formulas as AsanMax). Category matches the Posted sales tab (item description). Rows follow Assembly order. Salesman filters the summary salesman field. Difference is period 2 minus period 1.</p>
+<p class="hint">Asan tab: two-period comparison from <code>tbl_multi_store_item_summary</code> with <code>fld_type_alias = S</code>. Quantity uses absolute scaled qty. Amount is monthly-style Asan net: gross minus line % discount minus per-unit extra discount × qty. Category matches the Posted sales tab (item description). Rows follow Assembly order. Salesman filters the summary salesman field. Difference is period 2 minus period 1.</p>
 
     <form id="comparison-asan-filter-form" method="GET" action="{{ route('reports.comparison.asan.index') }}">
         <details class="filters-panel" open>
