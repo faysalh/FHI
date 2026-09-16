@@ -11,12 +11,18 @@
 @endphp
 
 <header class="page-header"><h1>{{ __('Face ID') }}</h1></header>
-<p class="hint">Register employees, enroll faces from this dashboard, and share the kiosk link for automatic clock-in and clock-out. Face recognition runs in the browser; only enrolled faces are logged. Camera access requires HTTPS or localhost.</p>
+<p class="hint">Register employees, enroll faces from this dashboard, and share the workplace kiosk link. Recognitions from <strong>5:00–11:00</strong> ({{ $reportingTimezone ?? 'Asia/Baghdad' }}) are logged as check-in; all other times are checkout. The workplace kiosk link is public (no login). Camera access requires HTTPS or localhost.</p>
 
 <div class="subtabs">
-    <a href="{{ route('reports.face-id.index', ['tab' => 'employees']) }}" class="{{ $tab === 'employees' ? 'active' : '' }}">{{ __('Employees') }}</a>
-    <a href="{{ route('reports.face-id.index', ['tab' => 'logs', 'date_from' => $dateFrom, 'date_to' => $dateTo]) }}" class="{{ $tab === 'logs' ? 'active' : '' }}">{{ __('Attendance logs') }}</a>
-    <a href="{{ route('reports.face-id.index', ['tab' => 'kiosk']) }}" class="{{ $tab === 'kiosk' ? 'active' : '' }}">{{ __('Kiosk link') }}</a>
+    @if ($canEmployeesTab ?? true)
+        <a href="{{ route('reports.face-id.index', ['tab' => 'employees']) }}" class="{{ $tab === 'employees' ? 'active' : '' }}">{{ __('Employees') }}</a>
+    @endif
+    @if ($canLogsTab ?? true)
+        <a href="{{ route('reports.face-id.index', ['tab' => 'logs', 'date_from' => $dateFrom, 'date_to' => $dateTo]) }}" class="{{ $tab === 'logs' ? 'active' : '' }}">{{ __('Attendance logs') }}</a>
+    @endif
+    @if ($canKioskTab ?? true)
+        <a href="{{ route('reports.face-id.index', ['tab' => 'kiosk']) }}" class="{{ $tab === 'kiosk' ? 'active' : '' }}">{{ __('Kiosk link') }}</a>
+    @endif
 </div>
 
 @include('reports.partials.flash-messages')
@@ -248,7 +254,7 @@
 @if ($tab === 'kiosk')
     <div class="lab-card">
         <h3 class="section-title">{{ __('Workplace kiosk link') }}</h3>
-        <p class="hint">Open this link on a tablet or PC at the entrance. Employees look at the camera; recognized faces are logged automatically. Unrecognized faces are ignored. The kiosk asks for <strong>camera</strong> and <strong>location</strong> permission (HTTPS required); GPS coordinates are saved with each punch.</p>
+        <p class="hint">This link is <strong>public — no login required</strong>. Open it on a tablet or PC at the entrance. Employees look at the camera; recognized faces are logged automatically (check-in 5:00–11:00, checkout otherwise). Unrecognized faces are ignored. The kiosk asks for <strong>camera</strong> and <strong>location</strong> permission (HTTPS required); GPS coordinates are saved with each punch.</p>
         <div class="kiosk-url-row" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 0;">
             <input type="text" id="kiosk-url" readonly value="{{ $kioskUrl }}" style="flex:1;min-width:200px;font-size:14px;padding:8px 10px;">
             <button type="button" class="btn" id="copy-kiosk-url">{{ __('Copy link') }}</button>

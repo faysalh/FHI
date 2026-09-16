@@ -73,6 +73,75 @@ final class ReportAuthSession
         return self::canAccessReport('manufacturing-delete');
     }
 
+    /**
+     * @return list<string>
+     */
+    public static function faceIdTabKeys(): array
+    {
+        return ['face-id-employees', 'face-id-logs', 'face-id-kiosk'];
+    }
+
+    public static function canAccessAnyFaceId(): bool
+    {
+        if (self::isSuperAdmin()) {
+            return true;
+        }
+
+        // Legacy single Face ID permission granted full access.
+        if (self::canAccessReport('face-id')) {
+            return true;
+        }
+
+        foreach (self::faceIdTabKeys() as $key) {
+            if (self::canAccessReport($key)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static function canAccessFaceIdTab(string $tab): bool
+    {
+        if (self::isSuperAdmin() || self::canAccessReport('face-id')) {
+            return true;
+        }
+
+        return match ($tab) {
+            'employees' => self::canAccessReport('face-id-employees'),
+            'logs' => self::canAccessReport('face-id-logs'),
+            'kiosk' => self::canAccessReport('face-id-kiosk'),
+            default => false,
+        };
+    }
+
+    /**
+     * Expand legacy {@code face-id} grants into per-tab keys for the users UI.
+     *
+     * @param  list<string>  $keys
+     * @return list<string>
+     */
+    public static function normalizeReportPermissionKeys(array $keys): array
+    {
+        $out = [];
+        $hasLegacyFaceId = false;
+        foreach ($keys as $key) {
+            if (! is_string($key) || $key === '') {
+                continue;
+            }
+            if ($key === 'face-id') {
+                $hasLegacyFaceId = true;
+                continue;
+            }
+            $out[] = $key;
+        }
+        if ($hasLegacyFaceId) {
+            $out = array_merge($out, self::faceIdTabKeys());
+        }
+
+        return array_values(array_unique($out));
+    }
+
     public static function canAccessReport(string $reportKey): bool
     {
         if ($reportKey === '') {
@@ -93,7 +162,16 @@ final class ReportAuthSession
         }
 
         // Legacy permission key from before dashboard-lab became the sole dashboard.
-        return $reportKey === 'dashboard-lab' && in_array('dashboard', $allowed, true);
+        if ($reportKey === 'dashboard-lab' && in_array('dashboard', $allowed, true)) {
+            return true;
+        }
+
+        // Legacy Face ID key covers all Face ID tabs.
+        if (in_array($reportKey, self::faceIdTabKeys(), true) && in_array('face-id', $allowed, true)) {
+            return true;
+        }
+
+        return false;
     }
 
     /**

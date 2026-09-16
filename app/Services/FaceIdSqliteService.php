@@ -348,9 +348,8 @@ class FaceIdSqliteService
             }
         }
 
-        $eventType = ($lastToday === null || (string) $lastToday->event_type === 'clock_out')
-            ? 'clock_in'
-            : 'clock_out';
+        // Morning window (05:00–10:59 local reporting time) = check-in; all other hours = checkout.
+        $eventType = self::eventTypeForTime($now);
 
         $recordedAt = $now->toDateTimeString();
         DB::connection(self::CONNECTION)->insert(
@@ -377,6 +376,16 @@ class FaceIdSqliteService
             'latitude' => $location['latitude'],
             'longitude' => $location['longitude'],
         ];
+    }
+
+    /**
+     * Check-in from 05:00 inclusive through 11:00 exclusive (reporting timezone).
+     */
+    public static function eventTypeForTime(\Illuminate\Support\Carbon $at): string
+    {
+        $hour = (int) $at->hour;
+
+        return ($hour >= 5 && $hour < 11) ? 'clock_in' : 'clock_out';
     }
 
     /**

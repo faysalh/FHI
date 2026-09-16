@@ -17,6 +17,8 @@ class FaceIdAttendanceTest extends TestCase
     {
         parent::setUp();
         Config::set('database.connections.face_id_sqlite.database', ':memory:');
+        Config::set('reporting.timezone', 'Asia/Baghdad');
+        Config::set('app.timezone', 'Asia/Baghdad');
         DB::purge('face_id_sqlite');
     }
 
@@ -137,6 +139,8 @@ class FaceIdAttendanceTest extends TestCase
         $descriptor = $this->sampleDescriptor(0.3);
         $svc->saveFaceDescriptor($employeeId, $descriptor);
 
+        Carbon::setTestNow(Carbon::parse('2026-09-16 08:30:00', 'Asia/Baghdad'));
+
         $this->postJson("/attendance/{$token}/punch", $this->samplePunchPayload($descriptor))
             ->assertOk()
             ->assertJson([
@@ -147,7 +151,7 @@ class FaceIdAttendanceTest extends TestCase
                 'longitude' => 44.0091,
             ]);
 
-        Carbon::setTestNow(now()->addSeconds(61));
+        Carbon::setTestNow(Carbon::parse('2026-09-16 14:00:00', 'Asia/Baghdad'));
 
         $this->postJson("/attendance/{$token}/punch", $this->samplePunchPayload($descriptor))
             ->assertOk()
@@ -157,29 +161,68 @@ class FaceIdAttendanceTest extends TestCase
                 'event_type' => 'clock_out',
             ]);
 
-        $logs = $svc->listAttendance(now()->toDateString(), now()->toDateString());
+        $logs = $svc->listAttendance('2026-09-16', '2026-09-16');
         $this->assertCount(2, $logs);
-        $this->assertSame('clock_in', $logs[1]->event_type);
         $this->assertSame('clock_out', $logs[0]->event_type);
+        $this->assertSame('clock_in', $logs[1]->event_type);
         $this->assertEqualsWithDelta(36.1911, (float) $logs[1]->latitude, 0.0001);
         $this->assertEqualsWithDelta(44.0091, (float) $logs[1]->longitude, 0.0001);
 
         Carbon::setTestNow();
     }
 
-    public function test_unknown_descriptor_is_not_logged(): void
+    public function test_morning_recognition_is_always_check_in(): void
     {
         $svc = app(FaceIdSqliteService::class);
         $token = $svc->getKioskToken();
-        $employeeId = $svc->createEmployee('Omar', null);
-        $svc->saveFaceDescriptor($employeeId, $this->sampleDescriptor(0.4));
+        $employeeId = $svc->createEmployee('Morning', 'M1');
+        $descriptor = $this->sampleDescriptor(0.31);
+        $svc->saveFaceDescriptor($employeeId, $descriptor);
 
-        $this->postJson("/attendance/{$token}/punch", $this->samplePunchPayload($this->sampleDescriptor(0.9)))
+        Carbon::setTestNow(Carbon::parse('2026-09-16 05:00:00', 'Asia/Baghdad'));
+        $this->postJson("/attendance/{$token}/punch", $this->samplePunchPayload($descriptor))
             ->assertOk()
-            ->assertJson(['recognized' => false]);
+            ->assertJson(['event_type' => 'clock_in']);
 
-        $logs = $svc->listAttendance(now()->toDateString(), now()->toDateString());
-        $this->assertCount(0, $logs);
+        Carbon::setTestNow(Carbon::parse('2026-09-16 10:59:00', 'Asia/Baghdad'));
+        $this->postJson("/attendance/{$token}/punch", $this->samplePunchPayload($descriptor))
+            ->assertOk()
+            ->assertJson(['event_type' => 'clock_in']);
+
+        Carbon::setTestNow(Carbon::parse('2026-09-16 11:00:00', 'Asia/Baghdad'));
+        $this->postJson("/attendance/{$token}/punch", $this->samplePunchPayload($descriptor))
+            ->assertOk()
+            ->assertJson(['event_type' => 'clock_out']);
+
+        Carbon::setTestNow(Carbon::parse('2026-09-16 04:59:00', 'Asia/Baghdad'));
+        $this->postJson("/attendance/{$token}/punch", $this->samplePunchPayload($descriptor))
+            ->assertOk()
+            ->assertJson(['event_type' => 'clock_out']);
+
+        Carbon::setTestNow();
+    }
+
+    public function test_face_id_tab_permissions_are_enforced(): void
+    {
+        $this->app['env'] = 'local';
+
+        $this->withSession([
+            'reports_admin_authenticated' => true,
+            'reports_user_id' => 2,
+            'reports_username' => 'logs-only',
+            'reports_is_super_admin' => false,
+            'reports_allowed_keys' => ['face-id-logs'],
+        ])->get('/reports/face-id?tab=employees')
+            ->assertRedirect();
+
+        $this->withSession([
+            'reports_admin_authenticated' => true,
+            'reports_user_id' => 2,
+            'reports_username' => 'logs-only',
+            'reports_is_super_admin' => false,
+            'reports_allowed_keys' => ['face-id-logs'],
+        ])->get('/reports/face-id?tab=logs')
+            ->assertOk();
     }
 
     public function test_kiosk_page_renders_for_valid_token(): void
@@ -192,10 +235,32 @@ class FaceIdAttendanceTest extends TestCase
             ->assertSee('Attendance kiosk', false);
     }
 
+    public function test_unknown_descriptor_is_not_logged(): void
+    {
+        $svc = app(FaceIdSqliteService::class);
+        $token = $svc->getKioskToken();
+        $employeeId = $svc->createEmployee('Omar', null);
+        $svc->saveFaceDescriptor($employeeId, $this->sampleDescriptor(0.4));
+
+        Carbon::setTestNow(Carbon::parse('2026-09-16 09:00:00', 'Asia/Baghdad'));
+
+        $this->postJson("/attendance/{$token}/punch", $this->samplePunchPayload($this->sampleDescriptor(0.9)))
+            ->assertOk()
+            ->assertJson(['recognized' => false]);
+
+        $logs = $svc->listAttendance('2026-09-16', '2026-09-16');
+        $this->assertCount(0, $logs);
+
+        Carbon::setTestNow();
+    }
+
     public function test_face_id_key_appears_in_permission_matrix(): void
     {
         $keys = array_column(ReportNavigation::permissionMatrix(), 'key');
-        $this->assertContains('face-id', $keys);
+        $this->assertNotContains('face-id', $keys);
+        $this->assertContains('face-id-employees', $keys);
+        $this->assertContains('face-id-logs', $keys);
+        $this->assertContains('face-id-kiosk', $keys);
     }
 
     public function test_attendance_csv_export(): void
@@ -266,7 +331,7 @@ class FaceIdAttendanceTest extends TestCase
             'reports_user_id' => 1,
             'reports_username' => 'face-admin',
             'reports_is_super_admin' => false,
-            'reports_allowed_keys' => ['face-id'],
+            'reports_allowed_keys' => ['face-id-employees', 'face-id-logs', 'face-id-kiosk'],
         ]);
     }
 }

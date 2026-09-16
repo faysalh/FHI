@@ -45,6 +45,7 @@ Route::get('/login', [AdminAuthController::class, 'showLoginForm'])->name('login
 Route::post('/login', [AdminAuthController::class, 'login'])->name('login.attempt');
 Route::post('/logout', [AdminAuthController::class, 'logout'])->name('logout');
 
+// Public workplace kiosk — no reports.admin / login middleware.
 Route::get('/attendance/{token}', [FaceIdKioskController::class, 'show'])->name('face-id.kiosk.show');
 Route::post('/attendance/{token}/punch', [FaceIdKioskController::class, 'punch'])
     ->middleware('throttle:30,1')

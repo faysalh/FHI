@@ -78,7 +78,7 @@
         <video id="kiosk-video" autoplay muted playsinline></video>
     </div>
     <div id="kiosk-status" class="kiosk-status kiosk-loading">{{ __('Starting…') }}</div>
-    <p class="kiosk-hint">{{ __('Look at the camera. Only enrolled faces are logged. Allow camera and location when prompted — GPS is saved with each punch.') }}</p>
+    <p class="kiosk-hint">{{ __('Look at the camera. Only enrolled faces are logged. Check-in is recorded from 5:00 to 11:00; other times are checkout. Allow camera and location when prompted — GPS is saved with each punch.') }}</p>
     <p id="kiosk-debug" class="kiosk-hint" hidden></p>
 </div>
 

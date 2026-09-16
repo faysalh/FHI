@@ -11,6 +11,7 @@ use App\Http\Requests\FaceIdEmployeeUpdateRequest;
 use App\Http\Requests\FaceIdFaceDescriptorRequest;
 use App\Http\Requests\FaceIdIndexRequest;
 use App\Services\FaceIdSqliteService;
+use App\Support\ReportAuthSession;
 use App\Support\ReportPdfBranding;
 use App\Support\ReportingTime;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -30,10 +31,22 @@ class FaceIdController extends Controller
         private readonly FaceIdSqliteService $faceId
     ) {}
 
-    public function index(FaceIdIndexRequest $request): View
+    public function index(FaceIdIndexRequest $request): View|RedirectResponse
     {
         $filters = $request->filters();
         $tab = $filters['tab'];
+
+        if (! ReportAuthSession::canAccessFaceIdTab($tab)) {
+            $fallback = $this->firstAllowedTab();
+            if ($fallback === null) {
+                abort(403, 'You do not have access to Face ID.');
+            }
+
+            return redirect()->route('reports.face-id.index', array_merge(
+                $request->query(),
+                ['tab' => $fallback]
+            ));
+        }
 
         $employees = [];
         $attendance = [];
@@ -44,7 +57,9 @@ class FaceIdController extends Controller
         try {
             $this->faceId->ensureReady();
             $faceIdReady = true;
-            $employees = $this->faceId->listEmployees();
+            if ($tab === 'employees') {
+                $employees = $this->faceId->listEmployees();
+            }
             if ($tab === 'logs') {
                 $attendance = $this->faceId->listAttendance($filters['date_from'], $filters['date_to']);
             }
@@ -64,14 +79,18 @@ class FaceIdController extends Controller
             'errorMessage' => $errorMessage,
             'faceIdReady' => $faceIdReady,
             'faceIdDatabasePath' => (string) config('database.connections.face_id_sqlite.database'),
-            'faceIdEmployeeCount' => count($employees),
+            'faceIdEmployeeCount' => $tab === 'employees' ? count($employees) : null,
             'reportingTimezone' => ReportingTime::timezone(),
             'reportingNow' => ReportingTime::now()->format('Y-m-d H:i:s'),
+            'canEmployeesTab' => ReportAuthSession::canAccessFaceIdTab('employees'),
+            'canLogsTab' => ReportAuthSession::canAccessFaceIdTab('logs'),
+            'canKioskTab' => ReportAuthSession::canAccessFaceIdTab('kiosk'),
         ]);
     }
 
     public function storeEmployee(FaceIdEmployeeStoreRequest $request): RedirectResponse
     {
+        $this->assertFaceIdTab('employees');
         $validated = $request->validated();
 
         try {
@@ -88,6 +107,7 @@ class FaceIdController extends Controller
 
     public function updateEmployee(FaceIdEmployeeUpdateRequest $request, int $employee): RedirectResponse
     {
+        $this->assertFaceIdTab('employees');
         $validated = $request->validated();
 
         try {
@@ -106,6 +126,8 @@ class FaceIdController extends Controller
 
     public function destroyEmployee(Request $request, int $employee): RedirectResponse
     {
+        $this->assertFaceIdTab('employees');
+
         try {
             $this->faceId->deleteEmployee($employee);
         } catch (Throwable $e) {
@@ -117,6 +139,8 @@ class FaceIdController extends Controller
 
     public function storeFace(FaceIdFaceDescriptorRequest $request, int $employee): JsonResponse
     {
+        $this->assertFaceIdTab('employees');
+
         try {
             $this->faceId->saveFaceDescriptor($employee, $request->descriptor());
         } catch (Throwable $e) {
@@ -132,6 +156,8 @@ class FaceIdController extends Controller
 
     public function destroyFace(Request $request, int $employee): RedirectResponse
     {
+        $this->assertFaceIdTab('employees');
+
         try {
             $this->faceId->clearFaceDescriptor($employee);
         } catch (Throwable $e) {
@@ -143,6 +169,8 @@ class FaceIdController extends Controller
 
     public function regenerateKioskToken(Request $request): RedirectResponse
     {
+        $this->assertFaceIdTab('kiosk');
+
         try {
             $this->faceId->regenerateKioskToken();
         } catch (Throwable $e) {
@@ -154,6 +182,7 @@ class FaceIdController extends Controller
 
     public function exportPdf(FaceIdAttendanceExportRequest $request): Response
     {
+        $this->assertFaceIdTab('logs');
         $filters = $request->filters();
         $rows = $this->faceId->listAttendance($filters['date_from'], $filters['date_to']);
 
@@ -170,11 +199,30 @@ class FaceIdController extends Controller
 
     public function exportCsv(FaceIdAttendanceExportRequest $request): BinaryFileResponse
     {
+        $this->assertFaceIdTab('logs');
         $filters = $request->filters();
         $rows = $this->faceId->listAttendance($filters['date_from'], $filters['date_to']);
         $filename = 'face-id-attendance-'.$filters['date_from'].'-'.$filters['date_to'].'.csv';
 
         return Excel::download(new FaceIdAttendanceExport($rows), $filename, \Maatwebsite\Excel\Excel::CSV);
+    }
+
+    private function assertFaceIdTab(string $tab): void
+    {
+        if (! ReportAuthSession::canAccessFaceIdTab($tab)) {
+            abort(403, 'You do not have access to this Face ID section.');
+        }
+    }
+
+    private function firstAllowedTab(): ?string
+    {
+        foreach (['employees', 'logs', 'kiosk'] as $tab) {
+            if (ReportAuthSession::canAccessFaceIdTab($tab)) {
+                return $tab;
+            }
+        }
+
+        return null;
     }
 
     private function redirectTab(Request $request, string $tab): RedirectResponse

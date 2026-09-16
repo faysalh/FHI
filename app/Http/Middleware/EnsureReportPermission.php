@@ -41,6 +41,14 @@ class EnsureReportPermission
             return $next($request);
         }
 
+        if ($reportKey === 'face-id') {
+            if (! ReportAuthSession::canAccessAnyFaceId()) {
+                abort(403, 'You do not have access to this report.');
+            }
+
+            return $next($request);
+        }
+
         if ($reportKey !== '' && ! ReportAuthSession::canAccessReport($reportKey)) {
             abort(403, 'You do not have access to this report.');
         }
