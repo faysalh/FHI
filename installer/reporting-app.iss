@@ -3,7 +3,7 @@
 ; Run: scripts\build-setup-exe.ps1 -BundleRuntime
 
 #define MyAppName "Reporting App"
-#define MyAppVersion "1.0.21"
+#define MyAppVersion "1.0.22"
 #define MyAppPublisher "Reporting"
 #define MyAppURL "http://localhost"
 

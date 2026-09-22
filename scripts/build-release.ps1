@@ -96,17 +96,8 @@ function Finalize-ReleaseTree([string]$ReleaseRoot, [bool]$WithSqliteData, [stri
             }
         }
     } else {
-        $expected = @(
-            'reports-users.sqlite',
-            'deliveries-local.sqlite',
-            'damages-local.sqlite',
-            'operations-tasks.sqlite',
-            'accounting-local.sqlite',
-            'promotions-local.sqlite'
-        )
-        foreach ($name in $expected) {
-            Remove-Item (Join-Path $dbDir $name) -Force -ErrorAction SilentlyContinue
-        }
+        Get-ChildItem -Path $dbDir -Filter '*.sqlite' -File -ErrorAction SilentlyContinue |
+            Remove-Item -Force -ErrorAction SilentlyContinue
         Write-Host 'Update build: SQLite databases omitted from release package (server files are never replaced).' -ForegroundColor Yellow
     }
 
