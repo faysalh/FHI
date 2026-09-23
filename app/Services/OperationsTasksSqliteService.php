@@ -204,21 +204,6 @@ class OperationsTasksSqliteService
         return $index;
     }
 
-    /**
-     * @param  array<string, string>  $clientsWithInvoiceToday account_id => client_name
-     * @return list<object>
-     *
-     * @deprecated Use findDueTasks() and markTasksNotified() so the browser can ack after showing a notification.
-     */
-    public function claimDueTasks(array $clientsWithInvoiceToday): array
-    {
-        $due = $this->findDueTasks($clientsWithInvoiceToday);
-        $dueIds = array_map(static fn (object $task): int => (int) ($task->id ?? 0), $due);
-        $this->markTasksNotified($dueIds);
-
-        return $due;
-    }
-
     private function taskIsDueForNotification(object $task, \Carbon\CarbonInterface $now): bool
     {
         $minutes = $this->normalizeRecurrenceMinutes((int) ($task->recurrence_minutes ?? 60));

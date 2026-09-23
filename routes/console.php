@@ -4,16 +4,11 @@ declare(strict_types=1);
 
 use App\Services\PdaAutoSyncService;
 use App\Services\SqliteAutoBackupService;
-use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Symfony\Component\Console\Input\InputOption;
-
-Artisan::command('inspire', function () {
-    $this->comment(Inspiring::quote());
-})->purpose('Display an inspiring quote');
 
 Artisan::command('reports:db-health', function (): int {
     try {
