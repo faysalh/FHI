@@ -101,7 +101,9 @@
             @php
                 $userId = (int) ($user->id ?? 0);
                 $isAdmin = (int) ($user->is_super_admin ?? 0) === 1;
-                $userKeys = is_array($user->report_keys ?? null) ? $user->report_keys : [];
+                $userKeys = \App\Support\ReportAuthSession::normalizeReportPermissionKeys(
+                    is_array($user->report_keys ?? null) ? $user->report_keys : []
+                );
             @endphp
             <details class="users-row" @if($loop->first) open @endif>
                 <summary>

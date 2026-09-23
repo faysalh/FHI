@@ -17,6 +17,9 @@ final class ReportNavigation
                 if (! empty($item['super_admin_only'])) {
                     continue;
                 }
+                if (! empty($item['nav_only'])) {
+                    continue;
+                }
                 $keys[] = $item['key'];
             }
         }
@@ -47,7 +50,28 @@ final class ReportNavigation
                 'label' => 'Inventory',
                 'items' => [
                     ['key' => 'storage-items', 'route' => 'reports.storage-items.index', 'label' => 'Items & forecast', 'title' => 'Inventory, sales averages, and forecast'],
+                    ['key' => 'storage-quantity', 'route' => 'reports.storage-quantity.index', 'label' => 'Storage quantity', 'title' => 'Item balance from stored procedures (Normal / Adv)'],
                     ['key' => 'storage', 'route' => 'reports.storage.index', 'label' => 'Stock snapshot', 'title' => 'Current stock by storage and category'],
+                ],
+            ],
+            [
+                'label' => 'Finance',
+                'items' => [
+                    ['key' => 'accounting', 'route' => 'reports.accounting.index', 'label' => 'Accounting', 'title' => 'Daily cash, transfers, and receipt booklets'],
+                    ['key' => 'promotions', 'route' => 'reports.promotions.index', 'label' => 'Promotions', 'title' => 'Promoter schedules and client visit assignments'],
+                ],
+            ],
+            [
+                'label' => 'Manufacturing Storage',
+                'items' => [
+                    ['key' => 'manufacturing', 'route' => 'reports.manufacturing.index', 'label' => 'Manufacturing Storage', 'title' => 'Manufacturing items, purchases, exports, and stock'],
+                    [
+                        'key' => 'manufacturing-delete',
+                        'route' => 'reports.manufacturing.index',
+                        'label' => 'Delete manufacturing records',
+                        'title' => 'Allow deleting items, purchases, and exports (supervisor)',
+                        'permission_only' => true,
+                    ],
                 ],
             ],
             [
@@ -57,6 +81,35 @@ final class ReportNavigation
                     ['key' => 'invoices', 'route' => 'reports.invoices.index', 'label' => 'Invoices', 'title' => 'Invoice search and details'],
                     ['key' => 'tasks', 'route' => 'reports.tasks.index', 'label' => 'Tasks', 'title' => 'Task notes and invoice-day reminders'],
                     ['key' => 'damages', 'route' => 'reports.damages.index', 'label' => 'Damages', 'title' => 'Damaged goods entries'],
+                    [
+                        'key' => 'face-id',
+                        'route' => 'reports.face-id.index',
+                        'label' => 'Face ID',
+                        'title' => 'Employee face enrollment and attendance',
+                        'nav_only' => true,
+                        'permission_any' => ['face-id-employees', 'face-id-logs', 'face-id-kiosk'],
+                    ],
+                    [
+                        'key' => 'face-id-employees',
+                        'route' => 'reports.face-id.index',
+                        'label' => 'Face ID — Employees',
+                        'title' => 'Register employees and enroll faces',
+                        'permission_only' => true,
+                    ],
+                    [
+                        'key' => 'face-id-logs',
+                        'route' => 'reports.face-id.index',
+                        'label' => 'Face ID — Attendance logs',
+                        'title' => 'View and export attendance logs',
+                        'permission_only' => true,
+                    ],
+                    [
+                        'key' => 'face-id-kiosk',
+                        'route' => 'reports.face-id.index',
+                        'label' => 'Face ID — Kiosk link',
+                        'title' => 'View and regenerate the public workplace kiosk link',
+                        'permission_only' => true,
+                    ],
                     ['key' => 'report-assembly', 'route' => 'reports.report-assembly.index', 'label' => 'Assembly order', 'title' => 'Category and item sort priority'],
                 ],
             ],
@@ -71,6 +124,7 @@ final class ReportNavigation
                     ['key' => 'identifier', 'route' => 'reports.identifier.index', 'label' => 'Glossary', 'title' => 'Field and term definitions'],
                     ['key' => 'users', 'route' => 'reports.users.index', 'label' => 'Users', 'title' => 'App users and report access', 'super_admin_only' => true],
                     ['key' => 'sqlite-backups', 'route' => 'reports.sqlite-backups.index', 'label' => 'SQLite backups', 'title' => 'Back up and restore local app databases', 'super_admin_only' => true],
+                    ['key' => 'database-sync', 'route' => 'reports.database-sync.index', 'label' => 'PDA sync', 'title' => 'Import PDA client invoices into the main system', 'super_admin_only' => true],
                 ],
             ],
         ];
@@ -104,10 +158,27 @@ final class ReportNavigation
                 if (! empty($item['super_admin_only']) && ! $isSuperAdmin) {
                     continue;
                 }
+                if (! empty($item['permission_only'])) {
+                    continue;
+                }
                 if (! $isSuperAdmin) {
                     $key = $item['key'];
                     $isGuide = $key === 'guide';
-                    if (! $isGuide && ! isset($allowed[$key])) {
+                    $permissionAny = is_array($item['permission_any'] ?? null) ? $item['permission_any'] : null;
+                    if ($permissionAny !== null) {
+                        $hasAny = in_array('face-id', $allowedKeys, true);
+                        if (! $hasAny) {
+                            foreach ($permissionAny as $anyKey) {
+                                if (isset($allowed[$anyKey])) {
+                                    $hasAny = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (! $hasAny) {
+                            continue;
+                        }
+                    } elseif (! $isGuide && ! isset($allowed[$key])) {
                         continue;
                     }
                 }
@@ -148,6 +219,9 @@ final class ReportNavigation
                 if (! empty($item['super_admin_only']) || $item['key'] === 'guide') {
                     continue;
                 }
+                if (! empty($item['nav_only'])) {
+                    continue;
+                }
                 $matrix[] = [
                     'key' => $item['key'],
                     'section_label' => $section['label'],
@@ -170,6 +244,7 @@ final class ReportNavigation
             str_starts_with($routeName, 'reports.sales-by-item') => 'sales-by-item',
             str_starts_with($routeName, 'reports.sales-by-salesman') => 'sales-by-salesman',
             str_starts_with($routeName, 'reports.sales') => 'sales',
+            str_starts_with($routeName, 'reports.storage-quantity') => 'storage-quantity',
             str_starts_with($routeName, 'reports.storage-items') => 'storage-items',
             str_starts_with($routeName, 'reports.storage') => 'storage',
             str_starts_with($routeName, 'reports.deliveries') => 'deliveries',
@@ -183,11 +258,16 @@ final class ReportNavigation
             str_starts_with($routeName, 'reports.cities') => 'cities',
             str_starts_with($routeName, 'reports.visits') => 'visits',
             str_starts_with($routeName, 'reports.damages') => 'damages',
+            str_starts_with($routeName, 'reports.accounting') => 'accounting',
+            str_starts_with($routeName, 'reports.promotions') => 'promotions',
+            str_starts_with($routeName, 'reports.manufacturing') => 'manufacturing',
+            str_starts_with($routeName, 'reports.face-id') => 'face-id',
             str_starts_with($routeName, 'reports.schema') => 'schema',
             str_starts_with($routeName, 'reports.guide') => 'guide',
             str_starts_with($routeName, 'reports.identifier') => 'identifier',
             str_starts_with($routeName, 'reports.users') => 'users',
             str_starts_with($routeName, 'reports.sqlite-backups') => 'sqlite-backups',
+            str_starts_with($routeName, 'reports.database-sync') => 'database-sync',
             default => '',
         };
     }

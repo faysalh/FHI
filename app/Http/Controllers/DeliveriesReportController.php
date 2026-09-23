@@ -10,8 +10,11 @@ use App\Repositories\DeliveriesReportRepository;
 use App\Repositories\VisitsReportRepository;
 use App\Services\DeliveriesTeamSqliteService;
 use App\Services\DeliveryInvoicePdfExtractor;
+use App\Services\DeliveryInvoiceSpreadsheetExtractor;
+use App\Services\ReportAssemblyPriorityService;
 use App\Support\DeliveriesReportAccess;
 use App\Support\ReportAuthSession;
+use App\Support\ReportPdfBranding;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
@@ -29,7 +32,9 @@ class DeliveriesReportController extends Controller
         private readonly DeliveriesReportRepository $repository,
         private readonly VisitsReportRepository $visitsRepository,
         private readonly DeliveriesTeamSqliteService $teams,
-        private readonly DeliveryInvoicePdfExtractor $pdfExtractor
+        private readonly DeliveryInvoicePdfExtractor $pdfExtractor,
+        private readonly DeliveryInvoiceSpreadsheetExtractor $spreadsheetExtractor,
+        private readonly ReportAssemblyPriorityService $assemblyPriority
     ) {}
 
     public function index(DeliveriesReportRequest $request): View|RedirectResponse
@@ -284,21 +289,6 @@ class DeliveriesReportController extends Controller
                 $invoiceIds,
                 $applyDateFilter
             );
-            $invoiceIdsFromRows = array_values(array_filter(array_map(
-                static fn (object $row): string => trim((string) ($row->invoice_id ?? '')),
-                $rows
-            )));
-            try {
-                $assignmentMap = $this->teams->assignmentsByInvoiceIds($invoiceIdsFromRows);
-            } catch (Throwable $e) {
-                Log::warning('Deliveries PDF team mapping failed.', ['message' => $e->getMessage()]);
-                $assignmentMap = [];
-            }
-            foreach ($rows as $row) {
-                $invoiceId = trim((string) ($row->invoice_id ?? ''));
-                $assigned = $assignmentMap[$invoiceId] ?? null;
-                $row->team_name = $assigned !== null ? $this->teams->teamLabel($assigned) : '';
-            }
         } catch (Throwable $e) {
             Log::error('Deliveries PDF export failed.', ['message' => $e->getMessage()]);
 
@@ -317,10 +307,70 @@ class DeliveriesReportController extends Controller
             'teamId' => $teamId > 0 ? $teamId : null,
             'includeAmount' => $includeAmount,
             'includeWeight' => $includeWeight,
-            ...\App\Support\ReportPdfBranding::viewData(),
-        ])->setPaper('a4', 'landscape');
+            ...ReportPdfBranding::viewData(),
+        ])->setPaper('a4', 'portrait');
 
         return $pdf->download('deliveries-'.$dateFrom.'-'.$dateTo.'.pdf');
+    }
+
+    public function exportItemsPdf(DeliveriesReportRequest $request): Response|RedirectResponse
+    {
+        $input = $request->validated();
+        $dateFrom = (string) $input['date_from'];
+        $dateTo = (string) $input['date_to'];
+        $storage = trim((string) ($input['storage'] ?? ''));
+        $deliveryStatus = trim((string) ($input['delivery_status'] ?? ''));
+        $teamId = (int) ($input['team_id'] ?? 0);
+        $invoiceSearch = trim((string) ($input['invoice_search'] ?? ''));
+        $cities = $this->repository->normalizeCities(
+            is_array($input['cities'] ?? null) ? $input['cities'] : []
+        );
+        $salesmanIds = $this->repository->normalizeSalesmanIds(
+            is_array($input['salesman_ids'] ?? null) ? $input['salesman_ids'] : []
+        );
+        [$invoiceIds, $applyDateFilter] = $this->resolveReportInvoiceFilter($teamId, $invoiceSearch);
+
+        try {
+            $rows = $this->repository->exportItemRows(
+                $dateFrom,
+                $dateTo,
+                $cities,
+                $salesmanIds,
+                $storage !== '' ? $storage : null,
+                $deliveryStatus !== '' ? $deliveryStatus : null,
+                $invoiceIds,
+                $applyDateFilter
+            );
+            $rows = $this->assemblyPriority->sortRows($rows, 'category_name', 'item_name');
+        } catch (Throwable $e) {
+            Log::error('Deliveries item PDF export failed.', ['message' => $e->getMessage()]);
+
+            return redirect()
+                ->to(route('reports.deliveries.index', $this->redirectQuery($request)))
+                ->with('error', 'Could not export item PDF.');
+        }
+
+        $totalQty = 0.0;
+        $totalWeight = 0.0;
+        foreach ($rows as $row) {
+            $totalQty += (float) ($row->quantity ?? 0);
+            $totalWeight += (float) ($row->weight_total ?? 0);
+        }
+
+        $pdf = Pdf::loadView('reports.deliveries.items-pdf', [
+            'rows' => $rows,
+            'dateFrom' => $dateFrom,
+            'dateTo' => $dateTo,
+            'cities' => $cities,
+            'storage' => $storage,
+            'deliveryStatus' => $deliveryStatus,
+            'teamId' => $teamId > 0 ? $teamId : null,
+            'totalQty' => $totalQty,
+            'totalWeight' => $totalWeight,
+            ...ReportPdfBranding::viewData(),
+        ])->setPaper('a4', 'portrait');
+
+        return $pdf->download('deliveries-items-'.$dateFrom.'-'.$dateTo.'.pdf');
     }
 
     public function exportCsv(DeliveriesReportRequest $request): BinaryFileResponse|RedirectResponse
@@ -584,14 +634,30 @@ class DeliveriesReportController extends Controller
         $validated = $request->validate([
             'invoice_id' => ['required', 'string', 'max:100'],
             'document_date' => ['required', 'date'],
-            'team_id' => ['required', 'integer', 'min:1'],
+            'team_id' => ['required', 'integer', 'min:0'],
         ]);
 
+        $invoiceId = trim((string) $validated['invoice_id']);
+        $teamId = (int) $validated['team_id'];
+
         try {
+            if ($teamId === 0) {
+                $removed = $this->teams->clearInvoiceAssignment($invoiceId);
+                if ($removed < 1) {
+                    return redirect()
+                        ->route('reports.deliveries.index', $this->redirectQuery($request, ['tab' => 'report']))
+                        ->with('error', 'This invoice has no team assignment to remove.');
+                }
+
+                return redirect()
+                    ->route('reports.deliveries.index', $this->redirectQuery($request, ['tab' => 'report']))
+                    ->with('status', 'Invoice team assignment removed.');
+            }
+
             $this->teams->assignInvoiceTeam(
-                trim((string) $validated['invoice_id']),
+                $invoiceId,
                 (string) $validated['document_date'],
-                (int) $validated['team_id']
+                $teamId
             );
         } catch (Throwable $e) {
             return back()->withInput()->with('error', $e->getMessage());
@@ -604,92 +670,32 @@ class DeliveriesReportController extends Controller
     {
         $validated = $request->validate([
             'team_id' => ['required', 'integer', 'min:1'],
-            'batch_pdf' => ['required', 'file', 'mimes:pdf', 'max:15360'],
+            'batch_pdf' => ['nullable', 'file', 'mimes:pdf', 'max:15360'],
+            'batch_excel' => ['nullable', 'file', 'mimes:xlsx,xls,csv', 'max:15360'],
         ]);
 
+        $hasPdf = $request->hasFile('batch_pdf');
+        $hasExcel = $request->hasFile('batch_excel');
+        if ($hasPdf === $hasExcel) {
+            return redirect()->route('reports.deliveries.index', array_merge($this->redirectQuery($request), [
+                'tab' => 'batch-assignment',
+            ]))->with('error', $hasPdf
+                ? 'Upload either a PDF or a spreadsheet — not both.'
+                : 'Upload a PDF or an Excel/CSV file with invoice numbers.');
+        }
+
         try {
-            $numbers = $this->pdfExtractor->extractInvoiceNumbersFromUpload(
-                $request->file('batch_pdf')
-            );
-            $matches = $this->repository->findInvoicesByInvoiceNumbersForBatch($numbers);
+            $numbers = $hasPdf
+                ? $this->pdfExtractor->extractInvoiceNumbersFromUpload($request->file('batch_pdf'))
+                : $this->spreadsheetExtractor->extractInvoiceNumbersFromUpload($request->file('batch_excel'));
 
-            $needles = [];
-            foreach ($numbers as $number) {
-                $key = $this->normalizeBatchInvoiceNumberKey((string) $number);
-                if ($key !== '') {
-                    $needles[$key] = true;
-                }
+            if ($numbers === []) {
+                return redirect()->route('reports.deliveries.index', array_merge($this->redirectQuery($request), [
+                    'tab' => 'batch-assignment',
+                ]))->with('error', 'No invoice numbers were found in the uploaded file.');
             }
 
-            $matchedKeys = [];
-            foreach ($matches as $row) {
-                $key = $this->normalizeBatchInvoiceNumberKey((string) ($row->invoice_no ?? ''));
-                if ($key !== '') {
-                    $matchedKeys[$key] = true;
-                }
-            }
-
-            $unmatchedKeys = array_diff_key($needles, $matchedKeys);
-            if ($unmatchedKeys !== []) {
-                $assignedIds = $this->teams->listAllAssignedInvoiceIds();
-                if ($assignedIds !== []) {
-                    foreach ($this->repository->findInvoicesByInvoiceIds($assignedIds) as $row) {
-                        $key = $this->normalizeBatchInvoiceNumberKey((string) ($row->invoice_no ?? ''));
-                        if ($key !== '' && isset($unmatchedKeys[$key])) {
-                            $matches[] = $row;
-                            unset($unmatchedKeys[$key]);
-                            if ($unmatchedKeys === []) {
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-
-            $byInvoiceId = [];
-            foreach ($matches as $row) {
-                $invoiceId = trim((string) ($row->invoice_id ?? ''));
-                if ($invoiceId !== '') {
-                    $byInvoiceId[$invoiceId] = $row;
-                }
-            }
-
-            $existingAssignments = $this->teams->assignmentsByInvoiceIds(array_keys($byInvoiceId));
-
-            $assignedCount = 0;
-            $reassignedCount = 0;
-            $matchedNumbers = [];
-            foreach ($byInvoiceId as $row) {
-                $invoiceId = trim((string) ($row->invoice_id ?? ''));
-                if ($invoiceId === '') {
-                    continue;
-                }
-
-                $previousTeamId = isset($existingAssignments[$invoiceId])
-                    ? (int) ($existingAssignments[$invoiceId]->team_id ?? 0)
-                    : 0;
-                $targetTeamId = (int) $validated['team_id'];
-
-                $this->teams->assignInvoiceTeam(
-                    $invoiceId,
-                    (string) ($row->document_date ?? Carbon::now()->toDateString()),
-                    $targetTeamId
-                );
-                $assignedCount++;
-                if ($previousTeamId > 0 && $previousTeamId !== $targetTeamId) {
-                    $reassignedCount++;
-                }
-
-                $invoiceNo = trim((string) ($row->invoice_no ?? ''));
-                if ($invoiceNo !== '') {
-                    $matchedNumbers[] = $invoiceNo;
-                }
-            }
-
-            $unmatchedCount = count(array_diff_key($needles, array_flip(array_map(
-                fn (string $invoiceNo): string => $this->normalizeBatchInvoiceNumberKey($invoiceNo),
-                array_values(array_unique(array_filter($matchedNumbers)))
-            ))));
+            $batchResult = $this->performBatchAssignment($numbers, (int) $validated['team_id']);
         } catch (Throwable $e) {
             return redirect()->route('reports.deliveries.index', array_merge($this->redirectQuery($request), [
                 'tab' => 'batch-assignment',
@@ -698,14 +704,103 @@ class DeliveriesReportController extends Controller
 
         return redirect()->route('reports.deliveries.index', array_merge($this->redirectQuery($request), [
             'tab' => 'batch-assignment',
-        ]))->with('batch_result', [
+        ]))->with('batch_result', array_merge($batchResult, [
             'team_id' => (int) $validated['team_id'],
+        ]))->with('status', 'Batch assignment completed.');
+    }
+
+    /**
+     * @param  list<string>  $numbers
+     * @return array{extracted_count: int, matched_count: int, assigned_count: int, reassigned_count: int, unmatched_count: int}
+     */
+    private function performBatchAssignment(array $numbers, int $teamId): array
+    {
+        $matches = $this->repository->findInvoicesByInvoiceNumbersForBatch($numbers);
+
+        $needles = [];
+        foreach ($numbers as $number) {
+            $key = $this->normalizeBatchInvoiceNumberKey((string) $number);
+            if ($key !== '') {
+                $needles[$key] = true;
+            }
+        }
+
+        $matchedKeys = [];
+        foreach ($matches as $row) {
+            $key = $this->normalizeBatchInvoiceNumberKey((string) ($row->invoice_no ?? ''));
+            if ($key !== '') {
+                $matchedKeys[$key] = true;
+            }
+        }
+
+        $unmatchedKeys = array_diff_key($needles, $matchedKeys);
+        if ($unmatchedKeys !== []) {
+            $assignedIds = $this->teams->listAllAssignedInvoiceIds();
+            if ($assignedIds !== []) {
+                foreach ($this->repository->findInvoicesByInvoiceIds($assignedIds) as $row) {
+                    $key = $this->normalizeBatchInvoiceNumberKey((string) ($row->invoice_no ?? ''));
+                    if ($key !== '' && isset($unmatchedKeys[$key])) {
+                        $matches[] = $row;
+                        unset($unmatchedKeys[$key]);
+                        if ($unmatchedKeys === []) {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        $byInvoiceId = [];
+        foreach ($matches as $row) {
+            $invoiceId = trim((string) ($row->invoice_id ?? ''));
+            if ($invoiceId !== '') {
+                $byInvoiceId[$invoiceId] = $row;
+            }
+        }
+
+        $existingAssignments = $this->teams->assignmentsByInvoiceIds(array_keys($byInvoiceId));
+
+        $assignedCount = 0;
+        $reassignedCount = 0;
+        $matchedNumbers = [];
+        foreach ($byInvoiceId as $row) {
+            $invoiceId = trim((string) ($row->invoice_id ?? ''));
+            if ($invoiceId === '') {
+                continue;
+            }
+
+            $previousTeamId = isset($existingAssignments[$invoiceId])
+                ? (int) ($existingAssignments[$invoiceId]->team_id ?? 0)
+                : 0;
+
+            $this->teams->assignInvoiceTeam(
+                $invoiceId,
+                (string) ($row->document_date ?? Carbon::now()->toDateString()),
+                $teamId
+            );
+            $assignedCount++;
+            if ($previousTeamId > 0 && $previousTeamId !== $teamId) {
+                $reassignedCount++;
+            }
+
+            $invoiceNo = trim((string) ($row->invoice_no ?? ''));
+            if ($invoiceNo !== '') {
+                $matchedNumbers[] = $invoiceNo;
+            }
+        }
+
+        $unmatchedCount = count(array_diff_key($needles, array_flip(array_map(
+            fn (string $invoiceNo): string => $this->normalizeBatchInvoiceNumberKey($invoiceNo),
+            array_values(array_unique(array_filter($matchedNumbers)))
+        ))));
+
+        return [
             'extracted_count' => count($numbers),
             'matched_count' => count($byInvoiceId),
             'assigned_count' => $assignedCount,
             'reassigned_count' => $reassignedCount,
             'unmatched_count' => $unmatchedCount,
-        ])->with('status', 'Batch assignment completed.');
+        ];
     }
 
     private function normalizeBatchInvoiceNumberKey(string $value): string

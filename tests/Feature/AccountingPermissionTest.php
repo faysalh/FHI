@@ -42,4 +42,10 @@ class AccountingPermissionTest extends TestCase
 
         $response->assertOk();
     }
+
+    public function test_accounting_key_appears_in_permission_matrix(): void
+    {
+        $keys = array_column(\App\Support\ReportNavigation::permissionMatrix(), 'key');
+        $this->assertContains('accounting', $keys);
+    }
 }

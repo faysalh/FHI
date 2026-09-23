@@ -116,6 +116,30 @@ return [
             'transaction_mode' => 'DEFERRED',
         ],
 
+        'face_id_sqlite' => [
+            'driver' => 'sqlite',
+            'url' => null,
+            'database' => env('FACE_ID_SQLITE_DATABASE', database_path('face-id-local.sqlite')),
+            'prefix' => '',
+            'foreign_key_constraints' => true,
+            'busy_timeout' => null,
+            'journal_mode' => null,
+            'synchronous' => null,
+            'transaction_mode' => 'DEFERRED',
+        ],
+
+        'manufacturing_sqlite' => [
+            'driver' => 'sqlite',
+            'url' => null,
+            'database' => env('MANUFACTURING_SQLITE_DATABASE', database_path('manufacturing-local.sqlite')),
+            'prefix' => '',
+            'foreign_key_constraints' => true,
+            'busy_timeout' => null,
+            'journal_mode' => null,
+            'synchronous' => null,
+            'transaction_mode' => 'DEFERRED',
+        ],
+
         'mysql' => [
             'driver' => 'mysql',
             'url' => env('DB_URL'),
@@ -186,6 +210,26 @@ return [
             'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', true),
             'authentication' => env('DB_AUTHENTICATION'),
             'readonly' => env('DB_READONLY', true),
+        ],
+
+        /*
+        | Write-capable SQL Server connection for admin PDA sync only (SP_Pda_Sync).
+        | Reporting queries must continue to use the read-only "sqlsrv" connection.
+        */
+        'sqlsrv_write' => [
+            'driver' => 'sqlsrv',
+            'url' => env('DB_URL'),
+            'host' => env('DB_HOST', 'localhost'),
+            'port' => env('DB_PORT', '1433'),
+            'database' => env('DB_DATABASE', 'laravel'),
+            'username' => env('DB_USERNAME', ''),
+            'password' => env('DB_PASSWORD', ''),
+            'charset' => env('DB_CHARSET', 'utf8'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'encrypt' => env('DB_ENCRYPT', 'optional'),
+            'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', true),
+            'authentication' => env('DB_AUTHENTICATION'),
         ],
 
     ],
