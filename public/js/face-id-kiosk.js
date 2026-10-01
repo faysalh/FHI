@@ -156,31 +156,35 @@
             return;
         }
 
-        var det = detector.getBestDetection();
-        if (!det || !det.descriptor) {
-            if (debugMode) setDebug('No face in frame');
+        if (!detector.isReady()) {
+            if (debugMode) setDebug('Waiting for a stable face above 70% quality');
             scheduleNextScan(config.scanIntervalIdleMs || 2000);
             return;
         }
 
         scanning = true;
-        var descriptor = Array.from(det.descriptor);
+        setStatus(config.labels.verifying || 'Face locked — verifying 3 samples…');
 
-        fetch(config.punchUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'X-CSRF-TOKEN': config.csrfToken,
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            body: JSON.stringify({
-                descriptor: descriptor,
-                latitude: locationPayload.latitude,
-                longitude: locationPayload.longitude,
-                location_accuracy: locationPayload.location_accuracy
-            })
+        detector.captureFreshDescriptors(3, 250, 6000, function (captured, total) {
+            setStatus('Verifying face ' + captured + '/' + total + '…');
         })
+            .then(function (descriptors) {
+                return fetch(config.punchUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': config.csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify({
+                        descriptors: descriptors,
+                        latitude: locationPayload.latitude,
+                        longitude: locationPayload.longitude,
+                        location_accuracy: locationPayload.location_accuracy
+                    })
+                });
+            })
             .then(function (response) {
                 return response.json().then(function (data) {
                     if (!response.ok) {
@@ -198,13 +202,25 @@
 
                 if (debugMode) {
                     if (data.recognized) {
-                        setDebug('Recognized: ' + (data.employee_name || data.employee_id));
+                        setDebug(
+                            'Recognized: ' + (data.employee_name || data.employee_id) +
+                            ' | identity ' + Math.round((data.confidence || 0) * 100) + '%'
+                        );
                     } else {
-                        setDebug('Face seen — not recognized');
+                        setDebug('Face samples did not reach 70% identity confidence');
                     }
                 }
 
-                if (!data.recognized || data.debounced) return;
+                if (!data.recognized) {
+                    setStatus(config.labels.notRecognized || 'Not recognized above 70% — look at the camera and try again');
+                    clearStatusLater();
+                    return;
+                }
+                if (data.debounced) {
+                    setStatus(config.labels.alreadyRecorded || 'Attendance already recorded — please step away');
+                    clearStatusLater();
+                    return;
+                }
 
                 var name = data.employee_name || '';
                 var time = formatTime(data.recorded_at);
@@ -224,16 +240,15 @@
                 clearStatusLater();
             })
             .catch(function (err) {
+                setStatus((err && err.message) ? err.message : 'Face verification failed');
+                clearStatusLater();
                 if (debugMode) {
                     setDebug('Punch request failed: ' + (err && err.message ? err.message : 'unknown'));
                 }
             })
             .finally(function () {
                 scanning = false;
-                var nextDelay = (det && det.descriptor)
-                    ? (config.scanIntervalActiveMs || 500)
-                    : (config.scanIntervalIdleMs || 2000);
-                scheduleNextScan(nextDelay);
+                scheduleNextScan(config.scanIntervalActiveMs || 500);
             });
     }
 

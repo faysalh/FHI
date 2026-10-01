@@ -4,9 +4,13 @@
     var DEFAULT_OPTIONS = {
         inputSize: 512,
         scoreThreshold: 0.35,
+        minReadyScore: 0.70,
+        stableFramesRequired: 3,
         loopIntervalMs: 150,
         guideWidthRatio: 0.55,
         guideHeightRatio: 0.70,
+        minFaceWidthRatio: 0.20,
+        maxFaceWidthRatio: 0.72,
         minBrightness: 45,
         maxBrightness: 220
     };
@@ -34,6 +38,8 @@
         this._ready = false;
         this._readyReason = '';
         this._detectorOptions = null;
+        this._qualityReadyFrames = 0;
+        this._sampleSerial = 0;
     }
 
     function normalizeModelsUrl(url) {
@@ -314,6 +320,20 @@
         return cx >= left && cx <= left + guideW && cy >= top && cy <= top + guideH;
     };
 
+    FaceIdDetector.prototype._faceSizeReason = function (box) {
+        if (!this.video || this.video.videoWidth <= 0) {
+            return 'Face size unavailable';
+        }
+        var ratio = box.width / this.video.videoWidth;
+        if (ratio < this.options.minFaceWidthRatio) {
+            return 'Move closer to the camera';
+        }
+        if (ratio > this.options.maxFaceWidthRatio) {
+            return 'Move slightly farther from the camera';
+        }
+        return '';
+    };
+
     FaceIdDetector.prototype._evaluateDetections = function (detections) {
         var tone = '';
         var status = '';
@@ -321,12 +341,14 @@
         var reason = '';
 
         if (detections.length === 0) {
+            this._qualityReadyFrames = 0;
             status = 'No face — center yourself in the oval';
             tone = 'warn';
             this._lastDetection = null;
             this._lastScore = 0;
             this._drawOverlay(null, 'none');
         } else if (detections.length > 1) {
+            this._qualityReadyFrames = 0;
             status = 'Multiple faces — only one person';
             tone = 'warn';
             this._lastDetection = null;
@@ -334,31 +356,49 @@
         } else {
             var det = detections[0];
             var score = det.detection && typeof det.detection.score === 'number' ? det.detection.score : 0;
+            var sizeReason = this._faceSizeReason(det.detection.box);
             this._lastDetection = det;
             this._lastScore = score;
 
             if (this._lastBrightness < this.options.minBrightness) {
+                this._qualityReadyFrames = 0;
                 status = 'Too dark — move to better lighting';
                 tone = 'warn';
                 this._drawOverlay(detections, 'warn');
             } else if (this._lastBrightness > this.options.maxBrightness) {
+                this._qualityReadyFrames = 0;
                 status = 'Too bright — reduce glare';
                 tone = 'warn';
                 this._drawOverlay(detections, 'warn');
             } else if (!this._isBoxCentered(det.detection.box)) {
+                this._qualityReadyFrames = 0;
                 status = 'Move your face into the oval (score ' + score.toFixed(2) + ')';
                 tone = 'warn';
                 this._drawOverlay(detections, 'warn');
-            } else if (score < this.options.scoreThreshold) {
-                status = 'Face too faint (score ' + score.toFixed(2) + ') — move closer';
+            } else if (sizeReason) {
+                this._qualityReadyFrames = 0;
+                status = sizeReason + ' (score ' + score.toFixed(2) + ')';
+                tone = 'warn';
+                this._drawOverlay(detections, 'warn');
+            } else if (score < this.options.minReadyScore) {
+                this._qualityReadyFrames = 0;
+                status = 'Face quality below 70% (score ' + score.toFixed(2) + ') — improve lighting';
                 tone = 'warn';
                 this._drawOverlay(detections, 'warn');
             } else {
-                status = 'Face detected (score ' + score.toFixed(2) + ') — hold still';
-                tone = 'ready';
-                ready = true;
-                reason = 'ready';
-                this._drawOverlay(detections, 'ok');
+                this._qualityReadyFrames += 1;
+                this._sampleSerial += 1;
+                if (this._qualityReadyFrames >= this.options.stableFramesRequired) {
+                    status = 'Face locked (score ' + score.toFixed(2) + ') — hold still';
+                    tone = 'ready';
+                    ready = true;
+                    reason = 'ready';
+                    this._drawOverlay(detections, 'ok');
+                } else {
+                    status = 'Locking face ' + this._qualityReadyFrames + '/' + this.options.stableFramesRequired + '…';
+                    tone = 'warn';
+                    this._drawOverlay(detections, 'warn');
+                }
             }
         }
 
@@ -434,6 +474,58 @@
         return Array.from(det.descriptor);
     };
 
+    FaceIdDetector.prototype.captureSample = function () {
+        if (!this.isReady() || !this._lastDetection || !this._lastDetection.descriptor) {
+            return null;
+        }
+
+        return {
+            descriptor: Array.from(this._lastDetection.descriptor),
+            score: this._lastScore,
+            serial: this._sampleSerial
+        };
+    };
+
+    FaceIdDetector.prototype.captureFreshDescriptors = function (count, minDelayMs, timeoutMs, onProgress) {
+        var self = this;
+        var samples = [];
+        var lastSerial = -1;
+        var lastCapturedAt = 0;
+        var startedAt = Date.now();
+        minDelayMs = minDelayMs || 250;
+        timeoutMs = timeoutMs || 8000;
+
+        return new Promise(function (resolve, reject) {
+            function poll() {
+                if (!self._running) {
+                    reject(new Error('Camera stopped before capture completed'));
+                    return;
+                }
+                if (Date.now() - startedAt > timeoutMs) {
+                    reject(new Error('Could not capture enough high-quality face samples. Hold still in good lighting.'));
+                    return;
+                }
+
+                var sample = self.captureSample();
+                var delaySatisfied = Date.now() - lastCapturedAt >= minDelayMs;
+                if (sample && sample.serial !== lastSerial && delaySatisfied) {
+                    samples.push(sample.descriptor);
+                    lastSerial = sample.serial;
+                    lastCapturedAt = Date.now();
+                    if (typeof onProgress === 'function') {
+                        onProgress(samples.length, count);
+                    }
+                    if (samples.length >= count) {
+                        resolve(samples);
+                        return;
+                    }
+                }
+                setTimeout(poll, 50);
+            }
+            poll();
+        });
+    };
+
     FaceIdDetector.prototype.stop = function () {
         this._running = false;
         if (this._loopTimer) {
@@ -454,6 +546,7 @@
             }
         }
         this._lastDetection = null;
+        this._qualityReadyFrames = 0;
         this._setReady(false, '');
     };
 

@@ -308,7 +308,7 @@ document.getElementById('copy-kiosk-url')?.addEventListener('click', function ()
 @if ($tab === 'employees')
 {{-- Root-relative URLs avoid APP_URL http/https port mismatches (mixed content blocks scripts). --}}
 <script src="/js/face-api.min.js?v=3"></script>
-<script src="/js/face-id-detector.js?v=4"></script>
+<script src="/js/face-id-detector.js?v=5"></script>
 <script>
 window.FaceIdEnrollConfig = {
     modelsUrl: '/face-api-models',
@@ -317,7 +317,7 @@ window.FaceIdEnrollConfig = {
     autoCapture: true
 };
 </script>
-<script src="/js/face-id-enroll.js?v=8"></script>
+<script src="/js/face-id-enroll.js?v=9"></script>
 <script>
 (function () {
     'use strict';

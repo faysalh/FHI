@@ -142,7 +142,7 @@ class FaceIdController extends Controller
         $this->assertFaceIdTab('employees');
 
         try {
-            $this->faceId->saveFaceDescriptor($employee, $request->descriptor());
+            $this->faceId->saveFaceDescriptors($employee, $request->descriptors());
         } catch (Throwable $e) {
             return response()->json([
                 'ok' => false,

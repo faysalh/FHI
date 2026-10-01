@@ -17,6 +17,12 @@ class FaceIdSqliteService
 
     public const DEFAULT_MATCH_THRESHOLD = 0.55;
 
+    public const MIN_IDENTITY_CONFIDENCE = 0.70;
+
+    private const IDENTITY_DISTANCE_SCALE = 1.5;
+
+    private const MIN_CANDIDATE_SEPARATION = 0.04;
+
     private const CONNECTION = 'face_id_sqlite';
 
     private const SETTINGS_TABLE = 'face_id_settings';
@@ -225,8 +231,24 @@ class FaceIdSqliteService
      */
     public function saveFaceDescriptor(int $id, array $descriptor): void
     {
+        $this->saveFaceDescriptors($id, [$descriptor]);
+    }
+
+    /**
+     * @param  list<list<float|int>>  $descriptors
+     */
+    public function saveFaceDescriptors(int $id, array $descriptors): void
+    {
         $this->ensureReady();
-        $this->assertValidDescriptor($descriptor);
+        if ($descriptors === [] || count($descriptors) > 5) {
+            throw new InvalidArgumentException('Enrollment requires between one and five face samples.');
+        }
+
+        $normalized = [];
+        foreach ($descriptors as $descriptor) {
+            $this->assertValidDescriptor($descriptor);
+            $normalized[] = array_map('floatval', $descriptor);
+        }
 
         if ($this->findEmployee($id) === null) {
             throw new InvalidArgumentException('Employee not found.');
@@ -236,7 +258,7 @@ class FaceIdSqliteService
             'UPDATE '.self::EMPLOYEES_TABLE.'
              SET face_descriptor = ?, updated_at = ?
              WHERE id = ?',
-            [json_encode(array_map('floatval', $descriptor), JSON_THROW_ON_ERROR), ReportingTime::now()->toDateTimeString(), $id]
+            [json_encode($normalized, JSON_THROW_ON_ERROR), ReportingTime::now()->toDateTimeString(), $id]
         );
     }
 
@@ -262,8 +284,25 @@ class FaceIdSqliteService
      */
     public function matchDescriptor(array $descriptor): ?array
     {
+        return $this->matchDescriptors([$descriptor]);
+    }
+
+    /**
+     * All supplied captures must resolve to the same best employee. The median
+     * distance allows one imperfect frame while requiring the majority to agree.
+     *
+     * @param  list<list<float|int>>  $descriptors
+     * @return array{employee: object, distance: float, confidence: float}|null
+     */
+    public function matchDescriptors(array $descriptors): ?array
+    {
         $this->ensureReady();
-        $this->assertValidDescriptor($descriptor);
+        if ($descriptors === []) {
+            throw new InvalidArgumentException('At least one face descriptor is required.');
+        }
+        foreach ($descriptors as $descriptor) {
+            $this->assertValidDescriptor($descriptor);
+        }
 
         $threshold = $this->getMatchThreshold();
         $employees = DB::connection(self::CONNECTION)->select(
@@ -272,30 +311,61 @@ class FaceIdSqliteService
              WHERE is_active = 1 AND face_descriptor IS NOT NULL AND face_descriptor != \'\''
         );
 
-        $best = null;
-        $bestDistance = PHP_FLOAT_MAX;
+        $candidates = [];
 
         foreach ($employees as $employee) {
-            $stored = json_decode((string) $employee->face_descriptor, true);
-            if (! is_array($stored) || count($stored) !== self::DESCRIPTOR_LENGTH) {
+            $templates = $this->decodeStoredTemplates((string) $employee->face_descriptor);
+            if ($templates === []) {
                 continue;
             }
 
-            $distance = $this->euclideanDistance($descriptor, $stored);
-            if ($distance < $bestDistance) {
-                $bestDistance = $distance;
-                $best = $employee;
+            $sampleDistances = [];
+            foreach ($descriptors as $descriptor) {
+                $closestTemplate = PHP_FLOAT_MAX;
+                foreach ($templates as $template) {
+                    $closestTemplate = min(
+                        $closestTemplate,
+                        $this->euclideanDistance($descriptor, $template)
+                    );
+                }
+                $sampleDistances[] = $closestTemplate;
             }
+
+            sort($sampleDistances, SORT_NUMERIC);
+            $middle = intdiv(count($sampleDistances), 2);
+            $distance = count($sampleDistances) % 2 === 1
+                ? $sampleDistances[$middle]
+                : ($sampleDistances[$middle - 1] + $sampleDistances[$middle]) / 2;
+            $candidates[] = [
+                'employee' => $employee,
+                'distance' => $distance,
+            ];
         }
 
-        if ($best === null || $bestDistance > $threshold) {
+        usort(
+            $candidates,
+            static fn (array $left, array $right): int => $left['distance'] <=> $right['distance']
+        );
+
+        $best = $candidates[0] ?? null;
+        if ($best === null) {
             return null;
         }
 
-        $confidence = max(0.0, min(1.0, 1.0 - ($bestDistance / $threshold)));
+        $bestDistance = (float) $best['distance'];
+        $confidence = $this->identityConfidence($bestDistance);
+        if ($bestDistance > $threshold || $confidence < self::MIN_IDENTITY_CONFIDENCE) {
+            return null;
+        }
+
+        $runnerUp = $candidates[1] ?? null;
+        if ($runnerUp !== null
+            && ((float) $runnerUp['distance'] - $bestDistance) < self::MIN_CANDIDATE_SEPARATION) {
+            return null;
+        }
 
         return [
-            'employee' => $best,
+            'employee' => $best['employee'],
             'distance' => $bestDistance,
             'confidence' => $confidence,
         ];
@@ -318,7 +388,17 @@ class FaceIdSqliteService
      */
     public function processPunch(array $descriptor, array $location): array
     {
-        $match = $this->matchDescriptor($descriptor);
+        return $this->processPunchDescriptors([$descriptor], $location);
+    }
+
+    /**
+     * @param  list<list<float|int>>  $descriptors
+     * @param  array{latitude: float, longitude: float, accuracy: ?float}  $location
+     * @return array<string, mixed>
+     */
+    public function processPunchDescriptors(array $descriptors, array $location): array
+    {
+        $match = $this->matchDescriptors($descriptors);
         if ($match === null) {
             return ['recognized' => false];
         }
@@ -338,11 +418,15 @@ class FaceIdSqliteService
 
         if ($lastToday !== null) {
             $lastAt = strtotime((string) $lastToday->recorded_at);
-            if ($lastAt !== false && ($now->getTimestamp() - $lastAt) < self::DEBOUNCE_SECONDS) {
+            $elapsedSeconds = $lastAt === false ? null : $now->getTimestamp() - $lastAt;
+            if ($elapsedSeconds !== null
+                && $elapsedSeconds >= 0
+                && $elapsedSeconds < self::DEBOUNCE_SECONDS) {
                 return [
                     'recognized' => true,
                     'employee_id' => $employeeId,
                     'employee_name' => (string) $match['employee']->name,
+                    'confidence' => $match['confidence'],
                     'debounced' => true,
                 ];
             }
@@ -443,6 +527,38 @@ class FaceIdSqliteService
         }
 
         return sqrt($sum);
+    }
+
+    private function identityConfidence(float $distance): float
+    {
+        return max(0.0, min(1.0, 1.0 - ($distance / self::IDENTITY_DISTANCE_SCALE)));
+    }
+
+    /**
+     * Supports legacy single-vector enrollments and new multi-template enrollments.
+     *
+     * @return list<list<float|int>>
+     */
+    private function decodeStoredTemplates(string $json): array
+    {
+        $stored = json_decode($json, true);
+        if (! is_array($stored) || $stored === []) {
+            return [];
+        }
+
+        if (count($stored) === self::DESCRIPTOR_LENGTH && is_numeric($stored[0] ?? null)) {
+            return [$stored];
+        }
+
+        $templates = [];
+        foreach ($stored as $descriptor) {
+            if (! is_array($descriptor) || count($descriptor) !== self::DESCRIPTOR_LENGTH) {
+                continue;
+            }
+            $templates[] = $descriptor;
+        }
+
+        return $templates;
     }
 
     private function normalizeEmployeeCode(?string $code): ?string

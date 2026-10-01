@@ -171,28 +171,19 @@
     }
 
     function captureSamples(count, delayMs) {
-        var samples = [];
-        var index = 0;
-
-        function takeOne() {
-            if (!detector || !detector.isReady()) {
-                return Promise.reject(new Error('Face not ready'));
-            }
-            var descriptor = detector.captureDescriptor();
-            if (!descriptor) {
-                return Promise.reject(new Error('No descriptor captured'));
-            }
-            samples.push(descriptor);
-            index += 1;
-            if (index >= count) {
-                return Promise.resolve(samples);
-            }
-            return new Promise(function (resolve) {
-                setTimeout(resolve, delayMs);
-            }).then(takeOne);
+        if (!detector) {
+            return Promise.reject(new Error('Face detector is not ready'));
         }
-
-        return takeOne();
+        return detector.captureFreshDescriptors(count, delayMs, 12000, function (captured) {
+            var guidance = [
+                'Keep looking straight at the camera',
+                'Turn your face slightly left',
+                'Look straight again',
+                'Turn your face slightly right',
+                'Final sample — hold still'
+            ];
+            setStatus('Sample ' + captured + '/' + count + ' saved. ' + (guidance[captured] || 'Hold still…'), 'ready');
+        });
     }
 
     function saveDescriptors(descriptors) {
@@ -228,9 +219,9 @@
         capturing = true;
         clearAutoCapture();
         if (captureBtn) captureBtn.disabled = true;
-        setStatus(isAuto ? 'Auto-capturing face samples…' : 'Capturing face samples…');
+        setStatus(isAuto ? 'Face locked — taking 5 fresh samples…' : 'Face locked — taking 5 fresh samples…');
 
-        captureSamples(3, 300)
+        captureSamples(5, 400)
             .then(function (samples) {
                 setStatus('Saving enrollment…');
                 return saveDescriptors(samples);

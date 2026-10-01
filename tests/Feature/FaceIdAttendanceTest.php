@@ -75,7 +75,7 @@ class FaceIdAttendanceTest extends TestCase
         $this->assertNotEmpty($updated->face_descriptor);
     }
 
-    public function test_multi_descriptor_enrollment_averages_and_saves(): void
+    public function test_multi_descriptor_enrollment_keeps_all_face_templates(): void
     {
         $svc = app(FaceIdSqliteService::class);
         $employeeId = $svc->createEmployee('Multi Sample', 'MS1');
@@ -85,8 +85,6 @@ class FaceIdAttendanceTest extends TestCase
             $this->sampleDescriptor(0.12),
             $this->sampleDescriptor(0.13),
         ];
-        $expected = FaceIdSqliteService::averageDescriptors($sets);
-
         $this->withFaceIdSession()
             ->postJson("/reports/face-id/employees/{$employeeId}/face", [
                 'descriptors' => $sets,
@@ -96,11 +94,8 @@ class FaceIdAttendanceTest extends TestCase
 
         $stored = json_decode((string) $svc->findEmployee($employeeId)->face_descriptor, true);
         $this->assertIsArray($stored);
-        $this->assertCount(FaceIdSqliteService::DESCRIPTOR_LENGTH, $stored);
-
-        for ($i = 0; $i < FaceIdSqliteService::DESCRIPTOR_LENGTH; $i++) {
-            $this->assertEqualsWithDelta($expected[$i], $stored[$i], 0.0001);
-        }
+        $this->assertCount(3, $stored);
+        $this->assertSame($sets, $stored);
     }
 
     public function test_face_enrollment_validation_returns_structured_json(): void
@@ -125,7 +120,7 @@ class FaceIdAttendanceTest extends TestCase
             ->assertNotFound();
 
         $this->postJson('/attendance/invalid-token-should-not-work/punch', [
-            'descriptor' => $this->sampleDescriptor(0.2),
+            'descriptors' => array_fill(0, 3, $this->sampleDescriptor(0.2)),
             'latitude' => 36.1911,
             'longitude' => 44.0091,
         ])->assertNotFound();
@@ -254,6 +249,39 @@ class FaceIdAttendanceTest extends TestCase
         Carbon::setTestNow();
     }
 
+    public function test_identity_match_must_reach_seventy_percent_confidence(): void
+    {
+        $svc = app(FaceIdSqliteService::class);
+        $employeeId = $svc->createEmployee('Confidence Gate', 'CG1');
+        $svc->saveFaceDescriptor($employeeId, array_fill(0, FaceIdSqliteService::DESCRIPTOR_LENGTH, 0.0));
+
+        $acceptedValue = 0.44 / sqrt(FaceIdSqliteService::DESCRIPTOR_LENGTH);
+        $accepted = $svc->matchDescriptor(
+            array_fill(0, FaceIdSqliteService::DESCRIPTOR_LENGTH, $acceptedValue)
+        );
+        $this->assertNotNull($accepted);
+        $this->assertGreaterThanOrEqual(FaceIdSqliteService::MIN_IDENTITY_CONFIDENCE, $accepted['confidence']);
+
+        $rejectedValue = 0.46 / sqrt(FaceIdSqliteService::DESCRIPTOR_LENGTH);
+        $this->assertNull($svc->matchDescriptor(
+            array_fill(0, FaceIdSqliteService::DESCRIPTOR_LENGTH, $rejectedValue)
+        ));
+    }
+
+    public function test_kiosk_requires_three_face_samples(): void
+    {
+        $svc = app(FaceIdSqliteService::class);
+        $token = $svc->getKioskToken();
+
+        $this->postJson("/attendance/{$token}/punch", [
+            'descriptors' => [$this->sampleDescriptor(0.2)],
+            'latitude' => 36.1911,
+            'longitude' => 44.0091,
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['descriptors']);
+    }
+
     public function test_face_id_key_appears_in_permission_matrix(): void
     {
         $keys = array_column(ReportNavigation::permissionMatrix(), 'key');
@@ -292,19 +320,19 @@ class FaceIdAttendanceTest extends TestCase
         $svc->saveFaceDescriptor($employeeId, $descriptor);
 
         $this->postJson("/attendance/{$token}/punch", [
-            'descriptor' => $descriptor,
+            'descriptors' => array_fill(0, 3, $descriptor),
         ])
             ->assertStatus(422)
             ->assertJsonValidationErrors(['latitude', 'longitude']);
     }
 
     /**
-     * @return array{descriptor: list<float>, latitude: float, longitude: float, location_accuracy: float}
+     * @return array{descriptors: list<list<float>>, latitude: float, longitude: float, location_accuracy: float}
      */
     private function samplePunchPayload(array $descriptor): array
     {
         return [
-            'descriptor' => $descriptor,
+            'descriptors' => array_fill(0, 3, $descriptor),
             'latitude' => 36.1911,
             'longitude' => 44.0091,
             'location_accuracy' => 15.0,

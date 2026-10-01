@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Exports;
 
 use App\Support\ReportingTime;
+use Illuminate\Support\Collection;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\WithCustomCsvSettings;
 use Maatwebsite\Excel\Concerns\WithHeadings;

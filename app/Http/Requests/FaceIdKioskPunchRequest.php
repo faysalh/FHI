@@ -20,8 +20,9 @@ class FaceIdKioskPunchRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'descriptor' => ['required', 'array', 'size:'.FaceIdSqliteService::DESCRIPTOR_LENGTH],
-            'descriptor.*' => ['required', 'numeric'],
+            'descriptors' => ['required', 'array', 'min:3', 'max:5'],
+            'descriptors.*' => ['required', 'array', 'size:'.FaceIdSqliteService::DESCRIPTOR_LENGTH],
+            'descriptors.*.*' => ['required', 'numeric'],
             'latitude' => ['required', 'numeric', 'between:-90,90'],
             'longitude' => ['required', 'numeric', 'between:-180,180'],
             'location_accuracy' => ['nullable', 'numeric', 'min:0', 'max:100000'],
@@ -29,11 +30,17 @@ class FaceIdKioskPunchRequest extends FormRequest
     }
 
     /**
-     * @return list<float>
+     * @return list<list<float>>
      */
-    public function descriptor(): array
+    public function descriptors(): array
     {
-        return array_map('floatval', $this->validated('descriptor'));
+        /** @var list<list<float|int>> $sets */
+        $sets = $this->validated('descriptors');
+
+        return array_map(
+            static fn (array $descriptor): array => array_map('floatval', $descriptor),
+            $sets
+        );
     }
 
     /**

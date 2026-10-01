@@ -26,7 +26,7 @@ class FaceIdFaceDescriptorRequest extends FormRequest
         return [
             'descriptor' => ['sometimes', 'array', 'size:'.$length],
             'descriptor.*' => ['required_with:descriptor', 'numeric'],
-            'descriptors' => ['sometimes', 'array', 'min:2', 'max:5'],
+            'descriptors' => ['sometimes', 'array', 'min:3', 'max:5'],
             'descriptors.*' => ['required_with:descriptors', 'array', 'size:'.$length],
             'descriptors.*.*' => ['required_with:descriptors', 'numeric'],
         ];
@@ -60,17 +60,20 @@ class FaceIdFaceDescriptorRequest extends FormRequest
     }
 
     /**
-     * @return list<float>
+     * @return list<list<float>>
      */
-    public function descriptor(): array
+    public function descriptors(): array
     {
         if ($this->has('descriptors') && is_array($this->input('descriptors'))) {
             /** @var list<list<float|int>> $sets */
             $sets = $this->validated('descriptors');
 
-            return FaceIdSqliteService::averageDescriptors($sets);
+            return array_map(
+                static fn (array $descriptor): array => array_map('floatval', $descriptor),
+                $sets
+            );
         }
 
-        return array_map('floatval', $this->validated('descriptor'));
+        return [array_map('floatval', $this->validated('descriptor'))];
     }
 }

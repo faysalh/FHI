@@ -78,12 +78,12 @@
         <video id="kiosk-video" autoplay muted playsinline></video>
     </div>
     <div id="kiosk-status" class="kiosk-status kiosk-loading">{{ __('Starting…') }}</div>
-    <p class="kiosk-hint">{{ __('Look at the camera. Only enrolled faces are logged. Check-in is recorded from 5:00 to 11:00; other times are checkout. Allow camera and location when prompted — GPS is saved with each punch.') }}</p>
+    <p class="kiosk-hint">{{ __('Look directly at the camera and hold still. Attendance is logged only when three fresh samples agree at 70% identity confidence or higher. Check-in is recorded from 5:00 to 11:00; other times are checkout. Allow camera and location when prompted — GPS is saved with each punch.') }}</p>
     <p id="kiosk-debug" class="kiosk-hint" hidden></p>
 </div>
 
 <script src="/js/face-api.min.js?v=3"></script>
-<script src="/js/face-id-detector.js?v=4"></script>
+<script src="/js/face-id-detector.js?v=5"></script>
 <script>
 window.FaceIdKioskConfig = {
     modelsUrl: '/face-api-models',
@@ -101,13 +101,16 @@ window.FaceIdKioskConfig = {
         locationTimeout: @json(__('Location request timed out. Try again.')),
         locationUnsupported: @json(__('Geolocation is not supported on this device.')),
         ready: @json(__('Ready')),
+        verifying: @json(__('Face locked — verifying 3 samples…')),
+        notRecognized: @json(__('Not recognized above 70% — look at the camera and try again')),
+        alreadyRecorded: @json(__('Attendance already recorded — please step away')),
         clockIn: @json(__('Clocked in')),
         clockOut: @json(__('Clocked out')),
         welcome: @json(__('Welcome')),
     }
 };
 </script>
-<script src="{{ asset('js/face-id-kiosk.js') }}?v=3"></script>
+<script src="{{ asset('js/face-id-kiosk.js') }}?v=4"></script>
 <script>
 (function () {
     if (/[?&]debug=1(?:&|$)/.test(window.location.search)) {
