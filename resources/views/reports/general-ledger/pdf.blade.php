@@ -19,7 +19,7 @@
     </style>
 </head>
 <body>
-@include('reports.partials.pdf-branding')
+@include('reports.partials.pdf-branding-header')
 <h1>{{ Ar::glyphs('General ledger') }}</h1>
 <p class="meta">
     {{ Ar::glyphs(($filters['date_from'] ?? '').' → '.($filters['date_to'] ?? '')) }}

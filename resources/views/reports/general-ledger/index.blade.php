@@ -108,9 +108,9 @@
                     <label for="transaction_type_id">Document type</label>
                     <select id="transaction_type_id" name="transaction_type_id">
                         <option value="">All types</option>
-                        @foreach (($transactionTypes ?? []) as $type)
-                            <option value="{{ $type->type_id }}" @selected($transactionTypeId === (string) ($type->type_id ?? ''))>
-                                {{ $type->type_name ?? $type->type_id }}
+                        @foreach (($transactionTypes ?? []) as $docType)
+                            <option value="{{ $docType->type_id }}" @selected($transactionTypeId === (string) ($docType->type_id ?? ''))>
+                                {{ $docType->type_name ?? $docType->type_id }}
                             </option>
                         @endforeach
                     </select>
@@ -147,7 +147,7 @@
                     </label>
                 </div>
                 <div style="align-self:end;">
-                    @include('reports.partials.icon-button', ['action' => 'apply', 'label' => 'Load', 'type' => 'submit'])
+                    @include('reports.partials.icon-button', ['action' => 'apply', 'label' => 'Load', 'type' => 'submit', 'class' => ''])
                 </div>
             </div>
         </div>

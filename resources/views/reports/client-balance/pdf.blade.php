@@ -18,7 +18,7 @@
     </style>
 </head>
 <body>
-@include('reports.partials.pdf-branding')
+@include('reports.partials.pdf-branding-header')
 <h1>{{ Ar::glyphs('Client balance') }}</h1>
 <p class="meta">
     {{ Ar::glyphs('Salesman: '.($salesmanName ?? '—')) }}
