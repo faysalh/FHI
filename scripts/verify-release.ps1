@@ -176,6 +176,9 @@ if (Test-Path $webRoutes) {
     if ($webRoutesText -notmatch 'reports\.accounting\.index') {
         $errors += 'routes\web.php must register reports.accounting.index'
     }
+    if ($webRoutesText -notmatch 'reports\.client-balance\.index') {
+        $errors += 'routes\web.php must register reports.client-balance.index'
+    }
     if ($webRoutesText -notmatch 'reports\.manufacturing\.index') {
         $errors += 'routes\web.php must register reports.manufacturing.index'
     }

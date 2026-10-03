@@ -39,6 +39,9 @@ trap {
     Write-Host ' INSTALL FAILED' -ForegroundColor Red
     Write-Host '============================================' -ForegroundColor Red
     Write-Host $_.Exception.Message -ForegroundColor Red
+    if ($_.InvocationInfo -and $_.InvocationInfo.PositionMessage) {
+        Write-Host $_.InvocationInfo.PositionMessage -ForegroundColor DarkYellow
+    }
     if ($_.ScriptStackTrace) {
         Write-Host ''
         Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray
@@ -49,6 +52,51 @@ trap {
     try { Stop-Transcript | Out-Null } catch {}
     if ($script:PauseOnExit) { Read-Host 'Press Enter to close' | Out-Null }
     exit 1
+}
+
+function Read-TextFile([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return ''
+    }
+    $lastError = $null
+    foreach ($attempt in 1..5) {
+        try {
+            return [System.IO.File]::ReadAllText($Path)
+        } catch {
+            $lastError = $_.Exception.Message
+            Start-Sleep -Milliseconds (150 * $attempt)
+        }
+    }
+    throw "Could not read file '$Path': $lastError"
+}
+
+function Write-TextFile([string]$Path, [string]$Content, [System.Text.Encoding]$Encoding = $null) {
+    if ($null -eq $Encoding) {
+        $Encoding = New-Object System.Text.UTF8Encoding $false
+    }
+    $directory = Split-Path -Parent $Path
+    if ($directory -and -not (Test-Path -LiteralPath $directory)) {
+        New-Item -ItemType Directory -Path $directory -Force | Out-Null
+    }
+    $lastError = $null
+    foreach ($attempt in 1..5) {
+        try {
+            [System.IO.File]::WriteAllText($Path, $Content, $Encoding)
+            return
+        } catch {
+            $lastError = $_.Exception.Message
+            Start-Sleep -Milliseconds (150 * $attempt)
+        }
+    }
+    throw "Could not write file '$Path': $lastError"
+}
+
+function Read-TextLines([string]$Path) {
+    $text = Read-TextFile -Path $Path
+    if ($text -eq '') {
+        return @()
+    }
+    return @($text -split "`r?`n", -1)
 }
 
 function Write-Step([string]$Message) {
@@ -82,7 +130,7 @@ function Read-Secret([string]$Prompt, [string]$Preset = '') {
 function Read-InstallConfig([string]$Path) {
     if (-not (Test-Path $Path)) { throw "Config file not found: $Path" }
     $map = @{}
-    foreach ($line in Get-Content $Path) {
+    foreach ($line in (Read-TextLines -Path $Path)) {
         if ($line -match '^\s*#' -or $line -match '^\s*$') { continue }
         $idx = $line.IndexOf('=')
         if ($idx -lt 1) { continue }
@@ -94,7 +142,10 @@ function Read-InstallConfig([string]$Path) {
 }
 
 function Read-EnvValue([string]$EnvPath, [string]$Key) {
-    foreach ($line in Get-Content $EnvPath -ErrorAction SilentlyContinue) {
+    if (-not (Test-Path -LiteralPath $EnvPath)) {
+        return ''
+    }
+    foreach ($line in (Read-TextLines -Path $EnvPath)) {
         if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
             if ($Matches[1] -ne $Key) { continue }
             return $Matches[2].Trim().Trim('"')
@@ -121,14 +172,14 @@ function Ensure-EnvSqliteKeys([string]$EnvPath, [string]$InstallPath) {
         'MANUFACTURING_SQLITE_DATABASE' = "$dbPath/database/manufacturing-local.sqlite"
     }
     $added = @()
-    $lines = @(Get-Content $EnvPath -ErrorAction SilentlyContinue)
+    $lines = @(Read-TextLines -Path $EnvPath)
     foreach ($key in $required.Keys) {
         if (-not [string]::IsNullOrWhiteSpace((Read-EnvValue -EnvPath $EnvPath -Key $key))) { continue }
         $lines += "$key=`"$($required[$key])`""
         $added += $key
     }
     if (Get-CollectionLength $added -gt 0) {
-        Set-Content -Path $EnvPath -Value $lines -Encoding UTF8
+        Write-TextFile -Path $EnvPath -Content (($lines -join "`r`n").TrimEnd() + "`r`n")
     }
     return ,@($added)
 }
@@ -432,7 +483,7 @@ function Initialize-PhpIni([string]$PhpRoot) {
     $ini = Join-Path $PhpRoot 'php.ini'
     if (-not (Test-Path $ini)) {
         $prod = Join-Path $PhpRoot 'php.ini-production'
-        if (Test-Path $prod) { Copy-Item $prod $ini } else { Set-Content -Path $ini -Value '' -Encoding ASCII }
+        if (Test-Path $prod) { Copy-Item $prod $ini } else { Write-TextFile -Path $ini -Content '' -Encoding ([System.Text.Encoding]::ASCII) }
     }
     $extDir = (Join-Path $PhpRoot 'ext')
 
@@ -443,7 +494,7 @@ function Initialize-PhpIni([string]$PhpRoot) {
         'pdo_sqlite', 'sqlite3', 'zip', 'sqlsrv', 'pdo_sqlsrv'
     )
 
-    $lines = Get-Content $ini
+    $lines = Read-TextLines -Path $ini
     $out = New-Object System.Collections.Generic.List[string]
     foreach ($line in $lines) {
         # Drop any existing extension_dir lines (commented or not) and any of our managed extension lines.
@@ -497,7 +548,7 @@ function Initialize-PhpIni([string]$PhpRoot) {
     $out.Add('upload_max_filesize = 32M')
     $out.Add('post_max_size = 32M')
 
-    Set-Content -Path $ini -Value $out -Encoding ASCII
+    Write-TextFile -Path $ini -Content (($out -join "`r`n") + "`r`n") -Encoding ([System.Text.Encoding]::ASCII)
 }
 
 function Resolve-AppPoolIdentitySid([string]$AppPoolName) {
@@ -615,7 +666,8 @@ function Backup-InstallSqlite([string]$InstallPath) {
         'operations-tasks.sqlite',
         'accounting-local.sqlite',
         'promotions-local.sqlite',
-        'face-id-local.sqlite'
+        'face-id-local.sqlite',
+        'manufacturing-local.sqlite'
     )
     $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $backupDir = Join-Path $InstallPath "storage\app\sqlite-backups\pre-install-$timestamp"
@@ -644,7 +696,8 @@ function Show-BundledSqliteStatus([string]$InstallPath) {
         @{ key = 'operations-tasks.sqlite'; label = 'Operations tasks' },
         @{ key = 'accounting-local.sqlite'; label = 'Accounting cash & transfers' },
         @{ key = 'promotions-local.sqlite'; label = 'Promotions promoters & schedules' },
-        @{ key = 'face-id-local.sqlite'; label = 'Face ID employees & attendance' }
+        @{ key = 'face-id-local.sqlite'; label = 'Face ID employees & attendance' },
+        @{ key = 'manufacturing-local.sqlite'; label = 'Manufacturing storage' }
     )
 
     Write-Step 'Local SQLite databases'
@@ -676,7 +729,7 @@ function Write-EnvFile(
     $dbPath = $InstallPath -replace '\\', '/'
     $passwordEscaped = $SqlPassword -replace '"', '\"'
     $adminEscaped = $AdminPassword -replace '"', '\"'
-    @"
+    $envBody = @"
 APP_NAME="Reporting"
 APP_ENV=production
 APP_KEY=
@@ -716,7 +769,8 @@ SESSION_LIFETIME=120
 QUEUE_CONNECTION=sync
 CACHE_STORE=file
 FILESYSTEM_DISK=local
-"@ | Set-Content -Path $Path -Encoding UTF8
+"@
+    Write-TextFile -Path $Path -Content $envBody
 }
 
 # --- Main ---
@@ -764,8 +818,17 @@ if (-not [string]::IsNullOrWhiteSpace($ConfigFile)) {
 
 $logDir = Join-Path $InstallPath 'storage\logs'
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
-$installLog = Join-Path $logDir ("install-{0:yyyyMMdd-HHmmss}.log" -f (Get-Date))
-Start-Transcript -Path $installLog -Force | Out-Null
+# Prefer TEMP for transcript: writing under Program Files while Inno Setup / IIS may
+# hold handles can throw "Stream was not readable".
+$installLog = Join-Path $env:TEMP ("ReportingApp-install-{0:yyyyMMdd-HHmmss}.log" -f (Get-Date))
+$script:TranscriptStarted = $false
+try {
+    # Do not pipe Start-Transcript to Out-Null — that commonly throws "Stream was not readable".
+    $null = Start-Transcript -Path $installLog -Force
+    $script:TranscriptStarted = $true
+} catch {
+    Write-Warning "Install log transcript unavailable: $($_.Exception.Message)"
+}
 
 Write-Host ""
 Write-Host "Reporting App - Windows Installer" -ForegroundColor Green
@@ -808,7 +871,8 @@ if (-not $installInPlace) {
         'operations-tasks.sqlite',
         'accounting-local.sqlite',
         'promotions-local.sqlite',
-        'face-id-local.sqlite'
+        'face-id-local.sqlite',
+        'manufacturing-local.sqlite'
     )
     $envPathForUpgrade = Join-Path $InstallPath '.env'
     $isUpgradeCopy = Test-Path $envPathForUpgrade
@@ -831,14 +895,23 @@ if (-not $installInPlace) {
         New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
     }
 
+    $robocopyLog = Join-Path $env:TEMP ("ReportingApp-robocopy-{0:yyyyMMdd-HHmmss}.log" -f (Get-Date))
     $robocopyArgs = @(
         $PackageRoot, $InstallPath,
         '/MIR',
         '/XD', 'node_modules', '.git', 'dist', 'storage\app\sqlite-backups',
         '/XF', '.env', 'sqlite-auto-backup.json', 'pda-auto-sync.json'
-    ) + $sqliteExclude + @('/NFL', '/NDL', '/NJH', '/NJS', '/nc', '/ns', '/np')
+    ) + $sqliteExclude + @(
+        '/NFL', '/NDL', '/NJH', '/NJS', '/nc', '/ns', '/np',
+        '/R:2', '/W:1',
+        "/LOG:$robocopyLog"
+    )
+    # Avoid piping robocopy into Out-Null under Start-Transcript (stream conflicts).
     & robocopy @robocopyArgs | Out-Null
-    if ($LASTEXITCODE -ge 8) { throw "File copy failed (robocopy exit $LASTEXITCODE)" }
+    $roboCode = $LASTEXITCODE
+    if ($roboCode -ge 8) {
+        throw "File copy failed (robocopy exit $roboCode). See log: $robocopyLog"
+    }
 } else {
     Write-Step "Configuring application in place at $InstallPath"
 }
@@ -903,7 +976,7 @@ if ($isUpdateInstall) {
     & $phpExe artisan route:clear
     & $phpExe artisan view:clear
 }
-$envText = if (Test-Path $envPath) { Get-Content $envPath -Raw } else { '' }
+$envText = if (Test-Path $envPath) { Read-TextFile -Path $envPath } else { '' }
 if ($envText -match 'APP_KEY=base64:[A-Za-z0-9+/=]{20,}') {
     Write-Host '  APP_KEY already set - skipping key:generate'
 } else {
@@ -1002,5 +1075,13 @@ Write-Host ""
 if (-not $SkipIis) {
     Write-Host "Open $AppUrl/login in your browser." -ForegroundColor Yellow
 }
-try { Stop-Transcript | Out-Null } catch {}
+if ($script:TranscriptStarted) {
+    try { Stop-Transcript | Out-Null } catch {}
+}
+# Copy transcript into the install folder when possible (best-effort).
+try {
+    if ((Test-Path -LiteralPath $installLog) -and (Test-Path -LiteralPath $logDir)) {
+        Copy-Item -LiteralPath $installLog -Destination (Join-Path $logDir (Split-Path -Leaf $installLog)) -Force -ErrorAction SilentlyContinue
+    }
+} catch {}
 if ($script:PauseOnExit) { Read-Host 'Press Enter to close' | Out-Null }

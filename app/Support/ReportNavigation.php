@@ -42,6 +42,7 @@ final class ReportNavigation
                     ['key' => 'sales-by-item', 'route' => 'reports.sales-by-item.index', 'label' => 'Sales by item', 'title' => 'Category sales split by client price group'],
                     ['key' => 'sales-by-salesman', 'route' => 'reports.sales-by-salesman.index', 'label' => 'By salesman', 'title' => 'Sales by salesman'],
                     ['key' => 'comparison', 'route' => 'reports.comparison.index', 'label' => 'Comparison', 'title' => 'Compare two periods'],
+                    ['key' => 'rankings', 'route' => 'reports.rankings.index', 'label' => 'Rankings', 'title' => 'Top clients, items, salesmen, and growth'],
                     ['key' => 'cities', 'route' => 'reports.cities.index', 'label' => 'Cities', 'title' => 'Sales by city'],
                     ['key' => 'visits', 'route' => 'reports.visits.index', 'label' => 'Visits', 'title' => 'Client visit status'],
                 ],
@@ -57,7 +58,8 @@ final class ReportNavigation
             [
                 'label' => 'Finance',
                 'items' => [
-                    ['key' => 'accounting', 'route' => 'reports.accounting.index', 'label' => 'Accounting', 'title' => 'Daily cash, transfers, and receipt booklets'],
+                    ['key' => 'accounting', 'route' => 'reports.accounting.index', 'label' => 'Receipts', 'title' => 'Receipt booklets'],
+                    ['key' => 'client-balance', 'route' => 'reports.client-balance.index', 'label' => 'Client balance', 'title' => 'Client account balances by salesman (SP_Get_Account_Balance)'],
                     ['key' => 'promotions', 'route' => 'reports.promotions.index', 'label' => 'Promotions', 'title' => 'Promoter schedules and client visit assignments'],
                 ],
             ],
@@ -209,7 +211,17 @@ final class ReportNavigation
     }
 
     /**
-     * @return list<array{label: string, section_label: string, label: string, title?: string}>
+     * Keys that can be assigned on the Users page (includes permission-only grants).
+     *
+     * @return list<string>
+     */
+    public static function assignablePermissionKeys(): array
+    {
+        return array_values(array_unique(array_column(self::permissionMatrix(), 'key')));
+    }
+
+    /**
+     * @return list<array{key: string, section_label: string, label: string, title?: string}>
      */
     public static function permissionMatrix(): array
     {
@@ -255,10 +267,12 @@ final class ReportNavigation
             str_starts_with($routeName, 'reports.invoice-branding') => 'invoice-branding',
             str_starts_with($routeName, 'reports.report-assembly') => 'report-assembly',
             str_starts_with($routeName, 'reports.comparison') => 'comparison',
+            str_starts_with($routeName, 'reports.rankings') => 'rankings',
             str_starts_with($routeName, 'reports.cities') => 'cities',
             str_starts_with($routeName, 'reports.visits') => 'visits',
             str_starts_with($routeName, 'reports.damages') => 'damages',
             str_starts_with($routeName, 'reports.accounting') => 'accounting',
+            str_starts_with($routeName, 'reports.client-balance') => 'client-balance',
             str_starts_with($routeName, 'reports.promotions') => 'promotions',
             str_starts_with($routeName, 'reports.manufacturing') => 'manufacturing',
             str_starts_with($routeName, 'reports.face-id') => 'face-id',
