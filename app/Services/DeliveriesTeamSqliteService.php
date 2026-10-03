@@ -311,6 +311,21 @@ class DeliveriesTeamSqliteService
         );
     }
 
+    public function clearInvoiceAssignment(string $invoiceId): int
+    {
+        $this->ensureSchema();
+
+        $invoiceId = trim($invoiceId);
+        if ($invoiceId === '') {
+            return 0;
+        }
+
+        return DB::connection(self::CONNECTION)->delete(
+            'DELETE FROM '.self::INVOICE_ASSIGNMENTS_TABLE.' WHERE invoice_id = ?',
+            [$invoiceId]
+        );
+    }
+
     /**
      * @return list<string>
      */

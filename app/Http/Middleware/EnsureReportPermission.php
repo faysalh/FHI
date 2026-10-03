@@ -29,7 +29,7 @@ class EnsureReportPermission
 
         $reportKey = ReportNavigation::activeKey($routeName);
 
-        if ($reportKey === 'users' || $reportKey === 'sqlite-backups') {
+        if (in_array($reportKey, ['users', 'sqlite-backups', 'database-sync'], true)) {
             if (! ReportAuthSession::isSuperAdmin()) {
                 abort(403, 'Only administrators can access this settings page.');
             }
@@ -38,6 +38,14 @@ class EnsureReportPermission
         }
 
         if ($reportKey === 'guide') {
+            return $next($request);
+        }
+
+        if ($reportKey === 'face-id') {
+            if (! ReportAuthSession::canAccessAnyFaceId()) {
+                abort(403, 'You do not have access to this report.');
+            }
+
             return $next($request);
         }
 

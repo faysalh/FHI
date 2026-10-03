@@ -44,6 +44,9 @@ class ReportUsersController extends Controller
     {
         $input = $request->validated();
         $reportKeys = is_array($input['report_keys'] ?? null) ? $input['report_keys'] : [];
+        $reportKeys = ReportAuthSession::normalizeReportPermissionKeys(
+            array_values(array_filter(array_map('strval', $reportKeys), static fn (string $k): bool => $k !== ''))
+        );
         $deliveriesAccess = $this->deliveriesAccessFromValidated($input, $reportKeys);
         $storageAccess = $this->storageAccessFromValidated($input, $reportKeys);
 
@@ -75,6 +78,9 @@ class ReportUsersController extends Controller
         $password = trim((string) ($input['password'] ?? ''));
         $password = $password !== '' ? $password : null;
         $reportKeys = is_array($input['report_keys'] ?? null) ? $input['report_keys'] : [];
+        $reportKeys = ReportAuthSession::normalizeReportPermissionKeys(
+            array_values(array_filter(array_map('strval', $reportKeys), static fn (string $k): bool => $k !== ''))
+        );
         $isSuperAdmin = (bool) ($input['is_super_admin'] ?? false);
         $deliveriesAccess = $this->deliveriesAccessFromValidated($input, $reportKeys);
         $storageAccess = $this->storageAccessFromValidated($input, $reportKeys);

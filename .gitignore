@@ -23,6 +23,7 @@
 /storage/app/sqlite-backups/
 /storage/app/sqlite-auto-backup.json
 /vendor
+/school-system/
 _ide_helper.php
 Homestead.json
 Homestead.yaml
