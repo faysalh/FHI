@@ -60,6 +60,7 @@ final class ReportNavigation
                 'items' => [
                     ['key' => 'accounting', 'route' => 'reports.accounting.index', 'label' => 'Receipts', 'title' => 'Receipt booklets'],
                     ['key' => 'client-balance', 'route' => 'reports.client-balance.index', 'label' => 'Client balance', 'title' => 'Client account balances by salesman (SP_Get_Account_Balance)'],
+                    ['key' => 'general-ledger', 'route' => 'reports.general-ledger.index', 'label' => 'General ledger', 'title' => 'Account ledger with opening balance and period movement (AsanMax GeneralLedgerAccount)'],
                     ['key' => 'promotions', 'route' => 'reports.promotions.index', 'label' => 'Promotions', 'title' => 'Promoter schedules and client visit assignments'],
                 ],
             ],
@@ -273,6 +274,7 @@ final class ReportNavigation
             str_starts_with($routeName, 'reports.damages') => 'damages',
             str_starts_with($routeName, 'reports.accounting') => 'accounting',
             str_starts_with($routeName, 'reports.client-balance') => 'client-balance',
+            str_starts_with($routeName, 'reports.general-ledger') => 'general-ledger',
             str_starts_with($routeName, 'reports.promotions') => 'promotions',
             str_starts_with($routeName, 'reports.manufacturing') => 'manufacturing',
             str_starts_with($routeName, 'reports.face-id') => 'face-id',

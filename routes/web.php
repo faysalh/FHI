@@ -6,6 +6,7 @@ use App\Http\Controllers\AdminAuthController;
 use App\Http\Controllers\AccountingController;
 use App\Http\Controllers\CitiesReportController;
 use App\Http\Controllers\ClientBalanceReportController;
+use App\Http\Controllers\GeneralLedgerReportController;
 use App\Http\Controllers\ComparisonAsanReportController;
 use App\Http\Controllers\ComparisonReportController;
 use App\Http\Controllers\DashboardLabController;
@@ -149,6 +150,10 @@ Route::prefix('reports')->middleware(['reports.admin', 'reports.permission'])->g
     Route::get('/client-balance', [ClientBalanceReportController::class, 'index'])->name('reports.client-balance.index');
     Route::get('/client-balance/export/pdf', [ClientBalanceReportController::class, 'exportPdf'])->name('reports.client-balance.export.pdf');
     Route::get('/client-balance/export/csv', [ClientBalanceReportController::class, 'exportCsv'])->name('reports.client-balance.export.csv');
+    Route::get('/general-ledger', [GeneralLedgerReportController::class, 'index'])->name('reports.general-ledger.index');
+    Route::get('/general-ledger/api/accounts', [GeneralLedgerReportController::class, 'apiAccounts'])->name('reports.general-ledger.api.accounts');
+    Route::get('/general-ledger/export/pdf', [GeneralLedgerReportController::class, 'exportPdf'])->name('reports.general-ledger.export.pdf');
+    Route::get('/general-ledger/export/csv', [GeneralLedgerReportController::class, 'exportCsv'])->name('reports.general-ledger.export.csv');
     Route::get('/promotions', [PromotionsController::class, 'index'])->name('reports.promotions.index');
     Route::post('/promotions/promoters', [PromotionsController::class, 'storePromoter'])->name('reports.promotions.promoters.store');
     Route::put('/promotions/promoters/{promoter}', [PromotionsController::class, 'updatePromoter'])->name('reports.promotions.promoters.update');
