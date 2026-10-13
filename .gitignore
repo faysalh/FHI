@@ -20,9 +20,12 @@
 /storage/pail
 /database/damages-local.sqlite
 /database/reports-users.sqlite
+/database/it-work-log.sqlite
+/database/market-study.sqlite
 /storage/app/sqlite-backups/
 /storage/app/sqlite-auto-backup.json
 /vendor
+/school-system/
 _ide_helper.php
 Homestead.json
 Homestead.yaml

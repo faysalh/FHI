@@ -5,7 +5,11 @@
 <header class="page-header">
     <h1>Users</h1>
 </header>
-<p class="hint">Create login accounts and choose which report tabs each user can open. Administrators see every report and can manage users.</p>
+<p class="hint">
+    Create login accounts and choose which report tabs each user can open.
+    Administrators see every report and can manage users.
+    Permission changes apply on the user’s next page load (no reinstall needed); ask them to refresh or open the report again if it was blocked before.
+</p>
 
 @if (session('status'))
     <div class="alert alert--success">{{ session('status') }}</div>
@@ -101,7 +105,9 @@
             @php
                 $userId = (int) ($user->id ?? 0);
                 $isAdmin = (int) ($user->is_super_admin ?? 0) === 1;
-                $userKeys = is_array($user->report_keys ?? null) ? $user->report_keys : [];
+                $userKeys = \App\Support\ReportAuthSession::normalizeReportPermissionKeys(
+                    is_array($user->report_keys ?? null) ? $user->report_keys : []
+                );
             @endphp
             <details class="users-row" @if($loop->first) open @endif>
                 <summary>

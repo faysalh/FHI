@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Requests;
 
+use App\Support\ReportNavigation;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 class ReportUserUpdateRequest extends FormRequest
@@ -59,7 +61,7 @@ class ReportUserUpdateRequest extends FormRequest
         return [
             'is_super_admin' => ['boolean'],
             'report_keys' => ['array'],
-            'report_keys.*' => ['string', 'max:80'],
+            'report_keys.*' => ['string', 'max:80', Rule::in(ReportNavigation::assignablePermissionKeys())],
             'deliveries_can_filter_date' => ['sometimes', 'boolean'],
             'deliveries_can_filter_city' => ['sometimes', 'boolean'],
             'deliveries_can_filter_storage' => ['sometimes', 'boolean'],

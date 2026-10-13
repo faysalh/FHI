@@ -434,14 +434,15 @@ class ReportsUsersSqliteService
      */
     private function syncPermissions(int $userId, array $reportKeys): void
     {
-        $allowed = array_flip(ReportNavigation::allReportKeys());
+        $allowed = array_flip(ReportNavigation::assignablePermissionKeys());
         $normalized = [];
         foreach ($reportKeys as $key) {
             if (! is_string($key)) {
                 continue;
             }
             $key = trim($key);
-            if ($key !== '' && isset($allowed[$key])) {
+            // Keep legacy Face ID grants until login/UI normalization expands them.
+            if ($key === 'face-id' || ($key !== '' && isset($allowed[$key]))) {
                 $normalized[$key] = $key;
             }
         }
