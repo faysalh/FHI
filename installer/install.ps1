@@ -661,26 +661,19 @@ function Enable-FirewallPort([int]$Port, [string]$SiteName) {
 
 function Backup-InstallSqlite([string]$InstallPath) {
     $dbDir = Join-Path $InstallPath 'database'
-    $names = @(
-        'reports-users.sqlite',
-        'deliveries-local.sqlite',
-        'damages-local.sqlite',
-        'operations-tasks.sqlite',
-        'accounting-local.sqlite',
-        'promotions-local.sqlite',
-        'face-id-local.sqlite',
-        'manufacturing-local.sqlite'
-    )
+    if (-not (Test-Path $dbDir)) {
+        return
+    }
+    $files = @(Get-ChildItem -Path $dbDir -Filter '*.sqlite' -File -ErrorAction SilentlyContinue)
+    if ($files.Count -eq 0) {
+        return
+    }
     $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $backupDir = Join-Path $InstallPath "storage\app\sqlite-backups\pre-install-$timestamp"
+    New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
     $copied = 0
-    foreach ($name in $names) {
-        $src = Join-Path $dbDir $name
-        if (-not (Test-Path $src)) { continue }
-        if (-not (Test-Path $backupDir)) {
-            New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
-        }
-        Copy-Item $src (Join-Path $backupDir $name) -Force
+    foreach ($file in $files) {
+        Copy-Item $file.FullName (Join-Path $backupDir $file.Name) -Force
         $copied++
     }
     if ($copied -gt 0) {
@@ -699,7 +692,9 @@ function Show-BundledSqliteStatus([string]$InstallPath) {
         @{ key = 'accounting-local.sqlite'; label = 'Accounting cash & transfers' },
         @{ key = 'promotions-local.sqlite'; label = 'Promotions promoters & schedules' },
         @{ key = 'face-id-local.sqlite'; label = 'Face ID employees & attendance' },
-        @{ key = 'manufacturing-local.sqlite'; label = 'Manufacturing storage' }
+        @{ key = 'manufacturing-local.sqlite'; label = 'Manufacturing storage' },
+        @{ key = 'it-work-log.sqlite'; label = 'IT work log' },
+        @{ key = 'market-study.sqlite'; label = 'Market study' }
     )
 
     Write-Step 'Local SQLite databases'
@@ -868,16 +863,6 @@ if ($SkipOdbc) {
 }
 
 if (-not $installInPlace) {
-    $sqliteExclude = @(
-        'reports-users.sqlite',
-        'deliveries-local.sqlite',
-        'damages-local.sqlite',
-        'operations-tasks.sqlite',
-        'accounting-local.sqlite',
-        'promotions-local.sqlite',
-        'face-id-local.sqlite',
-        'manufacturing-local.sqlite'
-    )
     $envPathForUpgrade = Join-Path $InstallPath '.env'
     $isUpgradeCopy = Test-Path $envPathForUpgrade
 
@@ -900,12 +885,12 @@ if (-not $installInPlace) {
     }
 
     $robocopyLog = Join-Path $env:TEMP ("ReportingApp-robocopy-{0:yyyyMMdd-HHmmss}.log" -f (Get-Date))
+    # /XF *.sqlite keeps every local SQLite DB (including it-work-log / market-study) safe under /MIR.
     $robocopyArgs = @(
         $PackageRoot, $InstallPath,
         '/MIR',
         '/XD', 'node_modules', '.git', 'dist', 'storage\app\sqlite-backups',
-        '/XF', '.env', 'sqlite-auto-backup.json', 'pda-auto-sync.json'
-    ) + $sqliteExclude + @(
+        '/XF', '.env', 'sqlite-auto-backup.json', 'pda-auto-sync.json', '*.sqlite',
         '/NFL', '/NDL', '/NJH', '/NJS', '/nc', '/ns', '/np',
         '/R:2', '/W:1',
         "/LOG:$robocopyLog"

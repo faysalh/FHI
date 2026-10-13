@@ -3,6 +3,7 @@
 
 @section('content')
 @php
+    $tab = $tab ?? 'log';
     $todayPrice = $insights['today_price'] ?? null;
     $rangeAvg = $insights['range_average'] ?? null;
     $rangeCount = (int) ($insights['range_count'] ?? 0);
@@ -11,13 +12,30 @@
     if ($deltaPct !== null) {
         $deltaClass = $deltaPct > 0.05 ? 'lab-kpi__delta--up' : ($deltaPct < -0.05 ? 'lab-kpi__delta--down' : 'lab-kpi__delta--flat');
     }
+    $tabQuery = array_filter([
+        'market' => $filters['market'] ?? '',
+        'item' => $filters['item'] ?? '',
+        'brand' => $filters['brand'] ?? '',
+        'date_from' => $filters['date_from'] ?? '',
+        'date_to' => $filters['date_to'] ?? '',
+        'q' => $filters['q'] ?? '',
+    ], static fn ($v) => $v !== '');
 @endphp
 <header class="page-header">
     <h1>Market study</h1>
 </header>
 <p class="hint">
-    Log market prices per KG by market, item, and brand. Shared across everyone with access — use filters and the chart to compare today against a selected range.
+    Log market prices per KG by market, item, and brand. Shared across everyone with access — use the Price log tab to enter data, and Insights &amp; chart for today’s price and range averages.
 </p>
+
+@if ($canView || $canAdd)
+<div class="subtabs" role="tablist" aria-label="Market study sections">
+    <a href="{{ route('reports.market-study.index', array_merge($tabQuery, ['tab' => 'log'])) }}" class="{{ $tab === 'log' ? 'active' : '' }}">Price log</a>
+    @if ($canView)
+        <a href="{{ route('reports.market-study.index', array_merge($tabQuery, ['tab' => 'insights'])) }}" class="{{ $tab === 'insights' ? 'active' : '' }}">Insights &amp; chart</a>
+    @endif
+</div>
+@endif
 
 @if (session('status'))
     <div class="alert alert--success">{{ session('status') }}</div>
@@ -35,7 +53,7 @@
     </div>
 @endif
 
-@if ($canAdd)
+@if ($tab === 'log' && $canAdd)
 <section class="tasks-card market-study-card">
     <h2 class="tasks-card__title">Log market price</h2>
     <form method="POST" action="{{ route('reports.market-study.store') }}" class="tasks-form-add" id="market-study-add-form" autocomplete="off">
@@ -80,6 +98,7 @@
     </div>
 @else
 <form method="GET" action="{{ route('reports.market-study.index') }}" id="market-study-filter-form" class="tasks-filter-form">
+    <input type="hidden" name="tab" value="{{ $tab }}">
     <details class="filters-panel" open>
         <summary>Filter &amp; export</summary>
         <div class="filters-body">
@@ -127,7 +146,7 @@
             @include('reports.partials.quick-date-buttons')
             <div class="filters-actions">
                 @include('reports.partials.icon-button', ['action' => 'apply', 'label' => 'Apply'])
-                @include('reports.partials.filters-reset-link', ['route' => 'reports.market-study.index'])
+                @include('reports.partials.filters-reset-link', ['route' => 'reports.market-study.index', 'params' => ['tab' => $tab]])
                 <span class="muted">Export:</span>
                 <a href="#" class="market-study-export-link export-link" data-export-base="{{ route('reports.market-study.export.csv') }}">CSV</a>
                 <a href="#" class="market-study-export-link export-link" data-export-base="{{ route('reports.market-study.export.pdf') }}">PDF</a>
@@ -136,6 +155,7 @@
     </details>
 </form>
 
+@if ($tab === 'insights')
 <section class="tasks-card market-study-card">
     <h2 class="tasks-card__title">Price insights</h2>
     <div class="lab-kpis market-study-kpis">
@@ -205,7 +225,7 @@
         <p id="market-study-chart-empty" class="muted" @if (($chart['labels'] ?? []) !== []) hidden @endif>No price points in this range.</p>
     </div>
 </section>
-
+@else
 <section class="tasks-card market-study-card">
     <h2 class="tasks-card__title">Price log ({{ count($entries) }})</h2>
     @if ($entries === [])
@@ -240,6 +260,7 @@
                                 <input type="hidden" name="date_from" value="{{ $filters['date_from'] ?? '' }}">
                                 <input type="hidden" name="date_to" value="{{ $filters['date_to'] ?? '' }}">
                                 <input type="hidden" name="q" value="{{ $filters['q'] ?? '' }}">
+                                <input type="hidden" name="tab" value="log">
                                 <input type="date" name="logged_on" value="{{ $entry->logged_on }}" required aria-label="Logged on">
                         </td>
                         <td>
@@ -270,6 +291,7 @@
                                     <input type="hidden" name="date_from" value="{{ $filters['date_from'] ?? '' }}">
                                     <input type="hidden" name="date_to" value="{{ $filters['date_to'] ?? '' }}">
                                     <input type="hidden" name="q" value="{{ $filters['q'] ?? '' }}">
+                                    <input type="hidden" name="tab" value="log">
                                     @include('reports.partials.icon-button', ['action' => 'delete', 'label' => 'Delete'])
                                 </form>
                             @endif
@@ -294,6 +316,7 @@
                                     <input type="hidden" name="date_from" value="{{ $filters['date_from'] ?? '' }}">
                                     <input type="hidden" name="date_to" value="{{ $filters['date_to'] ?? '' }}">
                                     <input type="hidden" name="q" value="{{ $filters['q'] ?? '' }}">
+                                    <input type="hidden" name="tab" value="log">
                                     @include('reports.partials.icon-button', ['action' => 'delete', 'label' => 'Delete'])
                                 </form>
                             </td>
@@ -305,6 +328,7 @@
         </table>
     @endif
 </section>
+@endif
 @endif
 
 <datalist id="market-study-market-options">
@@ -370,6 +394,11 @@
 </style>
 
 @if ($canView)
+@include('reports.partials.quick-date-buttons-script', ['formId' => 'market-study-filter-form'])
+@include('reports.partials.export-from-form-script', ['formId' => 'market-study-filter-form', 'linkClass' => 'market-study-export-link'])
+@endif
+
+@if ($canView && $tab === 'insights')
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
 <script>
 (function () {
@@ -432,11 +461,9 @@
     });
 })();
 </script>
-@include('reports.partials.quick-date-buttons-script', ['formId' => 'market-study-filter-form'])
-@include('reports.partials.export-from-form-script', ['formId' => 'market-study-filter-form', 'linkClass' => 'market-study-export-link'])
 @endif
 
-@if ($canAdd)
+@if ($tab === 'log' && $canAdd)
 <script>
 (function () {
     var itemInput = document.getElementById('add_item_name');

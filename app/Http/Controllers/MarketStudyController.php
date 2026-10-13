@@ -37,6 +37,7 @@ class MarketStudyController extends Controller
         $canDelete = ReportAuthSession::canDeleteMarketStudy();
 
         $filters = $this->filtersFromRequest($request);
+        $tab = $this->tabFromRequest($request);
         $this->marketStudy->ensureReady();
 
         $entries = [];
@@ -53,17 +54,21 @@ class MarketStudyController extends Controller
         $brandOptions = [];
 
         if ($canView) {
-            $entries = $this->marketStudy->listEntries($filters);
-            $insights = $this->marketStudy->insightStats($filters);
-            $chart = $this->marketStudy->chartSeries($filters);
             $marketOptions = $this->marketStudy->distinctColumn('market_name');
             $itemOptions = $this->marketStudy->distinctColumn('item_name');
             $brandOptions = $this->marketStudy->distinctColumn('brand');
+            if ($tab === 'insights') {
+                $insights = $this->marketStudy->insightStats($filters);
+                $chart = $this->marketStudy->chartSeries($filters);
+            } else {
+                $entries = $this->marketStudy->listEntries($filters);
+            }
         }
 
         return view('reports.market-study.index', [
             'entries' => $entries,
             'filters' => $filters,
+            'tab' => $tab,
             'insights' => $insights,
             'chart' => $chart,
             'marketOptions' => $marketOptions,
@@ -116,7 +121,7 @@ class MarketStudyController extends Controller
         );
 
         return redirect()
-            ->route('reports.market-study.index')
+            ->route('reports.market-study.index', ['tab' => 'log'])
             ->with('status', 'Market price logged.');
     }
 
@@ -132,6 +137,8 @@ class MarketStudyController extends Controller
         }
 
         $data = $this->validatedEntry($request);
+        $redirectParams = $this->indexQueryParams($request, 'log');
+
         if (! $this->marketStudy->updateEntry(
             $entry,
             $data['market_name'],
@@ -143,12 +150,12 @@ class MarketStudyController extends Controller
             $userId
         )) {
             return redirect()
-                ->route('reports.market-study.index', $this->filtersFromRequest($request))
+                ->route('reports.market-study.index', $redirectParams)
                 ->with('error', 'Could not update that market price entry.');
         }
 
         return redirect()
-            ->route('reports.market-study.index', $this->filtersFromRequest($request))
+            ->route('reports.market-study.index', $redirectParams)
             ->with('status', 'Market price entry updated.');
     }
 
@@ -162,14 +169,16 @@ class MarketStudyController extends Controller
             abort(403, 'You do not have permission to delete market study entries.');
         }
 
+        $redirectParams = $this->indexQueryParams($request, 'log');
+
         if (! $this->marketStudy->deleteEntry($entry)) {
             return redirect()
-                ->route('reports.market-study.index', $this->filtersFromRequest($request))
+                ->route('reports.market-study.index', $redirectParams)
                 ->with('error', 'Could not delete that market price entry.');
         }
 
         return redirect()
-            ->route('reports.market-study.index', $this->filtersFromRequest($request))
+            ->route('reports.market-study.index', $redirectParams)
             ->with('status', 'Market price entry deleted.');
     }
 
@@ -297,6 +306,25 @@ class MarketStudyController extends Controller
             $dateTo,
             (string) $request->input('q', $request->query('q', ''))
         );
+    }
+
+    private function tabFromRequest(Request $request): string
+    {
+        $tab = trim((string) $request->input('tab', $request->query('tab', 'log')));
+
+        return in_array($tab, ['log', 'insights'], true) ? $tab : 'log';
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function indexQueryParams(Request $request, ?string $forceTab = null): array
+    {
+        $filters = $this->filtersFromRequest($request);
+        $params = array_filter($filters, static fn (string $value): bool => $value !== '');
+        $params['tab'] = $forceTab ?? $this->tabFromRequest($request);
+
+        return $params;
     }
 
     private function requireUserId(): ?int
