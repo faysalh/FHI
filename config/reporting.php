@@ -341,6 +341,10 @@ return [
             'label' => 'IT work log',
             'connection' => 'it_work_log_sqlite',
         ],
+        'market_study' => [
+            'label' => 'Market study',
+            'connection' => 'market_study_sqlite',
+        ],
     ],
 
 ];

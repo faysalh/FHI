@@ -100,6 +100,7 @@ $sqliteKeys = @(
     @{ Key = 'DAMAGES_SQLITE_DATABASE'; Label = 'Damages' },
     @{ Key = 'OPERATIONS_TASKS_SQLITE_DATABASE'; Label = 'Tasks' },
     @{ Key = 'IT_WORK_LOG_SQLITE_DATABASE'; Label = 'IT work log' },
+    @{ Key = 'MARKET_STUDY_SQLITE_DATABASE'; Label = 'Market study' },
     @{ Key = 'ACCOUNTING_SQLITE_DATABASE'; Label = 'Accounting' },
     @{ Key = 'PROMOTIONS_SQLITE_DATABASE'; Label = 'Promotions' },
     @{ Key = 'FACE_ID_SQLITE_DATABASE'; Label = 'Face ID' },

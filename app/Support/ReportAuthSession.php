@@ -76,6 +76,54 @@ final class ReportAuthSession
     /**
      * @return list<string>
      */
+    public static function marketStudyPermissionKeys(): array
+    {
+        return [
+            'market-study-view',
+            'market-study-add',
+            'market-study-edit',
+            'market-study-delete',
+        ];
+    }
+
+    public static function canAccessAnyMarketStudy(): bool
+    {
+        if (self::isSuperAdmin()) {
+            return true;
+        }
+
+        foreach (self::marketStudyPermissionKeys() as $key) {
+            if (self::canAccessReport($key)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static function canViewMarketStudy(): bool
+    {
+        return self::isSuperAdmin() || self::canAccessReport('market-study-view');
+    }
+
+    public static function canAddMarketStudy(): bool
+    {
+        return self::isSuperAdmin() || self::canAccessReport('market-study-add');
+    }
+
+    public static function canEditMarketStudy(): bool
+    {
+        return self::isSuperAdmin() || self::canAccessReport('market-study-edit');
+    }
+
+    public static function canDeleteMarketStudy(): bool
+    {
+        return self::isSuperAdmin() || self::canAccessReport('market-study-delete');
+    }
+
+    /**
+     * @return list<string>
+     */
     public static function faceIdTabKeys(): array
     {
         return ['face-id-employees', 'face-id-logs', 'face-id-kiosk'];
