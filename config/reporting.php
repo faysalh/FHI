@@ -337,6 +337,10 @@ return [
             'label' => 'Manufacturing storage (items, purchases, exports)',
             'connection' => 'manufacturing_sqlite',
         ],
+        'it_work_log' => [
+            'label' => 'IT work log',
+            'connection' => 'it_work_log_sqlite',
+        ],
     ],
 
 ];

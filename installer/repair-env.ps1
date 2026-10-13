@@ -32,6 +32,7 @@ function Ensure-EnvSqliteKeysLocal([string]$EnvPath, [string]$Root) {
         'PROMOTIONS_SQLITE_DATABASE' = "$dbPath/database/promotions-local.sqlite"
         'FACE_ID_SQLITE_DATABASE'    = "$dbPath/database/face-id-local.sqlite"
         'MANUFACTURING_SQLITE_DATABASE' = "$dbPath/database/manufacturing-local.sqlite"
+        'IT_WORK_LOG_SQLITE_DATABASE' = "$dbPath/database/it-work-log.sqlite"
     }
     $added = @()
     $lines = @(Get-Content $EnvPath -ErrorAction SilentlyContinue)

@@ -83,6 +83,7 @@ final class ReportNavigation
                     ['key' => 'deliveries', 'route' => 'reports.deliveries.index', 'label' => 'Deliveries', 'title' => 'Delivery status and teams'],
                     ['key' => 'invoices', 'route' => 'reports.invoices.index', 'label' => 'Invoices', 'title' => 'Invoice search and details'],
                     ['key' => 'tasks', 'route' => 'reports.tasks.index', 'label' => 'Tasks', 'title' => 'Task notes and invoice-day reminders'],
+                    ['key' => 'it-work-log', 'route' => 'reports.it-work-log.index', 'label' => 'IT Work', 'title' => 'Personal IT work start/finish log'],
                     ['key' => 'damages', 'route' => 'reports.damages.index', 'label' => 'Damages', 'title' => 'Damaged goods entries'],
                     [
                         'key' => 'face-id',
@@ -263,6 +264,7 @@ final class ReportNavigation
             str_starts_with($routeName, 'reports.deliveries') => 'deliveries',
             str_starts_with($routeName, 'reports.invoices') => 'invoices',
             str_starts_with($routeName, 'reports.tasks') => 'tasks',
+            str_starts_with($routeName, 'reports.it-work-log') => 'it-work-log',
             str_starts_with($routeName, 'reports.holidays') => 'holidays',
             str_starts_with($routeName, 'reports.governorates') => 'governorates',
             str_starts_with($routeName, 'reports.invoice-branding') => 'invoice-branding',

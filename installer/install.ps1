@@ -170,6 +170,7 @@ function Ensure-EnvSqliteKeys([string]$EnvPath, [string]$InstallPath) {
         'PROMOTIONS_SQLITE_DATABASE' = "$dbPath/database/promotions-local.sqlite"
         'FACE_ID_SQLITE_DATABASE'    = "$dbPath/database/face-id-local.sqlite"
         'MANUFACTURING_SQLITE_DATABASE' = "$dbPath/database/manufacturing-local.sqlite"
+        'IT_WORK_LOG_SQLITE_DATABASE' = "$dbPath/database/it-work-log.sqlite"
     }
     $added = @()
     $lines = @(Read-TextLines -Path $EnvPath)
@@ -753,6 +754,7 @@ DELIVERIES_SQLITE_DATABASE="$dbPath/database/deliveries-local.sqlite"
 DAMAGES_SQLITE_DATABASE="$dbPath/database/damages-local.sqlite"
 REPORTS_USERS_SQLITE_DATABASE="$dbPath/database/reports-users.sqlite"
 OPERATIONS_TASKS_SQLITE_DATABASE="$dbPath/database/operations-tasks.sqlite"
+IT_WORK_LOG_SQLITE_DATABASE="$dbPath/database/it-work-log.sqlite"
 ACCOUNTING_SQLITE_DATABASE="$dbPath/database/accounting-local.sqlite"
 PROMOTIONS_SQLITE_DATABASE="$dbPath/database/promotions-local.sqlite"
 FACE_ID_SQLITE_DATABASE="$dbPath/database/face-id-local.sqlite"

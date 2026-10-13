@@ -140,6 +140,18 @@ return [
             'transaction_mode' => 'DEFERRED',
         ],
 
+        'it_work_log_sqlite' => [
+            'driver' => 'sqlite',
+            'url' => null,
+            'database' => env('IT_WORK_LOG_SQLITE_DATABASE', database_path('it-work-log.sqlite')),
+            'prefix' => '',
+            'foreign_key_constraints' => true,
+            'busy_timeout' => null,
+            'journal_mode' => null,
+            'synchronous' => null,
+            'transaction_mode' => 'DEFERRED',
+        ],
+
         'mysql' => [
             'driver' => 'mysql',
             'url' => env('DB_URL'),
