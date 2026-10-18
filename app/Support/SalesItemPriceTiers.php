@@ -39,6 +39,23 @@ final class SalesItemPriceTiers
     }
 
     /**
+     * Account fld_price_group is stored as 0–4. Item columns fld_p1–fld_p5 are 1–5.
+     * 0 is وكيل, 2 is ماركيت, 4 is كي.
+     */
+    public static function columnForAccountGroup(mixed $accountGroup): int
+    {
+        $raw = (int) $accountGroup;
+        if ($raw < 0) {
+            return 1;
+        }
+        if ($raw > 4) {
+            return 5;
+        }
+
+        return $raw + 1;
+    }
+
+    /**
      * @param  list<int>  $selected  Normalized tier indexes 1–5; empty means all tiers.
      * @return list<array{tier: int, label: string}>
      */

@@ -121,6 +121,28 @@ final class ReportNavigation
             [
                 'label' => 'Operations',
                 'items' => [
+                    ['key' => 'pda', 'route' => 'reports.pda.index', 'label' => 'PDA', 'title' => 'Salesman customers, visits, and vouchers on the phone'],
+                    [
+                        'key' => 'pda-locations',
+                        'route' => 'reports.pda.locations',
+                        'label' => 'PDA locations',
+                        'title' => 'View GPS points saved for every salesman',
+                        'permission_only' => true,
+                    ],
+                    [
+                        'key' => 'pda-item-detail',
+                        'route' => 'reports.pda.items.show',
+                        'label' => 'PDA item detail',
+                        'title' => 'Open an item to see every price tier and stock in every store',
+                        'permission_only' => true,
+                    ],
+                    [
+                        'key' => 'pda-zero-stock',
+                        'route' => 'reports.pda.index',
+                        'label' => 'PDA sell zero stock',
+                        'title' => 'Allow a sale line when the item balance is zero',
+                        'permission_only' => true,
+                    ],
                     ['key' => 'deliveries', 'route' => 'reports.deliveries.index', 'label' => 'Deliveries', 'title' => 'Delivery status and teams'],
                     ['key' => 'invoices', 'route' => 'reports.invoices.index', 'label' => 'Invoices', 'title' => 'Invoice search and details'],
                     ['key' => 'tasks', 'route' => 'reports.tasks.index', 'label' => 'Tasks', 'title' => 'Task notes and invoice-day reminders'],
@@ -302,6 +324,9 @@ final class ReportNavigation
             str_starts_with($routeName, 'reports.storage-quantity') => 'storage-quantity',
             str_starts_with($routeName, 'reports.storage-items') => 'storage-items',
             str_starts_with($routeName, 'reports.storage') => 'storage',
+            str_starts_with($routeName, 'reports.pda.locations') => 'pda-locations',
+            $routeName === 'reports.pda.items.show' => 'pda-item-detail',
+            str_starts_with($routeName, 'reports.pda') => 'pda',
             str_starts_with($routeName, 'reports.deliveries') => 'deliveries',
             str_starts_with($routeName, 'reports.invoices') => 'invoices',
             str_starts_with($routeName, 'reports.tasks') => 'tasks',

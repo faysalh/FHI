@@ -34,6 +34,7 @@ class ReportUserUpdateRequest extends FormRequest
             'deliveries_default_storage' => trim((string) $this->input('deliveries_default_storage', '')),
             'storage_can_filter_storage' => $this->boolean('storage_can_filter_storage'),
             'storage_allowed_storages' => $this->normalizeStorageAllowedInput(),
+            'pda_salesman_user_id' => $this->nullableSalesmanId(),
         ]);
     }
 
@@ -51,6 +52,13 @@ class ReportUserUpdateRequest extends FormRequest
             static fn ($v): string => trim((string) $v),
             $raw
         ), static fn (string $s): bool => $s !== '')));
+    }
+
+    private function nullableSalesmanId(): ?string
+    {
+        $value = strtoupper(trim((string) $this->input('pda_salesman_user_id', '')));
+
+        return $value === '' ? null : $value;
     }
 
     /**
@@ -74,6 +82,7 @@ class ReportUserUpdateRequest extends FormRequest
             'storage_allowed_storages.*' => ['string', 'max:500'],
             'password' => ['nullable', 'string', 'min:6', 'max:200'],
             'password_confirmation' => ['nullable', 'same:password'],
+            'pda_salesman_user_id' => ['nullable', 'uuid'],
         ];
     }
 

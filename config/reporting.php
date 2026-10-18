@@ -345,6 +345,10 @@ return [
             'label' => 'Market study',
             'connection' => 'market_study_sqlite',
         ],
+        'pda_locations' => [
+            'label' => 'PDA voucher locations',
+            'connection' => 'pda_locations_sqlite',
+        ],
     ],
 
 ];

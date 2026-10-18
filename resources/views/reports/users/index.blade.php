@@ -48,6 +48,11 @@
                 </label>
             </div>
         </div>
+        @include('reports.users.partials.pda-salesman-field', [
+            'fieldId' => 'new_pda_salesman',
+            'selected' => old('pda_salesman_user_id', ''),
+            'pdaSalesmen' => $pdaSalesmen ?? [],
+        ])
 
         <fieldset class="users-permissions" data-permissions-fieldset>
             <legend>Report access</legend>
@@ -120,6 +125,9 @@
                     @if ($userId === $currentUserId)
                         <span class="muted">(you)</span>
                     @endif
+                    @if (!empty($user->pda_salesman_name))
+                        <span class="muted">· PDA {{ $user->pda_salesman_name }}</span>
+                    @endif
                 </summary>
                 <div class="users-row__body">
                     <form method="POST" action="{{ route('reports.users.update', $userId) }}">
@@ -129,6 +137,11 @@
                             <input type="checkbox" name="is_super_admin" value="1" @checked($isAdmin) data-toggle-admin>
                             Administrator (full access)
                         </label>
+                        @include('reports.users.partials.pda-salesman-field', [
+                            'fieldId' => 'pda-salesman-'.$userId,
+                            'selected' => (string) ($user->pda_salesman_user_id ?? ''),
+                            'pdaSalesmen' => $pdaSalesmen ?? [],
+                        ])
 
                         <fieldset class="users-permissions" data-permissions-fieldset @if($isAdmin) hidden @endif>
                             <legend>Report access</legend>

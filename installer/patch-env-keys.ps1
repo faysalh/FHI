@@ -42,6 +42,7 @@ $required = [ordered]@{
     'MANUFACTURING_SQLITE_DATABASE' = "$dbPath/database/manufacturing-local.sqlite"
     'IT_WORK_LOG_SQLITE_DATABASE' = "$dbPath/database/it-work-log.sqlite"
     'MARKET_STUDY_SQLITE_DATABASE' = "$dbPath/database/market-study.sqlite"
+    'PDA_LOCATIONS_SQLITE_DATABASE' = "$dbPath/database/pda-locations.sqlite"
 }
 
 $lines = @(Get-Content $EnvPath -ErrorAction SilentlyContinue)

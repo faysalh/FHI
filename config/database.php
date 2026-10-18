@@ -164,6 +164,18 @@ return [
             'transaction_mode' => 'DEFERRED',
         ],
 
+        'pda_locations_sqlite' => [
+            'driver' => 'sqlite',
+            'url' => null,
+            'database' => env('PDA_LOCATIONS_SQLITE_DATABASE', database_path('pda-locations.sqlite')),
+            'prefix' => '',
+            'foreign_key_constraints' => true,
+            'busy_timeout' => null,
+            'journal_mode' => null,
+            'synchronous' => null,
+            'transaction_mode' => 'DEFERRED',
+        ],
+
         'mysql' => [
             'driver' => 'mysql',
             'url' => env('DB_URL'),

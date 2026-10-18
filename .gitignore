@@ -23,6 +23,7 @@
 /database/it-work-log.sqlite
 /database/market-study.sqlite
 /storage/app/sqlite-backups/
+/storage/app/pda-item-thumbs/
 /storage/app/sqlite-auto-backup.json
 /vendor
 /school-system/

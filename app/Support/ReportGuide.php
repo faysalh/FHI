@@ -155,6 +155,20 @@ final class ReportGuide
                 'label' => 'Operations',
                 'topics' => [
                     self::topic(
+                        'pda',
+                        'PDA',
+                        'Phone workspace for a salesman: customers, prices, visits, and vouchers.',
+                        [
+                            'An administrator links the login to one Asan salesman on Users.',
+                            'Start a visit, then save a sale, order, return, or receipt. The phone must allow location.',
+                            'Vouchers stay unposted until Settings → PDA sync runs.',
+                            'A location is saved for every salesman when a voucher is saved. Only an administrator, or a user granted PDA locations, can open that list.',
+                            'The item list shows one price. Opening an item for every price tier and stock in every store needs the PDA item detail permission.',
+                            'A sale cannot add an item whose balance is zero unless the user is granted PDA sell zero stock. Orders and returns can still use that item.',
+                        ],
+                        'reports.pda.index'
+                    ),
+                    self::topic(
                         'deliveries',
                         'Deliveries',
                         'Delivery status per invoice, driver/companion teams, and batch PDF/Excel assignment.',
