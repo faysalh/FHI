@@ -43,7 +43,7 @@ use App\Http\Controllers\VisitsReportController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
-    return view('welcome');
+    return view('landing');
 });
 
 Route::get('/login', [AdminAuthController::class, 'showLoginForm'])->name('login');
