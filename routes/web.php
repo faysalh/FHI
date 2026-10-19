@@ -136,6 +136,7 @@ Route::prefix('reports')->middleware(['reports.admin', 'reports.permission'])->g
     Route::get('/invoices/export/list-csv', [InvoicesReportController::class, 'exportListCsv'])->name('reports.invoices.export.list-csv');
     Route::get('/invoices/export/list-pdf', [InvoicesReportController::class, 'exportListPdf'])->name('reports.invoices.export.list-pdf');
     Route::get('/invoice-branding', [InvoiceBrandingSettingsController::class, 'index'])->name('reports.invoice-branding.index');
+    Route::get('/invoice-branding/logo', [InvoiceBrandingSettingsController::class, 'logo'])->name('reports.invoice-branding.logo');
     Route::post('/invoice-branding', [InvoiceBrandingSettingsController::class, 'save'])->name('reports.invoice-branding.save');
     Route::get('/holidays', [NonWorkingHolidaysSettingsController::class, 'index'])->name('reports.holidays.index');
     Route::post('/holidays', [NonWorkingHolidaysSettingsController::class, 'store'])->name('reports.holidays.store');

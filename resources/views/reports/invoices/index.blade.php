@@ -134,8 +134,10 @@
                     <td>
                         <div class="action-links">
                             @include('reports.partials.icon-button', ['action' => 'view', 'label' => 'View invoice', 'type' => 'button', 'class' => 'details-btn'])
-                            <a class="invoice-action-link" href="{{ route('reports.invoices.print', $invoiceActionParams) }}" target="_blank" rel="noopener" title="Print invoice">Print</a>
-                            <a class="invoice-action-link" href="{{ route('reports.invoices.export.pdf', $invoiceActionParams) }}" title="Export invoice PDF">PDF</a>
+                            <span class="invoice-action-row">
+                                <a class="invoice-action-link" href="{{ route('reports.invoices.print', $invoiceActionParams) }}" target="_blank" rel="noopener" title="Print invoice">Print</a>
+                                <a class="invoice-action-link" href="{{ route('reports.invoices.export.pdf', $invoiceActionParams) }}" title="Export invoice PDF">PDF</a>
+                            </span>
                         </div>
                     </td>
                 </tr>
@@ -217,14 +219,24 @@
     }
     function buildItemsTable(rows) {
         var html = '<table class="mini-table"><thead><tr><th>Item</th><th class="num">Quantity (pcs)</th><th class="num">Amount (IQD)</th></tr></thead><tbody>';
+        var quantityTotal = 0;
+        var amountTotal = 0;
         if (!rows.length) {
             html += '<tr><td colspan="3" class="meta">No item rows.</td></tr>';
         } else {
             rows.forEach(function (r) {
-                html += '<tr><td>' + esc(r.item_name) + '</td><td class="num">' + fmt(r.quantity) + '</td><td class="num">' + fmt(r.amount) + '</td></tr>';
+                var quantity = Number(r.quantity) || 0;
+                var amount = Number(r.amount) || 0;
+                quantityTotal += quantity;
+                amountTotal += amount;
+                html += '<tr><td>' + esc(r.item_name) + '</td><td class="num">' + fmt(quantity) + '</td><td class="num">' + fmt(amount) + '</td></tr>';
             });
         }
-        html += '</tbody></table>';
+        html += '</tbody>';
+        if (rows.length) {
+            html += '<tfoot><tr class="grand-total"><td>Total</td><td class="num">' + fmt(quantityTotal) + '</td><td class="num">' + fmt(amountTotal) + '</td></tr></tfoot>';
+        }
+        html += '</table>';
         return html;
     }
 
@@ -307,9 +319,10 @@ table { width: 100%; border-collapse: collapse; font-size: 14px; }
         th { background: #f9fafb; }
         .num { text-align: right; font-variant-numeric: tabular-nums; }
         .meta { color: #64748b; font-size: 12px; }
-        .action-links { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+        .action-links { display: flex; flex-direction: row; flex-wrap: nowrap; gap: 6px; align-items: center; }
+        .invoice-action-row { display: flex; gap: 6px; flex-wrap: nowrap; align-items: center; }
         .action-links a {
-            background: #1d4ed8; color: #fff; border-radius: 6px; padding: 6px 10px; text-decoration: none; font-size: 12px;
+            background: #1d4ed8; color: #fff; border-radius: 6px; padding: 6px 10px; text-decoration: none; font-size: 12px; white-space: nowrap;
         }
         .select-col { width: 42px; text-align: center; }
         .invoice-select { width: 16px; height: 16px; cursor: pointer; }

@@ -103,7 +103,8 @@
         body { font-family: 'InvoiceTajawal', 'InvoiceNotoSansArabic', 'InvoiceNotoSans', "Noto Sans Arabic", "Noto Sans", Arial, sans-serif; margin: 14px; color: #111; direction: {{ $invoiceDirection }}; text-align: {{ $isRtlInvoice ? 'right' : 'left' }}; unicode-bidi: embed; font-size: 14px; }
         * { font-family: 'InvoiceTajawal', 'InvoiceNotoSansArabic', 'InvoiceNotoSans', "Noto Sans Arabic", "Noto Sans", Arial, sans-serif; }
         .print-btn { margin-bottom: 8px; padding: 8px 12px; border: 0; border-radius: 6px; background: #1d4ed8; color: #fff; cursor: pointer; }
-        .page-number { position: fixed; top: 6px; left: 10px; font-size: 10px; color: #4b5563; }
+        .page-number { position: fixed; top: 6px; left: 10px; font-size: 11px; color: #111; }
+        .page-number::after { content: counter(page) "/" counter(pages); }
         .top { width: 100%; margin-bottom: 3px; direction: ltr; table-layout: fixed; }
         .top td { vertical-align: top; }
         .company { font-size: 20px; font-weight: 700; text-align: center; line-height: 1.05; }
@@ -149,16 +150,16 @@
         .desc-box .desc-content { height: 72px; vertical-align: top; white-space: pre-wrap; text-align: right; direction: {{ $isRtlInvoice ? 'rtl' : 'ltr' }}; unicode-bidi: plaintext; }
         .desc-box .desc-footer { font-size: 10px; line-height: 1.3; text-align: right; direction: {{ $isRtlInvoice ? 'rtl' : 'ltr' }}; unicode-bidi: plaintext; }
         .note { margin-top: 8px; font-size: 12px; color: #333; }
-        .footer-meta { border-collapse: collapse; margin-top: 6px; width: 100%; max-width: 720px; }
-        .footer-meta td { padding: 2px 4px; height: 20px; font-size: 10px; vertical-align: middle; line-height: 1.25; }
-        .footer-meta .label { width: 14%; white-space: nowrap; vertical-align: middle; font-size: 10px; font-weight: 400; line-height: 1.25; }
-        .footer-meta .value { width: 36%; text-align: right; vertical-align: middle; font-size: 10px; font-weight: 400; line-height: 1.25; }
+        .footer-meta { border-collapse: collapse; margin-top: 6px; width: 100%; table-layout: auto; }
+        .footer-meta td { padding: 2px 8px 2px 0; height: auto; font-size: 10px; vertical-align: middle; line-height: 1.2; white-space: nowrap; }
+        .footer-meta .label { width: auto; white-space: nowrap; vertical-align: middle; font-size: 10px; font-weight: 400; line-height: 1.2; }
+        .footer-meta .value { width: auto; text-align: right; vertical-align: middle; font-size: 10px; font-weight: 400; line-height: 1.2; white-space: nowrap; }
         @media print { .print-btn { display: none; } body { margin: 8px; } }
     </style>
 </head>
 <body>
     <button class="print-btn" type="button" onclick="window.print()" title="{{ $labels['print'] ?? 'Print' }}" aria-label="{{ $labels['print'] ?? 'Print' }}">{{ $labels['print'] ?? 'Print' }}</button>
-    <div class="page-number">Page 1</div>
+    <div class="page-number"></div>
 
     <table class="top">
         <tr>
@@ -203,13 +204,13 @@
                 <th class="num col-discount">{{ $labels['discount_pct'] }}</th>
                 <th class="num col-unit">{{ $labels['unit_price'] }}</th>
                 <th class="num col-qty">{{ $labels['quantity'] }}</th>
-                <th class="col-code">{{ $labels['item_code'] }}</th>
                 <th class="col-name">{{ $labels['item_name'] }}</th>
+                <th class="col-code">{{ $labels['item_code'] }}</th>
                 <th class="center col-idx">#</th>
             @else
                 <th class="center col-idx">#</th>
-                <th class="col-name">{{ $labels['item_name'] }}</th>
                 <th class="col-code">{{ $labels['item_code'] }}</th>
+                <th class="col-name">{{ $labels['item_name'] }}</th>
                 <th class="num col-qty">{{ $labels['quantity'] }}</th>
                 <th class="num col-unit">{{ $labels['unit_price'] }}</th>
                 <th class="num col-discount">{{ $labels['discount_pct'] }}</th>
@@ -220,7 +221,8 @@
         <tbody>
         @php
             $sumQuantity = 0.0;
-            $sumAmount = 0.0;
+            $sumGross = 0.0;
+            $sumNet = 0.0;
         @endphp
         @foreach ($items as $index => $item)
             @php
@@ -229,26 +231,29 @@
                 $grossAmount = (float) ($item->gross_amount ?? $amount);
                 $discountPercent = (float) ($item->discount_percent ?? 0);
                 $unitPrice = $qty !== 0.0 ? $grossAmount / $qty : 0.0;
+                $lineGross = (float) round($grossAmount);
+                $lineNet = abs($discountPercent) > 0.000001 ? (float) round($amount) : $lineGross;
                 $sumQuantity += $qty;
-                $sumAmount += $amount;
+                $sumGross += $lineGross;
+                $sumNet += $lineNet;
             @endphp
             <tr>
                 @if ($isRtlInvoice)
-                    <td class="num col-total">{{ display_number($amount) }} {{ $currencyLabel }}</td>
+                    <td class="num col-total">{{ display_number($lineGross) }} {{ $currencyLabel }}</td>
                     <td class="num col-discount">{{ display_number($discountPercent) }}%</td>
                     <td class="num col-unit">{{ display_number($unitPrice) }} {{ $currencyLabel }}</td>
                     <td class="num col-qty">{{ display_number($qty) }}</td>
-                    <td class="num col-code">{{ $item->item_code ?? '' }}</td>
                     <td class="col-name">{{ $item->item_name ?? '' }}</td>
+                    <td class="num col-code">{{ $item->item_code ?? '' }}</td>
                     <td class="center col-idx">{{ $index + 1 }}</td>
                 @else
                     <td class="center col-idx">{{ $index + 1 }}</td>
-                    <td class="col-name">{{ $item->item_name ?? '' }}</td>
                     <td class="num col-code">{{ $item->item_code ?? '' }}</td>
+                    <td class="col-name">{{ $item->item_name ?? '' }}</td>
                     <td class="num col-qty">{{ display_number($qty) }}</td>
                     <td class="num col-unit">{{ display_number($unitPrice) }} {{ $currencyLabel }}</td>
                     <td class="num col-discount">{{ display_number($discountPercent) }}%</td>
-                    <td class="num col-total">{{ display_number($amount) }} {{ $currencyLabel }}</td>
+                    <td class="num col-total">{{ display_number($lineGross) }} {{ $currencyLabel }}</td>
                 @endif
             </tr>
         @endforeach
@@ -256,28 +261,28 @@
         <tfoot>
         <tr>
             @if ($isRtlInvoice)
-                <td class="num col-total">{{ display_number($sumAmount) }} {{ $currencyLabel }}</td>
+                <td class="num col-total">{{ display_number($sumGross) }} {{ $currencyLabel }}</td>
                 <td class="col-discount"></td>
                 <td class="col-unit"></td>
                 <td class="num col-qty">{{ display_number($sumQuantity) }}</td>
-                <td class="col-code"></td>
                 <td class="col-name">{{ $labels['total'] }}</td>
+                <td class="col-code"></td>
                 <td class="col-idx"></td>
             @else
                 <td class="col-idx"></td>
-                <td class="col-name">{{ $labels['total'] }}</td>
                 <td class="col-code"></td>
+                <td class="col-name">{{ $labels['total'] }}</td>
                 <td class="num col-qty">{{ display_number($sumQuantity) }}</td>
                 <td class="col-unit"></td>
                 <td class="col-discount"></td>
-                <td class="num col-total">{{ display_number($sumAmount) }} {{ $currencyLabel }}</td>
+                <td class="num col-total">{{ display_number($sumGross) }} {{ $currencyLabel }}</td>
             @endif
         </tr>
         </tfoot>
     </table>
 
     @php
-        $invoiceTotal = (float) ($invoice->invoice_amount ?? 0);
+        $invoiceTotal = $sumNet;
         $dueAmount = (float) ($invoice->client_due_amount ?? 0);
         $grandTotal = $invoiceTotal + $dueAmount;
     @endphp
@@ -330,13 +335,6 @@
             @endif
         </table>
     </div>
-    <script>
-        (function () {
-            var pageNode = document.querySelector('.page-number');
-            if (!pageNode) return;
-            pageNode.textContent = 'Page 1';
-        })();
-    </script>
 </body>
 </html>
 

@@ -352,7 +352,7 @@ class InvoicesReportController extends Controller
         $dompdf->render();
         $canvas = $dompdf->getCanvas();
         $font = $dompdf->getFontMetrics()->getFont('Helvetica', 'normal');
-        $canvas->page_text(8, $canvas->get_height() - 18, 'Page {PAGE_NUM}/{PAGE_COUNT}', $font, 10, [0, 0, 0]);
+        $canvas->page_text(14, 2, '{PAGE_NUM}/{PAGE_COUNT}', $font, 10, [0, 0, 0]);
 
         $invoiceNo = (string) ($invoice->invoice_no ?? $invoiceId);
         $output = $dompdf->output();

@@ -39,8 +39,8 @@
                     Minimum accepted: 300x300 px, square ratio.
                 </div>
                 @if (!empty($settings['logo_path']))
-                    <img src="{{ asset('storage/'.$settings['logo_path']) }}" class="logo-preview" alt="Current logo">
-                    <label style="margin-top: 8px;"><input type="checkbox" name="remove_logo" value="1"> Remove current logo</label>
+                    <img src="{{ route('reports.invoice-branding.logo', ['v' => substr(sha1((string) $settings['logo_path']), 0, 12)]) }}" class="logo-preview" alt="Current logo">
+                    <label class="remove-logo" style="margin-top: 8px;"><input type="checkbox" name="remove_logo" value="1"> Remove current logo</label>
                 @endif
             </div>
         </div>
@@ -51,7 +51,32 @@
 @push('styles')
 <style>
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
-        input, textarea, button:not(.btn-icon) { width: 100%; box-sizing: border-box; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px; }
+        input:not([type="file"]):not([type="checkbox"]):not([type="radio"]), textarea, button:not(.btn-icon) { width: 100%; box-sizing: border-box; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px; }
+        .report-container input[type="file"] {
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+            padding: 0;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            background: #fff;
+            font-size: 14px;
+            color: #0f172a;
+            line-height: 1.2;
+        }
+        .report-container input[type="file"]::file-selector-button {
+            margin: 4px 10px 4px 4px;
+            padding: 6px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            background: #f8fafc;
+            color: #0f172a;
+            font: inherit;
+            cursor: pointer;
+        }
+        .report-container input[type="file"]::file-selector-button:hover { background: #e2e8f0; }
+        .remove-logo { display: inline-flex; align-items: center; gap: 8px; width: auto; }
+        .remove-logo input[type="checkbox"] { width: 16px; height: 16px; margin: 0; padding: 0; }
         textarea { min-height: 90px; resize: vertical; }
         .status { padding: 8px 10px; background: #e8f7ed; color: #166534; border-radius: 6px; margin-bottom: 10px; }
         .error-list { padding: 8px 10px; background: #fee2e2; color: #991b1b; border-radius: 6px; margin-bottom: 10px; }
