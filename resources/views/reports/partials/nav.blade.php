@@ -10,6 +10,7 @@
         <a href="{{ route($homeRoute) }}" class="report-topbar__brand">
             <span class="report-topbar__title">Reporting</span>
         </a>
+        @include('reports.partials.pwa-install')
         <button
             type="button"
             class="report-nav-toggle btn-icon"
@@ -127,7 +128,11 @@
     }
     @media (max-width: 768px) {
         .report-topbar__inner {
-            flex-wrap: nowrap;
+            flex-wrap: wrap;
+        }
+        .report-topbar .pwa-install {
+            order: 4;
+            flex: 1 0 100%;
         }
         .report-topbar__user {
             display: none;

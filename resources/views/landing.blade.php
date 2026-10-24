@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Akre Chicken — Reporting</title>
+    @include('reports.partials.pwa-head')
     @include('reports.partials.theme')
     <style>
         body.report-app--login {
@@ -73,6 +74,7 @@
         <p>Since 2007, the Akre Chicken slaughterhouse has served families with freshly slaughtered frozen chicken. The birds are fed locally, slaughtered by hand under supervision, cleaned thoroughly, and packed with care.</p>
         <div class="landing-actions">
             <a class="btn btn--primary" href="{{ route('login') }}">Log in</a>
+            @include('reports.partials.pwa-install')
             <a class="btn btn--secondary" href="https://www.akrechicken.com/" rel="noopener">akrechicken.com</a>
         </div>
     </section>
