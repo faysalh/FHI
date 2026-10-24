@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>@yield('title', 'Reports') — Reporting</title>
+    @include('reports.partials.pwa-head')
     @include('reports.partials.theme')
     @include('reports.partials.lab-design-system')
     @include('reports.partials.compact-filters-styles')

@@ -63,7 +63,8 @@ class ReportsUsersSqliteService
         $this->ensureReady();
 
         $users = DB::connection(self::CONNECTION)->select(
-            'SELECT id, username, is_super_admin, created_at, updated_at
+            'SELECT id, username, is_super_admin, created_at, updated_at,
+                    pda_salesman_user_id, pda_salesman_account_id, pda_salesman_name
              FROM '.self::USERS_TABLE.'
              ORDER BY lower(username) ASC, id ASC'
         );
@@ -86,7 +87,8 @@ class ReportsUsersSqliteService
         }
 
         $user = DB::connection(self::CONNECTION)->selectOne(
-            'SELECT id, username, is_super_admin, created_at, updated_at
+            'SELECT id, username, is_super_admin, created_at, updated_at,
+                    pda_salesman_user_id, pda_salesman_account_id, pda_salesman_name
              FROM '.self::USERS_TABLE.'
              WHERE id = ?
              LIMIT 1',
@@ -301,6 +303,36 @@ class ReportsUsersSqliteService
         return $userId;
     }
 
+    public function savePdaSalesmanLink(int $userId, string $salesmanUserId, string $salesmanAccountId, string $salesmanName): void
+    {
+        $this->ensureReady();
+        if ($userId <= 0 || $this->findUserById($userId) === null) {
+            throw new RuntimeException('User not found.');
+        }
+
+        $salesmanUserId = strtoupper(trim($salesmanUserId));
+        $salesmanAccountId = strtoupper(trim($salesmanAccountId));
+        $salesmanName = trim($salesmanName);
+        if ($salesmanUserId === '' || $salesmanAccountId === '') {
+            $salesmanUserId = '';
+            $salesmanAccountId = '';
+            $salesmanName = '';
+        }
+
+        DB::connection(self::CONNECTION)->update(
+            'UPDATE '.self::USERS_TABLE.'
+             SET pda_salesman_user_id = ?, pda_salesman_account_id = ?, pda_salesman_name = ?, updated_at = ?
+             WHERE id = ?',
+            [
+                $salesmanUserId !== '' ? $salesmanUserId : null,
+                $salesmanAccountId !== '' ? $salesmanAccountId : null,
+                $salesmanName !== '' ? $salesmanName : null,
+                now()->toDateTimeString(),
+                $userId,
+            ]
+        );
+    }
+
     /**
      * @param  list<string>  $reportKeys
      */
@@ -434,14 +466,15 @@ class ReportsUsersSqliteService
      */
     private function syncPermissions(int $userId, array $reportKeys): void
     {
-        $allowed = array_flip(ReportNavigation::allReportKeys());
+        $allowed = array_flip(ReportNavigation::assignablePermissionKeys());
         $normalized = [];
         foreach ($reportKeys as $key) {
             if (! is_string($key)) {
                 continue;
             }
             $key = trim($key);
-            if ($key !== '' && isset($allowed[$key])) {
+            // Keep legacy Face ID grants until login/UI normalization expands them.
+            if ($key === 'face-id' || ($key !== '' && isset($allowed[$key]))) {
                 $normalized[$key] = $key;
             }
         }
@@ -545,7 +578,25 @@ class ReportsUsersSqliteService
             )'
         );
 
+        foreach (['pda_salesman_user_id', 'pda_salesman_account_id', 'pda_salesman_name'] as $column) {
+            if (! $this->sqliteColumnExists(self::USERS_TABLE, $column)) {
+                $db->statement('ALTER TABLE '.self::USERS_TABLE.' ADD COLUMN '.$column.' TEXT NULL');
+            }
+        }
+
         $this->schemaChecked = true;
+    }
+
+    private function sqliteColumnExists(string $table, string $column): bool
+    {
+        $rows = DB::connection(self::CONNECTION)->select('PRAGMA table_info('.$table.')');
+        foreach ($rows as $row) {
+            if (($row->name ?? null) === $column) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function ensureDatabaseFileExists(): void

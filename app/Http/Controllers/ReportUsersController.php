@@ -8,6 +8,7 @@ use App\Http\Requests\ReportUserStoreRequest;
 use App\Http\Requests\ReportUserUpdateRequest;
 use App\Repositories\DeliveriesReportRepository;
 use App\Repositories\StorageReportRepository;
+use App\Services\PdaWorkspaceService;
 use App\Services\ReportsUsersSqliteService;
 use App\Support\DeliveriesReportAccess;
 use App\Support\ReportAuthSession;
@@ -25,6 +26,7 @@ class ReportUsersController extends Controller
         private readonly ReportsUsersSqliteService $users,
         private readonly DeliveriesReportRepository $deliveriesRepository,
         private readonly StorageReportRepository $storageRepository,
+        private readonly PdaWorkspaceService $pda,
     ) {}
 
     public function index(): View
@@ -37,6 +39,7 @@ class ReportUsersController extends Controller
             'currentUserId' => ReportAuthSession::userId(),
             'deliveriesStorageOptions' => $this->deliveriesStorageOptions(),
             'storageStorageOptions' => $this->storageStorageOptions(),
+            'pdaSalesmen' => $this->pda->listSalesmen(),
         ]);
     }
 
@@ -44,11 +47,14 @@ class ReportUsersController extends Controller
     {
         $input = $request->validated();
         $reportKeys = is_array($input['report_keys'] ?? null) ? $input['report_keys'] : [];
+        $reportKeys = ReportAuthSession::normalizeReportPermissionKeys(
+            array_values(array_filter(array_map('strval', $reportKeys), static fn (string $k): bool => $k !== ''))
+        );
         $deliveriesAccess = $this->deliveriesAccessFromValidated($input, $reportKeys);
         $storageAccess = $this->storageAccessFromValidated($input, $reportKeys);
 
         try {
-            $this->users->createUser(
+            $userId = $this->users->createUser(
                 (string) $input['username'],
                 (string) $input['password'],
                 (bool) ($input['is_super_admin'] ?? false),
@@ -56,6 +62,7 @@ class ReportUsersController extends Controller
                 $deliveriesAccess,
                 $storageAccess
             );
+            $this->savePdaLink($userId, $input['pda_salesman_user_id'] ?? null);
         } catch (RuntimeException $e) {
             return back()->withInput()->withErrors(['username' => $e->getMessage()]);
         } catch (Throwable $e) {
@@ -75,6 +82,9 @@ class ReportUsersController extends Controller
         $password = trim((string) ($input['password'] ?? ''));
         $password = $password !== '' ? $password : null;
         $reportKeys = is_array($input['report_keys'] ?? null) ? $input['report_keys'] : [];
+        $reportKeys = ReportAuthSession::normalizeReportPermissionKeys(
+            array_values(array_filter(array_map('strval', $reportKeys), static fn (string $k): bool => $k !== ''))
+        );
         $isSuperAdmin = (bool) ($input['is_super_admin'] ?? false);
         $deliveriesAccess = $this->deliveriesAccessFromValidated($input, $reportKeys);
         $storageAccess = $this->storageAccessFromValidated($input, $reportKeys);
@@ -88,6 +98,7 @@ class ReportUsersController extends Controller
                 $deliveriesAccess,
                 $storageAccess
             );
+            $this->savePdaLink($user, $input['pda_salesman_user_id'] ?? null);
         } catch (RuntimeException $e) {
             return back()->withErrors(['user' => $e->getMessage()]);
         } catch (Throwable $e) {
@@ -179,6 +190,27 @@ class ReportUsersController extends Controller
     /**
      * @param  list<string>  $reportKeys
      */
+    private function savePdaLink(int $userId, mixed $salesmanUserId): void
+    {
+        $salesmanUserId = strtoupper(trim((string) $salesmanUserId));
+        if ($salesmanUserId === '') {
+            $this->users->savePdaSalesmanLink($userId, '', '', '');
+
+            return;
+        }
+
+        $salesman = $this->pda->findSalesman($salesmanUserId);
+        if ($salesman === null) {
+            throw new RuntimeException('Choose a salesman from the list.');
+        }
+
+        $label = $salesman['name'];
+        if ($salesman['code'] !== '') {
+            $label .= ' ('.$salesman['code'].')';
+        }
+        $this->users->savePdaSalesmanLink($userId, $salesman['user_id'], $salesman['account_id'], $label);
+    }
+
     private function refreshCurrentUserSession(int $userId, bool $isSuperAdmin, array $reportKeys): void
     {
         $user = $this->users->findUserById($userId);
