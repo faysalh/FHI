@@ -9,25 +9,13 @@
     $yearId = (string) ($filters['year_id'] ?? '');
     $accountId = (string) ($filters['account_id'] ?? '');
     $salesmanId = (string) ($filters['salesman_id'] ?? '');
-    $currency = (int) ($filters['currency'] ?? 0);
     $city = (string) ($filters['city'] ?? '');
-    $accountType = (int) ($filters['account_type'] ?? 0);
     $showAsSummary = (bool) ($filters['show_as_summary'] ?? false);
-    $transactionTypeId = (string) ($filters['transaction_type_id'] ?? '');
-    $agentId = (string) ($filters['agent_id'] ?? '');
-    $crossAccountId = (string) ($filters['cross_account_id'] ?? '');
-    $perPage = (int) ($filters['per_page'] ?? 100);
     $accountLabel = (string) ($accountLabel ?? '');
-    $crossAccountLabel = (string) ($crossAccountLabel ?? '');
+    $dateRangeLabel = $dateFrom !== '' && $dateTo !== '' ? $dateFrom.' – '.$dateTo : '';
 @endphp
 
 <header class="page-header"><h1>{{ __('General ledger') }}</h1></header>
-<p class="hint">
-    Account movement for a date range, matching AsanMax
-    <code>GeneralLedgerAccount</code>
-    (opening balance before the from-date, then period lines with running balance).
-    Choose a date range and an account and/or salesman. Read-only.
-</p>
 
 @include('reports.partials.flash-messages')
 
@@ -40,13 +28,23 @@
         <summary>Filters</summary>
         <div class="filters-body">
             <div class="filters-grid filters-grid--compact">
-                <div>
-                    <label for="date_from">Date from</label>
-                    <input type="date" id="date_from" name="date_from" value="{{ $dateFrom }}" required>
-                </div>
-                <div>
-                    <label for="date_to">Date to</label>
-                    <input type="date" id="date_to" name="date_to" value="{{ $dateTo }}" required>
+                <div class="gl-range">
+                    <label for="date_range">Date</label>
+                    <button type="button" class="gl-range__field" id="date_range" aria-haspopup="dialog" aria-controls="date_range_pop" aria-expanded="false">{{ $dateRangeLabel !== '' ? $dateRangeLabel : 'Choose a range' }}</button>
+                    <input type="hidden" id="date_from" name="date_from" value="{{ $dateFrom }}" required>
+                    <input type="hidden" id="date_to" name="date_to" value="{{ $dateTo }}" required>
+                    <div class="gl-range__pop" id="date_range_pop" hidden role="dialog" aria-label="Date range">
+                        <div class="gl-range__nav">
+                            <button type="button" data-month="-1" aria-label="Previous month">‹</button>
+                            <strong data-month-label></strong>
+                            <button type="button" data-month="1" aria-label="Next month">›</button>
+                        </div>
+                        <div class="gl-range__week" aria-hidden="true">
+                            <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
+                        </div>
+                        <div class="gl-range__grid" data-grid></div>
+                        <p class="gl-range__hint">Select the start date, then the end date.</p>
+                    </div>
                 </div>
                 <div>
                     <label for="year_id">Fiscal year</label>
@@ -77,66 +75,11 @@
                     </select>
                 </div>
                 <div>
-                    <label for="currency">Currency mode</label>
-                    <select id="currency" name="currency">
-                        <option value="0" @selected($currency === 0)>Base (convert all)</option>
-                        @foreach (($currencyOptions ?? []) as $cur)
-                            <option value="{{ (int) ($cur->currency_id ?? 0) }}" @selected($currency === (int) ($cur->currency_id ?? 0))>
-                                {{ $cur->currency_name ?? ('Currency '.$cur->currency_id) }}
-                            </option>
-                        @endforeach
-                    </select>
-                </div>
-                <div>
                     <label for="city">City</label>
                     <select id="city" name="city">
                         <option value="">All cities</option>
                         @foreach (($cityOptions ?? []) as $cityOpt)
                             <option value="{{ $cityOpt }}" @selected($city === $cityOpt)>{{ $cityOpt }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                <div>
-                    <label for="account_type">Account type</label>
-                    <select id="account_type" name="account_type">
-                        <option value="0" @selected($accountType === 0)>All</option>
-                        <option value="3" @selected($accountType === 3)>Role 3</option>
-                        <option value="5" @selected($accountType === 5)>Role 5</option>
-                    </select>
-                </div>
-                <div>
-                    <label for="transaction_type_id">Document type</label>
-                    <select id="transaction_type_id" name="transaction_type_id">
-                        <option value="">All types</option>
-                        @foreach (($transactionTypes ?? []) as $docType)
-                            <option value="{{ $docType->type_id }}" @selected($transactionTypeId === (string) ($docType->type_id ?? ''))>
-                                {{ $docType->type_name ?? $docType->type_id }}
-                            </option>
-                        @endforeach
-                    </select>
-                </div>
-                <div>
-                    <label for="agent_id">Branch / agent</label>
-                    <select id="agent_id" name="agent_id">
-                        <option value="">All</option>
-                        @foreach (($agents ?? []) as $agent)
-                            <option value="{{ $agent->agent_id }}" @selected($agentId === (string) ($agent->agent_id ?? ''))>
-                                {{ $agent->agent_name ?? $agent->agent_id }}
-                            </option>
-                        @endforeach
-                    </select>
-                </div>
-                <div>
-                    <label for="cross_account_search">Cross account</label>
-                    <input type="search" id="cross_account_search" placeholder="Search cross account…" autocomplete="off" value="{{ $crossAccountLabel }}">
-                    <input type="hidden" id="cross_account_id" name="cross_account_id" value="{{ $crossAccountId }}">
-                    <div id="cross-account-search-results" class="hint" style="margin-top:4px;"></div>
-                </div>
-                <div>
-                    <label for="per_page">Rows / page</label>
-                    <select id="per_page" name="per_page">
-                        @foreach ([25, 50, 100, 250] as $size)
-                            <option value="{{ $size }}" @selected($perPage === $size)>{{ $size }}</option>
                         @endforeach
                     </select>
                 </div>
@@ -154,9 +97,7 @@
     </details>
 </form>
 
-@if (!empty($needsDates) || ($rows === null && empty($errorMessage)))
-    <p class="hint">Select a date range and an account and/or salesman, then click Load.</p>
-@elseif ($rows !== null)
+@if ($rows !== null)
     <div class="totals-bar" style="margin-top:12px;">
         <div class="total-item"><span>Period</span><strong>{{ $dateFrom }} → {{ $dateTo }}</strong></div>
         <div class="total-item"><span>Account</span><strong>{{ $accountLabel !== '' ? $accountLabel : 'All (scoped)' }}</strong></div>
@@ -246,6 +187,35 @@
     @endif
 @endif
 
+<style>
+    .gl-range { position: relative; }
+    .gl-range__field {
+        display: flex; align-items: center; width: 100%; min-height: 38px;
+        padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px;
+        background: #fff; color: #0f172a; font: inherit; text-align: left; cursor: pointer;
+    }
+    .gl-range__pop {
+        position: absolute; z-index: 30; top: calc(100% + 4px); left: 0;
+        width: min(320px, calc(100vw - 48px)); padding: 10px;
+        background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+    }
+    .gl-range__nav, .gl-range__week, .gl-range__grid {
+        display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; align-items: center;
+    }
+    .gl-range__nav { grid-template-columns: 32px 1fr 32px; margin-bottom: 6px; }
+    .gl-range__nav strong { text-align: center; font-size: 14px; }
+    .gl-range__nav button, .gl-range__day {
+        min-height: 34px; border: 0; border-radius: 6px; background: transparent;
+        font: inherit; cursor: pointer;
+    }
+    .gl-range__nav button { background: #f1f5f9; }
+    .gl-range__week span { text-align: center; font-size: 11px; color: #64748b; font-weight: 700; }
+    .gl-range__day.is-out { color: #cbd5e1; }
+    .gl-range__day.is-in { background: #e0e7ff; }
+    .gl-range__day.is-end { background: #4f46e5; color: #fff; }
+    .gl-range__hint { margin: 8px 0 0; font-size: 12px; color: #64748b; }
+</style>
 <script>
 (function () {
     function bindAccountSearch(inputId, hiddenId, resultsId) {
@@ -289,7 +259,104 @@
     }
 
     bindAccountSearch('account_search', 'account_id', 'account-search-results');
-    bindAccountSearch('cross_account_search', 'cross_account_id', 'cross-account-search-results');
+
+    var rangeButton = document.getElementById('date_range');
+    var rangePop = document.getElementById('date_range_pop');
+    var fromInput = document.getElementById('date_from');
+    var toInput = document.getElementById('date_to');
+    if (rangeButton && rangePop && fromInput && toInput) {
+        var grid = rangePop.querySelector('[data-grid]');
+        var monthLabel = rangePop.querySelector('[data-month-label]');
+        var view = new Date();
+        var from = fromInput.value || '';
+        var to = toInput.value || '';
+        if (from) {
+            var seed = new Date(from + 'T00:00:00');
+            if (!isNaN(seed.getTime())) view = seed;
+        }
+        var pickingStart = true;
+
+        function iso(date) {
+            var m = String(date.getMonth() + 1).padStart(2, '0');
+            var d = String(date.getDate()).padStart(2, '0');
+            return date.getFullYear() + '-' + m + '-' + d;
+        }
+
+        function paintLabel() {
+            rangeButton.textContent = from && to ? from + ' – ' + to : 'Choose a range';
+            fromInput.value = from;
+            toInput.value = to;
+        }
+
+        function render() {
+            var year = view.getFullYear();
+            var month = view.getMonth();
+            monthLabel.textContent = view.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+            grid.innerHTML = '';
+            var first = new Date(year, month, 1);
+            var startPad = first.getDay();
+            var days = new Date(year, month + 1, 0).getDate();
+            var cursor = new Date(year, month, 1 - startPad);
+            for (var i = 0; i < 42; i++) {
+                var day = new Date(cursor.getTime());
+                var value = iso(day);
+                var button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'gl-range__day';
+                button.textContent = String(day.getDate());
+                button.setAttribute('data-date', value);
+                if (day.getMonth() !== month) button.classList.add('is-out');
+                if (from && to && value >= from && value <= to) button.classList.add('is-in');
+                if (value === from || value === to) button.classList.add('is-end');
+                grid.appendChild(button);
+                cursor.setDate(cursor.getDate() + 1);
+            }
+        }
+
+        function setOpen(open) {
+            rangePop.hidden = !open;
+            rangeButton.setAttribute('aria-expanded', open ? 'true' : 'false');
+            if (open) render();
+        }
+
+        rangeButton.addEventListener('click', function () {
+            setOpen(rangePop.hidden);
+        });
+        rangePop.addEventListener('click', function (event) {
+            event.stopPropagation();
+            var shift = event.target.closest('[data-month]');
+            if (shift) {
+                view.setMonth(view.getMonth() + Number(shift.getAttribute('data-month')));
+                render();
+                return;
+            }
+            var day = event.target.closest('[data-date]');
+            if (!day) return;
+            var value = day.getAttribute('data-date');
+            if (pickingStart) {
+                from = value;
+                to = value;
+                pickingStart = false;
+            } else {
+                to = value;
+                if (to < from) {
+                    var swap = from;
+                    from = to;
+                    to = swap;
+                }
+                pickingStart = true;
+                setOpen(false);
+            }
+            paintLabel();
+            render();
+        });
+        document.addEventListener('click', function (event) {
+            if (!rangePop.hidden && !rangePop.contains(event.target) && event.target !== rangeButton) {
+                setOpen(false);
+            }
+        });
+        paintLabel();
+    }
 
     document.querySelectorAll('.report-export-link').forEach(function (link) {
         link.addEventListener('click', function (event) {

@@ -42,8 +42,17 @@
 @if (! $pdaFocused)
 <nav id="report-nav-menu" class="report-nav" aria-label="Report sections">
     @foreach ($sections as $section)
-        <div class="report-nav__group">
-            <span class="report-nav__label">{{ $section['label'] }}</span>
+        @php
+            $sectionOpen = false;
+            foreach ($section['items'] as $navItem) {
+                if ($activeKey === $navItem['key']) {
+                    $sectionOpen = true;
+                    break;
+                }
+            }
+        @endphp
+        <div @class(['report-nav__group', 'is-open' => $sectionOpen])>
+            <button type="button" class="report-nav__label" aria-expanded="{{ $sectionOpen ? 'true' : 'false' }}">{{ $section['label'] }}</button>
             <div class="report-nav__links">
                 @foreach ($section['items'] as $item)
                     <a href="{{ route($item['route']) }}"
@@ -114,14 +123,23 @@
     }
     .report-nav__group { min-width: 0; }
     .report-nav__label {
-        display: block;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        margin: 0 0 6px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        font: inherit;
         font-size: 10px;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.06em;
         color: #94a3b8;
-        margin-bottom: 6px;
+        text-align: left;
     }
+    .report-nav__label::after { content: none; }
     .report-nav__links {
         display: flex;
         flex-wrap: wrap;
@@ -170,8 +188,11 @@
         .report-nav {
             display: none;
             flex-direction: column;
+            flex-wrap: nowrap;
+            align-items: stretch;
             gap: 14px;
             max-height: min(70vh, calc(100vh - 120px));
+            overflow-x: hidden;
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
             box-shadow: inset 0 1px 0 #f1f5f9;
@@ -179,7 +200,25 @@
         .report-nav.is-open {
             display: flex;
         }
-        .report-nav__links {
+        .report-nav__group { width: 100%; }
+        .report-nav__group:not(.is-open) .report-nav__links { display: none; }
+        .report-nav__label {
+            min-height: 44px;
+            margin-bottom: 0;
+            padding: 8px 4px;
+            font-size: 13px;
+            color: #334155;
+            cursor: pointer;
+        }
+        .report-nav__label::after {
+            content: '▸';
+            font-size: 12px;
+            color: #94a3b8;
+        }
+        .report-nav__group.is-open .report-nav__label::after { content: '▾'; }
+        .report-nav__group.is-open .report-nav__label { margin-bottom: 6px; }
+        .report-nav__group.is-open .report-nav__links {
+            display: flex;
             flex-direction: column;
             align-items: stretch;
         }
@@ -193,6 +232,7 @@
         .report-nav-toggle {
             display: none !important;
         }
+        .report-nav__label { pointer-events: none; }
     }
 </style>
 <script>
@@ -207,8 +247,42 @@
         toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
         toggle.setAttribute('aria-label', open ? 'Close report menu' : 'Open report menu');
     }
+    function syncSectionButtons() {
+        var desktop = window.matchMedia('(min-width: 769px)').matches;
+        nav.querySelectorAll('.report-nav__label').forEach(function (button) {
+            if (desktop) {
+                button.setAttribute('tabindex', '-1');
+            } else {
+                button.removeAttribute('tabindex');
+            }
+        });
+    }
+    syncSectionButtons();
     toggle.addEventListener('click', function () {
         setOpen(!nav.classList.contains('is-open'));
+    });
+    nav.querySelectorAll('.report-nav__label').forEach(function (button) {
+        button.addEventListener('click', function () {
+            if (!window.matchMedia('(max-width: 768px)').matches) {
+                return;
+            }
+            var group = button.closest('.report-nav__group');
+            var willOpen = !group.classList.contains('is-open');
+            nav.querySelectorAll('.report-nav__group').forEach(function (other) {
+                other.classList.remove('is-open');
+                var label = other.querySelector('.report-nav__label');
+                if (label) {
+                    label.setAttribute('aria-expanded', 'false');
+                }
+            });
+            if (willOpen) {
+                group.classList.add('is-open');
+                button.setAttribute('aria-expanded', 'true');
+                var navTop = nav.getBoundingClientRect().top;
+                var groupTop = group.getBoundingClientRect().top;
+                nav.scrollTop += groupTop - navTop;
+            }
+        });
     });
     nav.querySelectorAll('.report-nav__link').forEach(function (link) {
         link.addEventListener('click', function () {
@@ -227,6 +301,7 @@
         setOpen(false);
     });
     window.addEventListener('resize', function () {
+        syncSectionButtons();
         if (window.matchMedia('(min-width: 769px)').matches) {
             setOpen(false);
         }
