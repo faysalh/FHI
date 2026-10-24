@@ -78,6 +78,14 @@ class PdaController extends Controller
             return back()->withErrors(['pda' => 'Could not start the visit.']);
         }
 
+        $next = (string) $request->input('next', '');
+        if (in_array($next, ['sale', 'order', 'return', 'receipt'], true)) {
+            return redirect()->route('reports.pda.vouchers.create', [
+                'visit' => $visit['visit_id'],
+                'type' => $next,
+            ]);
+        }
+
         return redirect()->route('reports.pda.visits.show', ['visit' => $visit['visit_id']]);
     }
 
@@ -475,6 +483,8 @@ class PdaController extends Controller
      */
     private function page(array $salesman, array $extra = []): array
     {
+        view()->share('pdaSalesmanName', $salesman['name']);
+
         return array_merge([
             'salesman' => $salesman,
             'companyName' => $this->pda->companyName($salesman['user_id']),

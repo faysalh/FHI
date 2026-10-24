@@ -26,11 +26,24 @@
     @if ($customer['lat'] !== null && $customer['lng'] !== null && (float) $customer['lat'] !== 0.0)
         <p><a class="pda-btn" href="https://maps.google.com/?q={{ $customer['lat'] }},{{ $customer['lng'] }}" target="_blank" rel="noopener">Open map</a></p>
     @endif
-    <form method="POST" action="{{ route('reports.pda.visits.store') }}" class="pda-actions">
-        @csrf
-        <input type="hidden" name="customer_id" value="{{ $customer['id'] }}">
-        <button class="pda-btn pda-btn--primary" type="submit">{{ $visit ? 'Continue visit' : 'Start visit' }}</button>
-    </form>
+    <div class="pda-sell">
+        <form method="POST" action="{{ route('reports.pda.visits.store') }}">
+            @csrf
+            <input type="hidden" name="customer_id" value="{{ $customer['id'] }}">
+            <input type="hidden" name="next" value="sale">
+            <button class="pda-btn pda-btn--primary pda-btn--sell" type="submit">Sell</button>
+        </form>
+        <div class="pda-sell__more">
+            @foreach (['order' => 'Order', 'return' => 'Return', 'receipt' => 'Receipt'] as $next => $label)
+                <form method="POST" action="{{ route('reports.pda.visits.store') }}">
+                    @csrf
+                    <input type="hidden" name="customer_id" value="{{ $customer['id'] }}">
+                    <input type="hidden" name="next" value="{{ $next }}">
+                    <button class="pda-btn" type="submit">{{ $label }}</button>
+                </form>
+            @endforeach
+        </div>
+    </div>
     <h2>Open invoices</h2>
     <div class="table-scroll">
         <table>

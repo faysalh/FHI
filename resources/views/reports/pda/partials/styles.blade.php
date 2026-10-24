@@ -136,4 +136,30 @@
         .pda-grid-wrap, .pda-cart { max-height: calc(100vh - 250px); }
         .pda-cart { position: sticky; top: 12px; }
     }
+    .pda-sell { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+    .pda-sell form { margin: 0; }
+    .pda-btn--sell { width: 100%; min-height: 52px; font-size: 18px; }
+    .pda-sell__more { display: flex; gap: 8px; }
+    .pda-sell__more form { flex: 1 1 0; }
+    .pda-sell__more .pda-btn { width: 100%; }
+    .pda-sale-back { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 0 0 10px; }
+    .pda-sale-back a { font-weight: 700; text-decoration: none; }
+    .pda-sale-back a:first-child { font-size: 18px; color: inherit; }
+    .pda-sale-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .pda-sale-bar .pda-total { margin: 0; font-size: 18px; }
+    .pda-sale-bar .pda-locate-status { flex: 1 0 100%; min-height: 0; margin: 0; }
+    .pda-sale-bar .pda-locate-status:empty { display: none; }
+    .pda-sale-bar .pda-btn--primary { margin-left: auto; min-height: 44px; }
+    @media (max-width: 699px) {
+        .pda-sale { padding-bottom: 108px; }
+        .pda-sale .pda-grid-wrap { max-height: none; }
+        .pda-cart--sale {
+            position: fixed; left: 8px; right: 8px; bottom: 0; z-index: 40;
+            max-height: none; margin: 0; border-radius: 16px 16px 0 0;
+            padding-bottom: calc(10px + env(safe-area-inset-bottom));
+            box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.12);
+        }
+        .pda-cart--sale .pda-cart__sheet { display: none; }
+        .pda-cart--sale.is-open .pda-cart__sheet { display: block; max-height: 46vh; overflow: auto; margin-bottom: 8px; }
+    }
 </style>

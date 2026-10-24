@@ -4,13 +4,20 @@
     $activeKey = ReportNavigation::activeKey();
     $sections = ReportNavigation::sections();
     $homeRoute = ReportAuthSession::defaultLandingRouteName();
+    $pdaFocused = ReportAuthSession::isPdaFocused();
 @endphp
-<header class="report-topbar">
+<header class="report-topbar @if ($pdaFocused) report-topbar--pda @endif">
     <div class="report-topbar__inner">
-        <a href="{{ route($homeRoute) }}" class="report-topbar__brand">
-            <span class="report-topbar__title">Reporting</span>
+        <a href="{{ route($pdaFocused ? 'reports.pda.index' : $homeRoute) }}" class="report-topbar__brand">
+            <span class="report-topbar__title">{{ $pdaFocused ? (view()->shared('pdaSalesmanName') ?: (ReportAuthSession::username() ?? 'Selling')) : 'Reporting' }}</span>
         </a>
         @include('reports.partials.pwa-install')
+        @if ($pdaFocused)
+            <nav class="pda-focus-nav" aria-label="Selling">
+                <a href="{{ route('reports.pda.index') }}" @class(['pda-focus-link', 'is-active' => request()->routeIs('reports.pda.index', 'reports.pda.customers.show', 'reports.pda.visits.show', 'reports.pda.vouchers.create')])>Customers</a>
+                <a href="{{ route('reports.pda.unposted') }}" @class(['pda-focus-link', 'is-active' => request()->routeIs('reports.pda.unposted')])>Unposted</a>
+            </nav>
+        @else
         <button
             type="button"
             class="report-nav-toggle btn-icon"
@@ -22,7 +29,8 @@
                 <path d="M4 7h16M4 12h16M4 17h16"/>
             </svg>
         </button>
-        @if (ReportAuthSession::username())
+        @endif
+        @if (! $pdaFocused && ReportAuthSession::username())
             <span class="report-topbar__user muted">{{ ReportAuthSession::username() }}{{ ReportAuthSession::isSuperAdmin() ? ' · Admin' : '' }}</span>
         @endif
         <form method="POST" action="{{ route('logout') }}" class="report-topbar__logout">
@@ -31,6 +39,7 @@
         </form>
     </div>
 </header>
+@if (! $pdaFocused)
 <nav id="report-nav-menu" class="report-nav" aria-label="Report sections">
     @foreach ($sections as $section)
         <div class="report-nav__group">
@@ -46,6 +55,7 @@
         </div>
     @endforeach
 </nav>
+@endif
 <style>
     .report-topbar {
         background: linear-gradient(90deg, #312e81 0%, #4f46e5 55%, #4338ca 100%);
@@ -81,6 +91,17 @@
         border-color: rgba(255, 255, 255, 0.5);
     }
     .report-nav-toggle svg { width: 20px; height: 20px; }
+    .pda-focus-nav { display: flex; align-items: center; gap: 4px; min-width: 0; }
+    .pda-focus-link {
+        display: inline-flex; align-items: center; min-height: 40px; padding: 8px 10px;
+        border-radius: 8px; color: #f8fafc; text-decoration: none; font-size: 14px; font-weight: 700;
+    }
+    .pda-focus-link.is-active { background: rgba(255, 255, 255, 0.18); }
+    .report-topbar--pda .report-topbar__title { font-size: 15px; }
+    @media (max-width: 768px) {
+        .report-topbar--pda .pda-focus-nav { order: 2; }
+        .report-topbar--pda .report-topbar__logout { margin-left: auto; }
+    }
     .btn--sm { padding: 5px 10px; font-size: 12px; }
     .report-nav {
         background: #fff;

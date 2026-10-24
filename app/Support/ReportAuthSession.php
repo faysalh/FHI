@@ -281,6 +281,25 @@ final class ReportAuthSession
         $request->session()->regenerateToken();
     }
 
+    public static function isPdaFocused(): bool
+    {
+        if (! self::isAuthenticated() || self::isSuperAdmin()) {
+            return false;
+        }
+
+        $keys = [];
+        foreach (ReportNavigation::sectionsForUser(self::allowedReportKeys(), false) as $section) {
+            foreach ($section['items'] as $item) {
+                if (($item['key'] ?? '') === 'guide') {
+                    continue;
+                }
+                $keys[] = (string) $item['key'];
+            }
+        }
+
+        return $keys === ['pda'];
+    }
+
     public static function defaultLandingRouteName(): string
     {
         if (self::isSuperAdmin()) {

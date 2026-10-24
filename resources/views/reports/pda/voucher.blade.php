@@ -52,12 +52,20 @@
         }
         unset($category);
     @endphp
-    <header class="page-header">
-        <h1>{{ $titles[$kind] ?? 'Voucher' }}</h1>
-        <p class="hint">{{ $customer['name'] }} · price group {{ $priceGroup }}. Location is required.</p>
-    </header>
-    @include('reports.pda.partials.subnav')
-    <form method="POST" action="{{ route('reports.pda.vouchers.store', ['visit' => $visitId]) }}" class="js-pda-locate" id="pda-voucher-form">
+    @include('reports.pda.partials.styles')
+    @if ($kind === 'sale')
+        <p class="pda-sale-back">
+            <a href="{{ route('reports.pda.customers.show', ['customer' => $customer['id']]) }}">{{ $customer['name'] }}</a>
+            <a href="{{ route('reports.pda.visits.show', ['visit' => $visitId]) }}">Visit</a>
+        </p>
+    @else
+        <header class="page-header">
+            <h1>{{ $titles[$kind] ?? 'Voucher' }}</h1>
+            <p class="hint">{{ $customer['name'] }} · price group {{ $priceGroup }}. Location is required.</p>
+        </header>
+        @include('reports.pda.partials.subnav')
+    @endif
+    <form method="POST" action="{{ route('reports.pda.vouchers.store', ['visit' => $visitId]) }}" @class(['js-pda-locate', 'pda-sale' => $kind === 'sale']) id="pda-voucher-form">
         @csrf
         <input type="hidden" name="kind" value="{{ $kind }}">
         <input type="hidden" name="discount" value="0">
@@ -129,21 +137,45 @@
                     </div>
                     <p class="muted" id="pda-none" hidden>No items matched.</p>
                 </section>
-                <aside class="pda-cart" aria-label="Ticket">
-                    <div class="pda-cart__head">
-                        <h2>Ticket</h2>
-                        <span id="pda-count" class="pda-cart__count"></span>
-                    </div>
-                    <div id="pda-lines"></div>
-                    <p class="muted" id="pda-empty">Tap an item to add it.</p>
-                    <p class="pda-stock-note" id="pda-stock-note" hidden></p>
-                    <p class="pda-total" id="pda-total">Total 0</p>
-                    <label for="pda-paid">Amount collected now</label>
-                    <input id="pda-paid" name="paid" type="number" min="0" step="0.01" value="{{ old('paid', 0) }}">
-                    <label for="pda-notes">Notes</label>
-                    <input id="pda-notes" name="notes" maxlength="500" value="{{ old('notes') }}">
-                    <p class="pda-locate-status" data-locate-status></p>
-                    <button class="pda-btn pda-btn--primary" type="submit">Save {{ strtolower($titles[$kind] ?? 'voucher') }}</button>
+                <aside @class(['pda-cart', 'pda-cart--sale' => $kind === 'sale']) aria-label="Ticket">
+                    @if ($kind === 'sale')
+                        <div class="pda-cart__sheet" id="pda-cart-sheet">
+                            <div class="pda-cart__head">
+                                <h2>Ticket</h2>
+                            </div>
+                            <div id="pda-lines"></div>
+                            <p class="muted" id="pda-empty">Tap an item to add it.</p>
+                            <p class="pda-stock-note" id="pda-stock-note" hidden></p>
+                            <div class="pda-pay">
+                                <label for="pda-paid">Amount collected now</label>
+                                <input id="pda-paid" name="paid" type="number" min="0" step="0.01" value="{{ old('paid', 0) }}">
+                                <label for="pda-notes">Notes</label>
+                                <input id="pda-notes" name="notes" maxlength="500" value="{{ old('notes') }}">
+                            </div>
+                        </div>
+                        <div class="pda-sale-bar">
+                            <button type="button" class="pda-btn" id="pda-ticket-toggle" aria-expanded="false" aria-controls="pda-cart-sheet">Ticket</button>
+                            <span id="pda-count" class="pda-cart__count"></span>
+                            <span class="pda-total" id="pda-total">Total 0</span>
+                            <p class="pda-locate-status" data-locate-status></p>
+                            <button class="pda-btn pda-btn--primary" type="submit">Save sale</button>
+                        </div>
+                    @else
+                        <div class="pda-cart__head">
+                            <h2>Ticket</h2>
+                            <span id="pda-count" class="pda-cart__count"></span>
+                        </div>
+                        <div id="pda-lines"></div>
+                        <p class="muted" id="pda-empty">Tap an item to add it.</p>
+                        <p class="pda-stock-note" id="pda-stock-note" hidden></p>
+                        <p class="pda-total" id="pda-total">Total 0</p>
+                        <label for="pda-paid">Amount collected now</label>
+                        <input id="pda-paid" name="paid" type="number" min="0" step="0.01" value="{{ old('paid', 0) }}">
+                        <label for="pda-notes">Notes</label>
+                        <input id="pda-notes" name="notes" maxlength="500" value="{{ old('notes') }}">
+                        <p class="pda-locate-status" data-locate-status></p>
+                        <button class="pda-btn pda-btn--primary" type="submit">Save {{ strtolower($titles[$kind] ?? 'voucher') }}</button>
+                    @endif
                 </aside>
             </div>
         @endif
@@ -317,6 +349,17 @@
                     }
 
                     if (search) search.addEventListener('input', applyFilter);
+                    var ticketToggle = document.getElementById('pda-ticket-toggle');
+                    var cartSheet = document.getElementById('pda-cart-sheet');
+                    if (ticketToggle && cartSheet) {
+                        var cartBox = cartSheet.parentElement;
+                        ticketToggle.addEventListener('click', function () {
+                            var open = !cartBox.classList.contains('is-open');
+                            cartBox.classList.toggle('is-open', open);
+                            ticketToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+                        });
+                    }
+
                     if (cats) {
                         cats.addEventListener('click', function (event) {
                             var button = event.target.closest('.pda-cat');
