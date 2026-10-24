@@ -46,6 +46,25 @@ function Test-IsCertificateAuthority([System.Security.Cryptography.X509Certifica
     return $false
 }
 
+function Get-ThumbprintBytes([string]$Thumbprint) {
+    $bytes = New-Object byte[] 20
+    for ($i = 0; $i -lt 20; $i++) {
+        $bytes[$i] = [Convert]::ToByte($Thumbprint.Substring($i * 2, 2), 16)
+    }
+    return ,$bytes
+}
+
+function Get-PresentedCertificate([string]$HostName, [int]$Port) {
+    $tcp = New-Object System.Net.Sockets.TcpClient($HostName, $Port)
+    try {
+        $ssl = New-Object System.Net.Security.SslStream($tcp.GetStream(), $false, ({ $true }))
+        $ssl.AuthenticateAsClient($HostName)
+        return New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($ssl.RemoteCertificate)
+    } finally {
+        $tcp.Close()
+    }
+}
+
 Write-Host ''
 Write-Host 'Reporting App - Android HTTPS trust' -ForegroundColor Green
 Write-Host "Install path: $InstallPath"
@@ -130,14 +149,6 @@ $serverCert = New-SelfSignedCertificate `
 Write-Host "  Created $($serverCert.Subject)"
 Write-Host "  Thumbprint: $($serverCert.Thumbprint)"
 
-Write-Step 'IIS binding'
-$bindingPath = "IIS:\SslBindings\0.0.0.0!$httpsPort"
-if (Test-Path $bindingPath) {
-    Remove-Item $bindingPath -Force
-}
-New-Item -Path $bindingPath -Thumbprint $serverCert.Thumbprint -SSLFlags 0 | Out-Null
-Write-Host "  HTTPS port $httpsPort now uses the new website certificate"
-
 Write-Step 'File for the phone'
 $cerName = 'ReportingApp-RootCA.cer'
 $publicCer = Join-Path $InstallPath "public\$cerName"
@@ -163,6 +174,50 @@ if (-not $mime) {
 }
 
 Restart-WebAppPool -Name $SiteName -ErrorAction SilentlyContinue
+
+Write-Step 'IIS binding'
+$thumb = $serverCert.Thumbprint
+Import-Module IISAdministration -ErrorAction Stop
+$manager = Get-IISServerManager
+$site = $manager.Sites[$SiteName]
+if (-not $site) {
+    throw "IIS site '$SiteName' was not found."
+}
+
+$hashBytes = Get-ThumbprintBytes $thumb
+$updated = 0
+foreach ($binding in @($site.Bindings)) {
+    if ($binding.Protocol -ne 'https') { continue }
+    if ($binding.BindingInformation -notmatch ":${httpsPort}:$") { continue }
+    $binding.CertificateHash = $hashBytes
+    $binding.CertificateStoreName = 'My'
+    $updated++
+    Write-Host "  Site binding $($binding.BindingInformation) now uses $thumb"
+}
+if ($updated -eq 0) {
+    throw "No HTTPS binding on port $httpsPort was updated."
+}
+$manager.CommitChanges()
+
+foreach ($ip in @('0.0.0.0', $IpAddress)) {
+    $bindingPath = "IIS:\SslBindings\$ip!$httpsPort"
+    $exists = Test-Path $bindingPath
+    if (-not $exists -and $ip -ne '0.0.0.0') {
+        continue
+    }
+    if ($exists) {
+        Remove-Item $bindingPath -Force
+    }
+    New-Item -Path $bindingPath -Thumbprint $thumb -SSLFlags 0 | Out-Null
+    Write-Host "  HTTP.sys $ip`:$httpsPort now uses $thumb"
+}
+
+Start-Sleep -Seconds 1
+$presented = Get-PresentedCertificate '127.0.0.1' $httpsPort
+if ($presented.Thumbprint -ne $thumb) {
+    throw "IIS is still presenting $($presented.Subject), issued by $($presented.Issuer). Expected thumbprint $thumb."
+}
+Write-Host "  Verified. The site certificate is signed by $($presented.Issuer)"
 
 Write-Host ''
 Write-Host 'Ready for the Xiaomi phone.' -ForegroundColor Green
