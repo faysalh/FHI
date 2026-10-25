@@ -41,7 +41,7 @@ final class ReportNavigation
                     ['key' => 'sales-item-average', 'route' => 'reports.sales-item-average.index', 'label' => 'Item average', 'title' => 'Sales by item average'],
                     ['key' => 'sales-by-item', 'route' => 'reports.sales-by-item.index', 'label' => 'Sales by item', 'title' => 'Category sales split by client price group'],
                     ['key' => 'sales-by-salesman', 'route' => 'reports.sales-by-salesman.index', 'label' => 'By salesman', 'title' => 'Sales by salesman'],
-                    ['key' => 'comparison', 'route' => 'reports.comparison.index', 'label' => 'Comparison', 'title' => 'Compare two periods'],
+                    ['key' => 'comparison', 'route' => 'reports.comparison.asan.index', 'label' => 'Comparison', 'title' => 'Compare two periods'],
                     ['key' => 'rankings', 'route' => 'reports.rankings.index', 'label' => 'Rankings', 'title' => 'Top clients, items, salesmen, and growth'],
                     ['key' => 'cities', 'route' => 'reports.cities.index', 'label' => 'Cities', 'title' => 'Sales by city'],
                     ['key' => 'visits', 'route' => 'reports.visits.index', 'label' => 'Visits', 'title' => 'Client visit status'],

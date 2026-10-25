@@ -64,7 +64,9 @@ Route::prefix('reports')->middleware(['reports.admin', 'reports.permission'])->g
     Route::get('/dashboard-lab/metrics', [DashboardLabController::class, 'metrics'])->name('reports.dashboard-lab.metrics');
     Route::get('/sales', [SalesReportController::class, 'index'])->name('reports.sales.index');
     Route::get('/sales/client-items', [SalesReportController::class, 'clientItems'])->name('reports.sales.client-items');
-    Route::get('/comparison', [ComparisonReportController::class, 'index'])->name('reports.comparison.index');
+    Route::get('/comparison', function (\Illuminate\Http\Request $request) {
+        return redirect()->route('reports.comparison.asan.index', $request->query());
+    })->name('reports.comparison.index');
     Route::get('/comparison/export/pdf', [ComparisonReportController::class, 'exportPdf'])->name('reports.comparison.export.pdf');
     Route::get('/comparison/export/csv', [ComparisonReportController::class, 'exportCsv'])->name('reports.comparison.export.csv');
     Route::get('/comparison/asan', [ComparisonAsanReportController::class, 'index'])->name('reports.comparison.asan.index');

@@ -3,11 +3,6 @@
 
 @section('content')
 <header class="page-header"><h1>Sales report</h1></header>
-<p class="hint">
-        Sales from store documents for the selected period. Only posted <strong>sales invoices</strong> (<code>fld_type_alias = S</code>) to clients with a salesman count — sales orders (<code>SO</code>) and purchase/inbound lines are excluded. Amount = line total minus this line’s share of invoice header and extra discounts; quantity and weight are summed from line quantities × item weight in settings.
-        In <strong>By client</strong> view, click a client name for item-level detail. <strong>Category view → Totals</strong> groups by item description; check <strong>Include items</strong> to list each product under its category. If both category checkboxes are on, <em>by client</em> wins.
-        <a href="{{ route('reports.identifier.index') }}#term-item_category">Identifier</a> · read-only.
-    </p>
 
     <form id="sales-filter-form" method="GET" action="{{ route('reports.sales.index') }}">
         <details class="filters-panel" open>

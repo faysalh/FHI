@@ -3,17 +3,6 @@
 
 @section('content')
 <header class="page-header"><h1>Sales by item</h1></header>
-<p class="hint">
-    Posted sales invoices (<code>S</code>) for the selected <strong>salesman</strong> and date range, grouped by item
-    <strong>category</strong> (<code>fld_description</code>). Sales are attributed by the <strong>salesman on the invoice</strong>
-    (<code>fld_sales_man_id_ref</code> on the document title), same as <a href="{{ route('reports.sales-by-salesman.index') }}">Sales by salesman</a>.
-    Each sale is counted under the <strong>client’s price group</strong>
-    (وكيل, وكيل 2, ماركيت, جملة, كي),
-    not by the invoice line unit price. <strong>ماركيت</strong> lines use qty × price after line discount when the invoice has no header discount; otherwise proportional invoice header discount only (rounded per line, extra discount excluded). Other price groups use qty × price after line discount only (ERP salesman report basis).
-    @if (!empty($priceGroupColumn))
-        Tier source: <code>{{ $priceGroupColumn }}</code>.
-    @endif
-</p>
 
 <form id="sales-by-item-filter-form" method="GET" action="{{ route('reports.sales-by-item.index') }}">
     <details class="filters-panel" open>

@@ -84,11 +84,11 @@ final class ReportGuide
                         'Comparison',
                         'Compare two date ranges side by side (quantities, amounts, weights).',
                         [
-                            'Posted sales tab: invoice lines (type S) with discount-aware amounts, same basis as Sales.',
-                            'Asan tab: same two-period layout, but totals come from tbl_multi_store_item_summary like AsanMax Items By Sales.',
-                            'Enter period A and period B, then Apply. Use exports to share outside the app.',
+                            'Totals come from the Asan item summary for posted sales invoices.',
+                            'Enter period 1 and period 2, then Apply. Difference is period 2 minus period 1.',
+                            'Use exports to share outside the app.',
                         ],
-                        'reports.comparison.index'
+                        'reports.comparison.asan.index'
                     ),
                     self::topic(
                         'cities',

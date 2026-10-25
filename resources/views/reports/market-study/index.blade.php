@@ -24,9 +24,6 @@
 <header class="page-header">
     <h1>Market study</h1>
 </header>
-<p class="hint">
-    Log market prices per KG by market, item, and brand. Shared across everyone with access — use the Price log tab to enter data, and Insights &amp; chart for today’s price and range averages.
-</p>
 
 @if ($canView || $canAdd)
 <div class="subtabs" role="tablist" aria-label="Market study sections">
