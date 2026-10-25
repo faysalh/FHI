@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Http\Requests\PdaVoucherRequest;
+use App\Support\ClientSuspensionNotice;
 use App\Support\SalesItemPriceTiers;
 use App\Support\SqlServerInClause;
 use Illuminate\Support\Facades\Cache;
@@ -20,6 +21,7 @@ class PdaWorkspaceService
     public function __construct(
         private readonly ReportsUsersSqliteService $users,
         private readonly PdaLocationSqliteService $locations,
+        private readonly ClientSuspensionSqliteService $suspensions,
     ) {}
 
     /**
@@ -134,7 +136,7 @@ class PdaWorkspaceService
         $rows = $this->customerCatalog($salesmanUserId);
         $search = mb_strtolower(trim($search));
         if ($search === '') {
-            return array_slice($rows, 0, 80);
+            return $this->withSuspensionFlags(array_slice($rows, 0, 80));
         }
 
         $matched = [];
@@ -148,7 +150,7 @@ class PdaWorkspaceService
             }
         }
 
-        return $matched;
+        return $this->withSuspensionFlags($matched);
     }
 
     public function customerCount(string $salesmanUserId): int
@@ -164,11 +166,39 @@ class PdaWorkspaceService
         $customerId = $this->guid($customerId);
         foreach ($this->customerCatalog($salesmanUserId) as $row) {
             if ($row['id'] === $customerId) {
-                return $row;
+                return $this->withSuspensionFlags([$row])[0];
             }
         }
 
         return null;
+    }
+
+    public function suspensionBlockMessage(string $customerId): ?string
+    {
+        if (! $this->suspensions->isSuspended($customerId)) {
+            return null;
+        }
+
+        return ClientSuspensionNotice::plain();
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     * @return list<array<string, mixed>>
+     */
+    private function withSuspensionFlags(array $rows): array
+    {
+        if ($rows === []) {
+            return $rows;
+        }
+
+        $ids = $this->suspensions->suspendedIdSet();
+        foreach ($rows as &$row) {
+            $row['suspended'] = isset($ids[(string) ($row['id'] ?? '')]);
+        }
+        unset($row);
+
+        return $rows;
     }
 
     /**
@@ -422,6 +452,10 @@ class PdaWorkspaceService
         array $lines,
         bool $allowZeroStock = false,
     ): string {
+        $blocked = $this->suspensionBlockMessage((string) ($customer['id'] ?? ''));
+        if ($blocked !== null) {
+            throw new RuntimeException($blocked);
+        }
         $this->assertCoordinates($latitude, $longitude);
         $visitId = $this->guid($visitId);
         $this->assertOwnVisit($salesman['user_id'], $visitId);

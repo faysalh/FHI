@@ -51,6 +51,10 @@ class PdaController extends Controller
         if ($row === null) {
             return redirect()->route('reports.pda.index')->withErrors(['pda' => 'That customer is not on your list.']);
         }
+        $blocked = $this->pda->suspensionBlockMessage($row['id']);
+        if ($blocked !== null) {
+            return redirect()->route('reports.pda.index')->withErrors(['pda' => $blocked]);
+        }
 
         return view('reports.pda.customer', $this->page($salesman, [
             'customer' => $row,
@@ -66,6 +70,10 @@ class PdaController extends Controller
         $customer = $this->pda->customer($salesman['user_id'], $customerId);
         if ($customer === null) {
             return back()->withErrors(['pda' => 'That customer is not on your list.']);
+        }
+        $blocked = $this->pda->suspensionBlockMessage($customer['id']);
+        if ($blocked !== null) {
+            return back()->withErrors(['pda' => $blocked]);
         }
 
         try {
@@ -440,6 +448,10 @@ class PdaController extends Controller
         $customer = $this->pda->customer($salesman['user_id'], (string) $row->customer_id);
         if ($customer === null) {
             return redirect()->route('reports.pda.index')->withErrors(['pda' => 'The customer for this visit is not on your list.']);
+        }
+        $blocked = $this->pda->suspensionBlockMessage($customer['id']);
+        if ($blocked !== null) {
+            return redirect()->route('reports.pda.index')->withErrors(['pda' => $blocked]);
         }
 
         return ['visit_id' => $visitId, 'customer' => $customer];

@@ -22,6 +22,7 @@
 /database/reports-users.sqlite
 /database/it-work-log.sqlite
 /database/market-study.sqlite
+/database/client-suspensions.sqlite
 /storage/app/sqlite-backups/
 /storage/app/pda-item-thumbs/
 /storage/app/sqlite-auto-backup.json

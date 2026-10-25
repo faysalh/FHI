@@ -15,15 +15,29 @@
         <p class="hint">Showing {{ count($customers) }} of {{ $customerCount }}. Search to narrow the list.</p>
     @endif
     @forelse ($customers as $customer)
-        <a class="pda-card" href="{{ route('reports.pda.customers.show', ['customer' => $customer['id']]) }}">
-            <strong>{{ $customer['name'] !== '' ? $customer['name'] : 'Customer' }}</strong>
-            <div class="pda-meta">
-                @if ($customer['code'] !== ''){{ $customer['code'] }} · @endif
-                @if ($customer['phone'] !== ''){{ $customer['phone'] }} · @endif
-                Balance {{ display_number($customer['balance'], 2) }}
-                @if ($customer['route'] !== '') · {{ $customer['route'] }}@endif
+        @if (! empty($customer['suspended']))
+            <div class="pda-card pda-card--suspended" aria-disabled="true">
+                <strong>{{ $customer['name'] !== '' ? $customer['name'] : 'Customer' }}</strong>
+                <div class="pda-meta">
+                    @if ($customer['code'] !== ''){{ $customer['code'] }} · @endif
+                    @if ($customer['phone'] !== ''){{ $customer['phone'] }} · @endif
+                    Balance {{ display_number($customer['balance'], 2) }}
+                    @if ($customer['route'] !== '') · {{ $customer['route'] }}@endif
+                </div>
+                <p class="pda-card__notice">{{ \App\Support\ClientSuspensionNotice::ARABIC }}</p>
+                <p class="pda-card__notice">{{ \App\Support\ClientSuspensionNotice::KURDISH }}</p>
             </div>
-        </a>
+        @else
+            <a class="pda-card" href="{{ route('reports.pda.customers.show', ['customer' => $customer['id']]) }}">
+                <strong>{{ $customer['name'] !== '' ? $customer['name'] : 'Customer' }}</strong>
+                <div class="pda-meta">
+                    @if ($customer['code'] !== ''){{ $customer['code'] }} · @endif
+                    @if ($customer['phone'] !== ''){{ $customer['phone'] }} · @endif
+                    Balance {{ display_number($customer['balance'], 2) }}
+                    @if ($customer['route'] !== '') · {{ $customer['route'] }}@endif
+                </div>
+            </a>
+        @endif
     @empty
         <p class="muted">No customers matched.</p>
     @endforelse

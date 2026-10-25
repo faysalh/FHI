@@ -267,7 +267,7 @@ begin
   if not DirExists(AppDir) then
     Exit;
 
-  SetArrayLength(Names, 11);
+  SetArrayLength(Names, 12);
   Names[0] := 'reports-users.sqlite';
   Names[1] := 'deliveries-local.sqlite';
   Names[2] := 'damages-local.sqlite';
@@ -279,6 +279,7 @@ begin
   Names[8] := 'it-work-log.sqlite';
   Names[9] := 'market-study.sqlite';
   Names[10] := 'pda-locations.sqlite';
+  Names[11] := 'client-suspensions.sqlite';
 
   Timestamp := GetDateTimeString('yyyyMMdd-HHmmss', #0, #0);
   BackupDir := AppDir + '\storage\app\sqlite-backups\pre-install-' + Timestamp;

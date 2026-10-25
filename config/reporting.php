@@ -349,6 +349,10 @@ return [
             'label' => 'PDA voucher locations',
             'connection' => 'pda_locations_sqlite',
         ],
+        'client_suspensions' => [
+            'label' => 'Client payment suspensions',
+            'connection' => 'client_suspensions_sqlite',
+        ],
     ],
 
 ];

@@ -12,6 +12,14 @@
         margin-bottom: 10px; background: #fff; color: inherit; font: inherit;
     }
     .pda-card strong { display: block; font-size: 16px; }
+    .pda-card--suspended {
+        background: #fee2e2; border-color: #fca5a5; color: #7f1d1d; cursor: not-allowed;
+    }
+    .pda-card--suspended .pda-meta { color: #991b1b; }
+    .pda-card__notice {
+        direction: rtl; unicode-bidi: isolate; text-align: right;
+        font-weight: 700; margin: 8px 0 0;
+    }
     .pda-meta { color: #64748b; font-size: 13px; margin-top: 4px; }
     .pda-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
     .pda-search { display: flex; gap: 8px; margin-bottom: 12px; min-width: 0; max-width: 100%; }

@@ -103,6 +103,7 @@ final class ReportNavigation
                     ['key' => 'client-balance', 'route' => 'reports.client-balance.index', 'label' => 'Client balance', 'title' => 'Client account balances by salesman (SP_Get_Account_Balance)'],
                     ['key' => 'general-ledger', 'route' => 'reports.general-ledger.index', 'label' => 'General ledger', 'title' => 'Account ledger with opening balance and period movement (AsanMax GeneralLedgerAccount)'],
                     ['key' => 'promotions', 'route' => 'reports.promotions.index', 'label' => 'Promotions', 'title' => 'Promoter schedules and client visit assignments'],
+                    ['key' => 'client-suspensions', 'route' => 'reports.client-suspensions.index', 'label' => 'Suspensions', 'title' => 'Suspend a client for late payment so PDA cannot sell to them'],
                 ],
             ],
             [
@@ -345,6 +346,7 @@ final class ReportNavigation
             str_starts_with($routeName, 'reports.client-balance') => 'client-balance',
             str_starts_with($routeName, 'reports.general-ledger') => 'general-ledger',
             str_starts_with($routeName, 'reports.promotions') => 'promotions',
+            str_starts_with($routeName, 'reports.client-suspensions') => 'client-suspensions',
             str_starts_with($routeName, 'reports.manufacturing') => 'manufacturing',
             str_starts_with($routeName, 'reports.face-id') => 'face-id',
             str_starts_with($routeName, 'reports.schema') => 'schema',

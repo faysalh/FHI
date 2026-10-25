@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Services\ClientSuspensionSqliteService;
 use App\Services\PdaLocationSqliteService;
 use App\Services\PdaWorkspaceService;
 use App\Services\ReportsUsersSqliteService;
@@ -20,8 +21,10 @@ class PdaWorkspaceTest extends TestCase
         parent::setUp();
         Config::set('database.connections.reports_users_sqlite.database', ':memory:');
         Config::set('database.connections.pda_locations_sqlite.database', ':memory:');
+        Config::set('database.connections.client_suspensions_sqlite.database', ':memory:');
         DB::purge('reports_users_sqlite');
         DB::purge('pda_locations_sqlite');
+        DB::purge('client_suspensions_sqlite');
     }
 
     public function test_navigation_includes_pda_for_a_user_with_access(): void
@@ -62,7 +65,7 @@ class PdaWorkspaceTest extends TestCase
         $this->assertSame('11111111-1111-1111-1111-111111111111', $user->pda_salesman_user_id);
         $this->assertSame('Ali', $user->pda_salesman_name);
 
-        $link = (new PdaWorkspaceService($users, new PdaLocationSqliteService))->linkedSalesman($id);
+        $link = (new PdaWorkspaceService($users, new PdaLocationSqliteService, new ClientSuspensionSqliteService))->linkedSalesman($id);
         $this->assertSame('22222222-2222-2222-2222-222222222222', $link['account_id'] ?? null);
     }
 
@@ -91,7 +94,7 @@ class PdaWorkspaceTest extends TestCase
 
     public function test_missing_location_is_rejected(): void
     {
-        $service = new PdaWorkspaceService(new ReportsUsersSqliteService, new PdaLocationSqliteService);
+        $service = new PdaWorkspaceService(new ReportsUsersSqliteService, new PdaLocationSqliteService, new ClientSuspensionSqliteService);
         $this->expectException(RuntimeException::class);
         $service->assertCoordinates(0.0, 0.0);
     }

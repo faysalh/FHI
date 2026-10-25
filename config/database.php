@@ -176,6 +176,18 @@ return [
             'transaction_mode' => 'DEFERRED',
         ],
 
+        'client_suspensions_sqlite' => [
+            'driver' => 'sqlite',
+            'url' => null,
+            'database' => env('CLIENT_SUSPENSIONS_SQLITE_DATABASE', database_path('client-suspensions.sqlite')),
+            'prefix' => '',
+            'foreign_key_constraints' => true,
+            'busy_timeout' => null,
+            'journal_mode' => null,
+            'synchronous' => null,
+            'transaction_mode' => 'DEFERRED',
+        ],
+
         'mysql' => [
             'driver' => 'mysql',
             'url' => env('DB_URL'),

@@ -173,6 +173,7 @@ function Ensure-EnvSqliteKeys([string]$EnvPath, [string]$InstallPath) {
         'IT_WORK_LOG_SQLITE_DATABASE' = "$dbPath/database/it-work-log.sqlite"
         'MARKET_STUDY_SQLITE_DATABASE' = "$dbPath/database/market-study.sqlite"
         'PDA_LOCATIONS_SQLITE_DATABASE' = "$dbPath/database/pda-locations.sqlite"
+        'CLIENT_SUSPENSIONS_SQLITE_DATABASE' = "$dbPath/database/client-suspensions.sqlite"
     }
     $added = @()
     $lines = @(Read-TextLines -Path $EnvPath)
@@ -696,7 +697,8 @@ function Show-BundledSqliteStatus([string]$InstallPath) {
         @{ key = 'manufacturing-local.sqlite'; label = 'Manufacturing storage' },
         @{ key = 'it-work-log.sqlite'; label = 'IT work log' },
         @{ key = 'market-study.sqlite'; label = 'Market study' },
-        @{ key = 'pda-locations.sqlite'; label = 'PDA voucher locations' }
+        @{ key = 'pda-locations.sqlite'; label = 'PDA voucher locations' },
+        @{ key = 'client-suspensions.sqlite'; label = 'Client payment suspensions' }
     )
 
     Write-Step 'Local SQLite databases'
@@ -755,6 +757,7 @@ OPERATIONS_TASKS_SQLITE_DATABASE="$dbPath/database/operations-tasks.sqlite"
 IT_WORK_LOG_SQLITE_DATABASE="$dbPath/database/it-work-log.sqlite"
 MARKET_STUDY_SQLITE_DATABASE="$dbPath/database/market-study.sqlite"
 PDA_LOCATIONS_SQLITE_DATABASE="$dbPath/database/pda-locations.sqlite"
+CLIENT_SUSPENSIONS_SQLITE_DATABASE="$dbPath/database/client-suspensions.sqlite"
 ACCOUNTING_SQLITE_DATABASE="$dbPath/database/accounting-local.sqlite"
 PROMOTIONS_SQLITE_DATABASE="$dbPath/database/promotions-local.sqlite"
 FACE_ID_SQLITE_DATABASE="$dbPath/database/face-id-local.sqlite"
