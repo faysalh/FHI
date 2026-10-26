@@ -73,10 +73,24 @@
     .pda-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
     .pda-tile[hidden] { display: none !important; }
     .pda-tile {
-        display: grid; grid-template-columns: 68px minmax(0, 1fr) 76px; align-items: center; column-gap: 8px;
-        width: 100%; min-height: 0; padding: 6px; border-radius: 12px; border: 1px solid #e2e8f0;
-        background: #fff; color: inherit; font: inherit; text-align: right; cursor: pointer;
+        position: relative; overflow: hidden; width: 100%; min-height: 0; padding: 0;
+        border-radius: 12px; border: 1px solid #e2e8f0; background: #fff; color: inherit;
+        font: inherit; text-align: right; cursor: pointer; touch-action: pan-y; user-select: none;
     }
+    .pda-swipe__face {
+        display: grid; grid-template-columns: 68px minmax(0, 1fr) 76px; align-items: center; column-gap: 8px;
+        width: 100%; padding: 6px; background: inherit; position: relative; z-index: 1;
+        transition: transform 160ms ease;
+    }
+    .pda-tile.is-swiping .pda-swipe__face { transition: none; }
+    .pda-tile.is-more::before,
+    .pda-tile.is-less::after {
+        position: absolute; top: 0; bottom: 0; z-index: 0; width: 76px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 28px; font-weight: 800; color: #fff; pointer-events: none;
+    }
+    .pda-tile.is-more::before { content: "+"; left: 0; background: #0f766e; }
+    .pda-tile.is-less::after { content: "−"; right: 0; background: #c2410c; }
     .pda-tile:active { background: #f8fafc; }
     .pda-tile.is-picked { border-color: #6366f1; background: #f5f3ff; }
     .pda-tile--locked { cursor: not-allowed; }
@@ -135,7 +149,7 @@
         .pda-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 420px) {
-        .pda-tile { grid-template-columns: 56px minmax(0, 1fr) 64px; column-gap: 6px; }
+        .pda-swipe__face { grid-template-columns: 56px minmax(0, 1fr) 64px; column-gap: 6px; }
         .pda-tile__photo, .pda-tile__img { width: 64px; height: 64px; }
         .pda-tile__stock b { font-size: 16px; }
     }
@@ -186,6 +200,10 @@
         padding: 14px 14px calc(16px + env(safe-area-inset-bottom));
         box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.18);
     }
+    .pda-review__brand { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-bottom: 8px; }
+    .pda-review__brand img { width: 72px; height: 72px; object-fit: contain; }
+    .pda-review__brand p { margin: 0; font-weight: 800; text-align: center; direction: rtl; unicode-bidi: isolate; }
+    .pda-review__brand p:empty { display: none; }
     .pda-review__sheet h2 { margin: 0 0 4px; font-size: 18px; }
     .pda-review__client {
         margin: 0 0 10px; direction: rtl; unicode-bidi: isolate;

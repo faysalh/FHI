@@ -65,7 +65,7 @@
         </header>
         @include('reports.pda.partials.subnav')
     @endif
-    <form method="POST" action="{{ route('reports.pda.vouchers.store', ['visit' => $visitId]) }}" @class(['js-pda-locate', 'pda-sale' => $kind === 'sale']) id="pda-voucher-form" data-customer-name="{{ $customer['name'] }}">
+    <form method="POST" action="{{ route('reports.pda.vouchers.store', ['visit' => $visitId]) }}" @class(['js-pda-locate', 'pda-sale' => $kind === 'sale']) id="pda-voucher-form" data-customer-name="{{ $customer['name'] }}" data-salesman-name="{{ $salesman['name'] ?? '' }}">
         @csrf
         <input type="hidden" name="kind" value="{{ $kind }}">
         <input type="hidden" name="discount" value="0">
@@ -113,21 +113,23 @@
                                 data-category="{{ $tile['category_id'] }}"
                                 data-subcategory="{{ $tile['subcategory_id'] }}"
                             >
-                                <span class="pda-tile__stock{{ $tile['available'] < 0 ? ' is-neg' : ($tile['available'] <= 0 ? ' is-out' : '') }}">
-                                    <b>{{ display_number($tile['available'], 2) }}</b>
-                                    <small>Available</small>
-                                </span>
-                                <span class="pda-tile__copy">
-                                    <strong dir="auto">{{ $tile['name'] }}</strong>
-                                    <span class="pda-tile__price">{{ display_number($tile['price'], 2) }}@if ($tile['unit'] !== '') <span class="pda-tile__unit">{{ $tile['unit'] }}</span>@endif</span>
-                                </span>
-                                <span class="pda-tile__photo">
-                                    <span class="pda-tile__badge" data-badge></span>
-                                    @if ($tile['has_image'])
-                                        <img class="pda-tile__img" src="{{ route('reports.pda.items.image', ['item' => $tile['item_id']]) }}" alt="" loading="lazy" decoding="async" onerror="if(!this.dataset.retry){this.dataset.retry='1';this.src=this.src.split('?')[0]+'?retry=1';}else{this.outerHTML='<span class=&quot;pda-tile__img pda-tile__img--empty&quot;></span>';}">
-                                    @else
-                                        <span class="pda-tile__img pda-tile__img--empty" aria-hidden="true"></span>
-                                    @endif
+                                <span class="pda-swipe__face">
+                                    <span class="pda-tile__stock{{ $tile['available'] < 0 ? ' is-neg' : ($tile['available'] <= 0 ? ' is-out' : '') }}">
+                                        <b>{{ display_number($tile['available'], 2) }}</b>
+                                        <small>Available</small>
+                                    </span>
+                                    <span class="pda-tile__copy">
+                                        <strong dir="auto">{{ $tile['name'] }}</strong>
+                                        <span class="pda-tile__price">{{ display_number($tile['price'], 2) }}@if ($tile['unit'] !== '') <span class="pda-tile__unit">{{ $tile['unit'] }}</span>@endif</span>
+                                    </span>
+                                    <span class="pda-tile__photo">
+                                        <span class="pda-tile__badge" data-badge></span>
+                                        @if ($tile['has_image'])
+                                            <img class="pda-tile__img" src="{{ route('reports.pda.items.image', ['item' => $tile['item_id']]) }}" alt="" loading="lazy" decoding="async" draggable="false" onerror="if(!this.dataset.retry){this.dataset.retry='1';this.src=this.src.split('?')[0]+'?retry=1';}else{this.outerHTML='<span class=&quot;pda-tile__img pda-tile__img--empty&quot;></span>';}">
+                                        @else
+                                            <span class="pda-tile__img pda-tile__img--empty" aria-hidden="true"></span>
+                                        @endif
+                                    </span>
                                 </span>
                             </button>
                         @empty
@@ -162,6 +164,10 @@
                         </div>
                         <div class="pda-review" id="pda-review" hidden>
                             <div class="pda-review__sheet" role="dialog" aria-modal="true" aria-labelledby="pda-review-title">
+                                <div class="pda-review__brand">
+                                    <img src="/icons/apple-touch-icon.png" alt="Akre Chicken" width="72" height="72">
+                                    <p id="pda-review-salesman">{{ $salesman['name'] ?? '' }}</p>
+                                </div>
                                 <h2 id="pda-review-title">Review sale</h2>
                                 <p class="pda-review__client" id="pda-review-client"></p>
                                 <div class="pda-review__lines" id="pda-review-lines"></div>
@@ -332,7 +338,84 @@
                     }
 
                     grid.querySelectorAll('.pda-tile').forEach(function (tile) {
-                        tile.addEventListener('click', function () { addTile(tile, 1); });
+                        var face = tile.querySelector('.pda-swipe__face');
+                        var pointerId = null;
+                        var startX = 0;
+                        var startY = 0;
+                        var dx = 0;
+                        var decided = false;
+                        var horizontal = false;
+                        var ignoreClick = false;
+
+                        function releaseFace() {
+                            tile.classList.remove('is-swiping');
+                            if (face) face.offsetWidth;
+                            if (face) face.style.transform = '';
+                            tile.classList.remove('is-less', 'is-more');
+                        }
+
+                        tile.addEventListener('pointerdown', function (event) {
+                            if (!face || (event.pointerType === 'mouse' && event.button !== 0)) return;
+                            pointerId = event.pointerId;
+                            startX = event.clientX;
+                            startY = event.clientY;
+                            dx = 0;
+                            decided = false;
+                            horizontal = false;
+                        });
+
+                        tile.addEventListener('pointermove', function (event) {
+                            if (!face || pointerId !== event.pointerId) return;
+                            var nextX = event.clientX - startX;
+                            var nextY = event.clientY - startY;
+                            if (!decided) {
+                                if (Math.abs(nextX) < 18 && Math.abs(nextY) < 18) return;
+                                decided = true;
+                                horizontal = Math.abs(nextX) > Math.abs(nextY) && Math.abs(nextX) >= 18;
+                                if (!horizontal) {
+                                    pointerId = null;
+                                    return;
+                                }
+                                tile.classList.add('is-swiping');
+                                try { tile.setPointerCapture(event.pointerId); } catch (err) {}
+                            }
+                            if (!horizontal) return;
+                            dx = Math.max(-88, Math.min(88, nextX));
+                            face.style.transform = 'translate3d(' + dx + 'px,0,0)';
+                            tile.classList.toggle('is-less', dx < -12);
+                            tile.classList.toggle('is-more', dx > 12);
+                        });
+
+                        function finishSwipe(event) {
+                            if (!face || pointerId === null || event.pointerId !== pointerId) return;
+                            pointerId = null;
+                            var moved = dx;
+                            var wasHorizontal = horizontal;
+                            dx = 0;
+                            horizontal = false;
+                            releaseFace();
+                            if (!wasHorizontal) return;
+                            ignoreClick = true;
+                            if (moved <= -42) addTile(tile, -1);
+                            else if (moved >= 42) addTile(tile, 1);
+                        }
+
+                        tile.addEventListener('pointerup', finishSwipe);
+                        tile.addEventListener('pointercancel', function (event) {
+                            if (pointerId === null || event.pointerId !== pointerId) return;
+                            pointerId = null;
+                            horizontal = false;
+                            dx = 0;
+                            releaseFace();
+                        });
+                        tile.addEventListener('click', function (event) {
+                            if (ignoreClick) {
+                                ignoreClick = false;
+                                event.preventDefault();
+                                return;
+                            }
+                            addTile(tile, 1);
+                        });
                     });
 
                     function markTabs() {
@@ -387,6 +470,8 @@
                     var pictureStatus = document.getElementById('pda-picture-status');
                     var saleForm = document.getElementById('pda-voucher-form');
                     var pictureFont = '"Segoe UI", "Noto Naskh Arabic", "Noto Sans Arabic", Tahoma, Arial, sans-serif';
+                    var reviewLogo = new Image();
+                    reviewLogo.src = '/icons/apple-touch-icon.png';
 
                     function reviewRows() {
                         return Object.keys(cart).map(function (key) {
@@ -488,6 +573,7 @@
                         var rows = reviewRows();
                         var sum = rows.reduce(function (totalAmount, row) { return totalAmount + row.total; }, 0);
                         var clientName = saleForm ? (saleForm.getAttribute('data-customer-name') || '') : '';
+                        var salesmanName = saleForm ? (saleForm.getAttribute('data-salesman-name') || '') : '';
                         var scale = 2;
                         var width = 640;
                         var pad = 28;
@@ -498,7 +584,10 @@
                             var nameLines = wrapCanvasText(measure, row.name, contentWidth - 160);
                             return { row: row, nameLines: nameLines, height: 12 + (nameLines.length * 24) + 26 };
                         });
-                        var height = 64 + blocks.reduce(function (totalHeight, block) { return totalHeight + block.height; }, 0) + 90;
+                        var logoReady = reviewLogo.complete && reviewLogo.naturalWidth > 0;
+                        var logoSize = logoReady ? 120 : 0;
+                        var salesmanHeight = salesmanName !== '' ? 32 : 0;
+                        var height = 20 + logoSize + (logoReady ? 12 : 0) + salesmanHeight + 44 + blocks.reduce(function (totalHeight, block) { return totalHeight + block.height; }, 0) + 90;
                         var canvas = document.createElement('canvas');
                         canvas.width = width * scale;
                         canvas.height = height * scale;
@@ -508,7 +597,18 @@
                         ctx.fillRect(0, 0, width, height);
                         ctx.fillStyle = '#0f172a';
                         ctx.textBaseline = 'top';
-                        var y = 24;
+                        var y = 16;
+                        if (logoReady) {
+                            ctx.drawImage(reviewLogo, (width - logoSize) / 2, y, logoSize, logoSize);
+                            y += logoSize + 12;
+                        }
+                        if (salesmanName !== '') {
+                            ctx.font = '700 18px ' + pictureFont;
+                            ctx.direction = 'rtl';
+                            ctx.textAlign = 'center';
+                            ctx.fillText(salesmanName, width / 2, y);
+                            y += salesmanHeight;
+                        }
                         ctx.font = '700 22px ' + pictureFont;
                         ctx.direction = 'rtl';
                         ctx.textAlign = 'right';
@@ -579,6 +679,11 @@
                     function sendPicture() {
                         if (!reviewRows().length) return;
                         if (pictureStatus) pictureStatus.textContent = '';
+                        if (!reviewLogo.complete) {
+                            reviewLogo.addEventListener('load', sendPicture, { once: true });
+                            reviewLogo.addEventListener('error', sendPicture, { once: true });
+                            return;
+                        }
                         var canvas = drawReviewPicture();
                         canvas.toBlob(function (blob) {
                             if (!blob) {
