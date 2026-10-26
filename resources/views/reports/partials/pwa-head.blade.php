@@ -62,5 +62,6 @@
     .pwa-help__card p { margin: 0 0 10px; color: #475569; }
     .pwa-help__card ol { margin: 0 0 14px; padding-left: 20px; }
     .pwa-help__card li { margin: 6px 0; }
-    .pwa-help__card .btn { min-height: 44px; }
+    .pwa-help__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .pwa-help__actions .btn { min-height: 44px; }
 </style>
