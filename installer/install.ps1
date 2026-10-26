@@ -51,11 +51,15 @@ trap {
     Write-Host ''
     Write-Host 'Re-run as Administrator and read the messages above.' -ForegroundColor Yellow
     Write-Host 'You can also run installer\diagnose.cmd to check what is wrong.' -ForegroundColor Yellow
-    $appcmd = Join-Path $env:windir 'System32\inetsrv\appcmd.exe'
-    if (Test-Path -LiteralPath $appcmd) {
-        & $appcmd start apppool "/apppool.name:$AppPoolName" 2>$null | Out-Null
-        & $appcmd start site "/site.name:$SiteName" 2>$null | Out-Null
-        Write-Host "Started IIS site $SiteName so the update does not leave it stopped." -ForegroundColor Yellow
+    try {
+        Start-ReportingSite -SiteName $SiteName -AppPoolName $AppPoolName
+    } catch {
+        $appcmd = Join-Path $env:windir 'System32\inetsrv\appcmd.exe'
+        if (Test-Path -LiteralPath $appcmd) {
+            & $appcmd start apppool "/apppool.name:$AppPoolName" 2>$null | Out-Null
+            & $appcmd start site "/site.name:$SiteName" 2>$null | Out-Null
+            Write-Host "Started IIS site $SiteName so the update does not leave it stopped." -ForegroundColor Yellow
+        }
     }
     try { Stop-Transcript | Out-Null } catch {}
     if ($script:PauseOnExit) { Read-Host 'Press Enter to close' | Out-Null }

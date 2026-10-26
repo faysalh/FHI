@@ -3,7 +3,7 @@
 ; Run: scripts\build-setup-exe.ps1 -BundleRuntime
 
 #define MyAppName "Reporting App"
-#define MyAppVersion "1.0.29"
+#define MyAppVersion "1.0.30"
 #define MyAppPublisher "Reporting"
 #define MyAppURL "http://localhost"
 
@@ -63,7 +63,7 @@ Name: "{group}\Repair web (IIS)"; Filename: "{app}\installer\repair-web.cmd"; Wo
 Name: "{group}\Create .env (recovery)"; Filename: "{app}\installer\create-env.cmd"; WorkingDir: "{app}"
 
 [Run]
-Filename: "powershell.exe"; Parameters: "{code:GetInstallParams}"; StatusMsg: "Configuring IIS, PHP, and database (watch the console for errors)..."; Flags: waituntilterminated
+Filename: "powershell.exe"; Parameters: "{code:GetInstallParams}"; StatusMsg: "Updating the application. SQL Server and SQLite databases are not changed..."; Flags: waituntilterminated
 
 [Code]
 var
@@ -72,6 +72,7 @@ var
   PortPage: TInputQueryWizardPage;
   UrlPage: TInputQueryWizardPage;
   InstallConfigPath: String;
+  SiteWasStopped: Boolean;
 
 function EscapeConfigValue(const S: String): String;
 var
@@ -263,6 +264,19 @@ begin
     '-ConfigFile "' + InstallConfigPath + '" -Pause';
 end;
 
+procedure StartReportingSite;
+var
+  ResultCode: Integer;
+  AppCmd: String;
+begin
+  AppCmd := ExpandConstant('{sys}\inetsrv\appcmd.exe');
+  if not FileExists(AppCmd) then
+    Exit;
+  { iisreset does not start a pool that was stopped by name. Start both explicitly. }
+  Exec(AppCmd, 'start apppool /apppool.name:ReportingApp', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(AppCmd, 'start site /site.name:ReportingApp', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
 procedure StopReportingSite;
 var
   ResultCode: Integer;
@@ -274,6 +288,15 @@ begin
   { Stop the live site before files are copied so a request cannot write while we update. }
   Exec(AppCmd, 'stop apppool /apppool.name:ReportingApp', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec(AppCmd, 'stop site /site.name:ReportingApp', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  SiteWasStopped := True;
+end;
+
+procedure DeinitializeSetup;
+begin
+  { The 1.0.29 update stopped the pool and left HTTP 503 when setup ended
+    before the site was started again. Always start it on the way out. }
+  if SiteWasStopped then
+    StartReportingSite;
 end;
 
 procedure BackupSqliteBeforeUpdate;
