@@ -137,6 +137,40 @@
                 </form>
             </div>
 
+            @if (count($assignments) > 0)
+                <div class="lab-card">
+                    <h3 class="section-title">All assignments</h3>
+                    <div class="promo-bulk-actions">
+                        <form method="POST" action="{{ route('reports.promotions.assignments.clear') }}" onsubmit="return confirm(@json('Remove all client assignments from '.$selectedPromoter->employee_name.'?'));">
+                            @csrf
+                            <input type="hidden" name="tab" value="assignments">
+                            <input type="hidden" name="promoter_id" value="{{ $promoterId }}">
+                            <button type="submit" class="btn btn--secondary">Clear all</button>
+                        </form>
+                        @php
+                            $otherPromoters = array_values(array_filter(
+                                $promoters,
+                                static fn (object $promoter): bool => (int) $promoter->id !== $promoterId
+                            ));
+                        @endphp
+                        @if ($otherPromoters !== [])
+                            <form method="POST" action="{{ route('reports.promotions.assignments.transfer') }}" class="promo-transfer-form" onsubmit="return confirm(@json('Move all client assignments to the selected promoter? Visit days stay with each client.'));">
+                                @csrf
+                                <input type="hidden" name="tab" value="assignments">
+                                <input type="hidden" name="promoter_id" value="{{ $promoterId }}">
+                                <label for="target_promoter_id">Transfer all to</label>
+                                <select id="target_promoter_id" name="target_promoter_id" required>
+                                    @foreach ($otherPromoters as $promoter)
+                                        <option value="{{ (int) $promoter->id }}">{{ $promoter->employee_name }}</option>
+                                    @endforeach
+                                </select>
+                                <button type="submit" class="btn btn--primary">Transfer all</button>
+                            </form>
+                        @endif
+                    </div>
+                </div>
+            @endif
+
             <div class="lab-card">
                 <h3 class="section-title">Assigned clients ({{ count($assignments) }})</h3>
                 <div class="table-scroll">
@@ -435,6 +469,23 @@
     margin-bottom: 8px;
 }
 .promo-filter-form { margin-bottom: 16px; }
+.promo-bulk-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 16px;
+}
+.promo-transfer-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 8px;
+}
+.promo-transfer-form select {
+    width: auto;
+    min-width: 180px;
+    min-height: 40px;
+}
 .promo-schedule-table {
     width: 100%;
     border-collapse: collapse;

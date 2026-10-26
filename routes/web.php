@@ -185,6 +185,8 @@ Route::prefix('reports')->middleware(['reports.admin', 'reports.permission'])->g
     Route::post('/promotions/assignments', [PromotionsController::class, 'storeAssignment'])->name('reports.promotions.assignments.store');
     Route::put('/promotions/assignments/{assignment}', [PromotionsController::class, 'updateAssignment'])->name('reports.promotions.assignments.update');
     Route::delete('/promotions/assignments/{assignment}', [PromotionsController::class, 'destroyAssignment'])->name('reports.promotions.assignments.destroy');
+    Route::post('/promotions/assignments/clear', [PromotionsController::class, 'clearAssignments'])->name('reports.promotions.assignments.clear');
+    Route::post('/promotions/assignments/transfer', [PromotionsController::class, 'transferAssignments'])->name('reports.promotions.assignments.transfer');
     Route::get('/promotions/api/clients', [PromotionsController::class, 'apiClients'])->name('reports.promotions.api.clients');
     Route::get('/promotions/export/pdf', [PromotionsController::class, 'exportPdf'])->name('reports.promotions.export.pdf');
     Route::get('/promotions/export/csv', [PromotionsController::class, 'exportCsv'])->name('reports.promotions.export.csv');

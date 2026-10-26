@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Exports\PromotionsScheduleExport;
+use App\Http\Requests\PromotionsAssignmentsClearRequest;
+use App\Http\Requests\PromotionsAssignmentsTransferRequest;
 use App\Http\Requests\PromotionsAssignmentStoreRequest;
 use App\Http\Requests\PromotionsAssignmentUpdateRequest;
 use App\Http\Requests\PromotionsPromoterStoreRequest;
@@ -213,6 +215,52 @@ class PromotionsController extends Controller
         }
 
         return $this->redirectWithTab($request, 'assignments', ['promoter_id' => $promoterId])->with('status', 'Client removed from promoter.');
+    }
+
+    public function clearAssignments(PromotionsAssignmentsClearRequest $request): RedirectResponse
+    {
+        $promoterId = (int) $request->validated('promoter_id');
+
+        try {
+            $removed = $this->promotions->clearAssignmentsForPromoter($promoterId);
+        } catch (\InvalidArgumentException $e) {
+            return $this->redirectWithTab($request, 'assignments', ['promoter_id' => $promoterId])->with('error', $e->getMessage());
+        } catch (Throwable $e) {
+            Log::error('promotions.clear_assignments_failed', ['message' => $e->getMessage()]);
+
+            return $this->redirectWithTab($request, 'assignments', ['promoter_id' => $promoterId])->with('error', 'Could not clear assignments.');
+        }
+
+        $message = $removed === 1
+            ? 'Removed 1 client assignment.'
+            : 'Removed '.$removed.' client assignments.';
+
+        return $this->redirectWithTab($request, 'assignments', ['promoter_id' => $promoterId])->with('status', $message);
+    }
+
+    public function transferAssignments(PromotionsAssignmentsTransferRequest $request): RedirectResponse
+    {
+        $validated = $request->validated();
+        $promoterId = (int) $validated['promoter_id'];
+        $targetId = (int) $validated['target_promoter_id'];
+
+        try {
+            $moved = $this->promotions->transferAssignments($promoterId, $targetId);
+            $target = $this->promotions->getPromoter($targetId);
+        } catch (\InvalidArgumentException $e) {
+            return $this->redirectWithTab($request, 'assignments', ['promoter_id' => $promoterId])->with('error', $e->getMessage());
+        } catch (Throwable $e) {
+            Log::error('promotions.transfer_assignments_failed', ['message' => $e->getMessage()]);
+
+            return $this->redirectWithTab($request, 'assignments', ['promoter_id' => $promoterId])->with('error', 'Could not transfer assignments.');
+        }
+
+        $targetName = (string) ($target->employee_name ?? 'the selected promoter');
+        $message = $moved === 1
+            ? 'Moved 1 client assignment to '.$targetName.'.'
+            : 'Moved '.$moved.' client assignments to '.$targetName.'.';
+
+        return $this->redirectWithTab($request, 'assignments', ['promoter_id' => $targetId])->with('status', $message);
     }
 
     public function exportPdf(PromotionsScheduleExportRequest $request): Response|RedirectResponse
