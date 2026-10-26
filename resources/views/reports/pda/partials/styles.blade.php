@@ -170,4 +170,37 @@
         .pda-cart--sale .pda-cart__sheet { display: none; }
         .pda-cart--sale.is-open .pda-cart__sheet { display: block; max-height: 46vh; overflow: auto; margin-bottom: 8px; }
     }
+    .pda-review[hidden] { display: none !important; }
+    .pda-review {
+        position: fixed; inset: 0; z-index: 60;
+        display: flex; align-items: flex-end; justify-content: center;
+        background: rgba(15, 23, 42, 0.45);
+    }
+    .pda-review__sheet {
+        display: flex; flex-direction: column;
+        width: min(480px, 100%);
+        max-height: min(86vh, 720px);
+        overflow: hidden;
+        background: #fff;
+        border-radius: 18px 18px 0 0;
+        padding: 14px 14px calc(16px + env(safe-area-inset-bottom));
+        box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.18);
+    }
+    .pda-review__sheet h2 { margin: 0 0 4px; font-size: 18px; }
+    .pda-review__client {
+        margin: 0 0 10px; direction: rtl; unicode-bidi: isolate;
+        text-align: right; font-weight: 700;
+    }
+    .pda-review__lines { overflow: auto; flex: 1 1 auto; min-height: 0; }
+    .pda-review__line {
+        display: flex; justify-content: space-between; gap: 8px;
+        padding: 8px 0; border-top: 1px solid #e2e8f0;
+    }
+    .pda-review__line strong { direction: rtl; unicode-bidi: isolate; }
+    .pda-review__totals { margin-top: 8px; }
+    .pda-review__totals > div { display: flex; justify-content: space-between; padding: 4px 0; }
+    .pda-review__grand { font-size: 22px; font-weight: 800; }
+    .pda-review__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .pda-review__actions .pda-btn { flex: 1 1 30%; min-height: 48px; }
+    .pda-review__actions #pda-review-share { flex-basis: 100%; }
 </style>
