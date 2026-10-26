@@ -3,7 +3,7 @@
 ; Run: scripts\build-setup-exe.ps1 -BundleRuntime
 
 #define MyAppName "Reporting App"
-#define MyAppVersion "1.0.28"
+#define MyAppVersion "1.0.29"
 #define MyAppPublisher "Reporting"
 #define MyAppURL "http://localhost"
 
@@ -16,7 +16,11 @@ DefaultDirName={autopf}\ReportingApp
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=..\dist
+#ifdef UpdateBuild
+OutputBaseFilename=ReportingApp-Update-{#MyAppVersion}
+#else
 OutputBaseFilename=ReportingApp-Setup
+#endif
 Compression=lzma2/max
 SolidCompression=yes
 DiskSpanning=no
@@ -28,7 +32,9 @@ SetupLogging=yes
 
 [Files]
 ; Never overwrite live SQLite files on upgrade (see database\*.sqlite entries below).
-Source: "..\dist\ReportingApp-Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: ".env,database\*.sqlite,storage\app\sqlite-auto-backup.json,storage\app\pda-auto-sync.json,storage\app\sqlite-backups\*"
+; Update copies application files only. Live .env, every SQLite file (including
+; WAL/SHM), and stored SQLite backups are never replaced.
+Source: "..\dist\ReportingApp-Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: ".env,database\*.sqlite,database\*.sqlite-wal,database\*.sqlite-shm,database\*.sqlite-journal,storage\app\sqlite-auto-backup.json,storage\app\pda-auto-sync.json,storage\app\sqlite-backups\*"
 #ifexist "..\dist\ReportingApp-Release\database\reports-users.sqlite"
 Source: "..\dist\ReportingApp-Release\database\reports-users.sqlite"; DestDir: "{app}\database"; Flags: onlyifdoesntexist uninsneveruninstall
 #endif
@@ -257,44 +263,45 @@ begin
     '-ConfigFile "' + InstallConfigPath + '" -Pause';
 end;
 
+procedure StopReportingSite;
+var
+  ResultCode: Integer;
+  AppCmd: String;
+begin
+  AppCmd := ExpandConstant('{sys}\inetsrv\appcmd.exe');
+  if not FileExists(AppCmd) then
+    Exit;
+  { Stop the live site before files are copied so a request cannot write while we update. }
+  Exec(AppCmd, 'stop apppool /apppool.name:ReportingApp', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(AppCmd, 'stop site /site.name:ReportingApp', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
 procedure BackupSqliteBeforeUpdate;
 var
-  AppDir, BackupDir, Timestamp, Src, Dst, BaseName: String;
-  I: Integer;
-  Names: TArrayOfString;
+  AppDir, BackupDir, Timestamp: String;
+  FindRec: TFindRec;
 begin
   AppDir := ExpandConstant('{app}');
-  if not DirExists(AppDir) then
+  if not DirExists(AppDir + '\database') then
     Exit;
-
-  SetArrayLength(Names, 12);
-  Names[0] := 'reports-users.sqlite';
-  Names[1] := 'deliveries-local.sqlite';
-  Names[2] := 'damages-local.sqlite';
-  Names[3] := 'operations-tasks.sqlite';
-  Names[4] := 'accounting-local.sqlite';
-  Names[5] := 'promotions-local.sqlite';
-  Names[6] := 'face-id-local.sqlite';
-  Names[7] := 'manufacturing-local.sqlite';
-  Names[8] := 'it-work-log.sqlite';
-  Names[9] := 'market-study.sqlite';
-  Names[10] := 'pda-locations.sqlite';
-  Names[11] := 'client-suspensions.sqlite';
 
   Timestamp := GetDateTimeString('yyyyMMdd-HHmmss', #0, #0);
   BackupDir := AppDir + '\storage\app\sqlite-backups\pre-install-' + Timestamp;
 
-  for I := 0 to GetArrayLength(Names) - 1 do
-  begin
-    BaseName := Names[I];
-    Src := AppDir + '\database\' + BaseName;
-    if FileExists(Src) then
-    begin
-      if not DirExists(BackupDir) then
-        ForceDirectories(BackupDir);
-      Dst := BackupDir + '\' + BaseName;
-      CopyFile(Src, Dst, False);
-    end;
+  if FindFirst(AppDir + '\database\*.sqlite*', FindRec) then
+  try
+    repeat
+      if ((FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) = 0) and
+         ((CompareText(ExtractFileExt(FindRec.Name), '.sqlite') = 0) or
+          (Pos('.sqlite-', FindRec.Name) > 0)) then
+      begin
+        if not DirExists(BackupDir) then
+          ForceDirectories(BackupDir);
+        CopyFile(AppDir + '\database\' + FindRec.Name, BackupDir + '\' + FindRec.Name, False);
+      end;
+    until not FindNext(FindRec);
+  finally
+    FindClose(FindRec);
   end;
 end;
 
@@ -302,6 +309,7 @@ procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssInstall then
   begin
+    StopReportingSite;
     BackupSqliteBeforeUpdate;
     WriteInstallConfig;
   end;
@@ -314,7 +322,8 @@ begin
     'SQL host: ' + SqlPage.Values[0] + NewLine +
     'Database: ' + SqlPage.Values[1] + NewLine +
     'Site URL: ' + UrlPage.Values[0] + '/login' + NewLine + NewLine +
-    'Upgrade installs keep your existing .env, SQLite databases, and auto-sync settings.' + NewLine + NewLine +
+    'Upgrade installs keep your existing .env, every SQLite database, and auto-sync settings.' + NewLine +
+    'This update does not change SQL Server data and does not replace SQLite files.' + NewLine + NewLine +
     'The installer will enable IIS (if needed), install PHP + drivers, and configure the site.';
 end;
 

@@ -21,14 +21,14 @@ class PreferHttps
             return redirect()->away($target);
         }
 
-        $response = $next($request);
-
+        // Keep the sign-in cookie on HTTPS. Expiring the old HTTP cookie in this
+        // same response uses the same name and path, so the browser drops the
+        // session that was just created and the login page appears to do nothing.
         if ($request->isSecure()) {
-            $this->forgetInsecureCookie($response, (string) config('session.cookie'), true);
-            $this->forgetInsecureCookie($response, 'XSRF-TOKEN', false);
+            config(['session.secure' => true]);
         }
 
-        return $response;
+        return $next($request);
     }
 
     private function shouldRedirectToHttps(Request $request): bool
@@ -44,20 +44,5 @@ class PreferHttps
         $host = strtolower($request->getHost());
 
         return ! in_array($host, ['localhost', '127.0.0.1', '::1'], true);
-    }
-
-    private function forgetInsecureCookie(Response $response, string $name, bool $httpOnly): void
-    {
-        $response->headers->setCookie(cookie(
-            $name,
-            '',
-            -525600,
-            (string) config('session.path', '/'),
-            config('session.domain'),
-            false,
-            $httpOnly,
-            false,
-            (string) config('session.same_site', 'lax')
-        ));
     }
 }

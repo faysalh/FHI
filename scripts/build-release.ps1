@@ -144,7 +144,7 @@ if (Test-Path $OutputDir) {
 }
 New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
 
-$excludeDirs = @('node_modules', '.git', 'dist', 'tests', '.cursor', '.idea', '.vscode', 'storage\app\sqlite-backups')
+$excludeDirs = @('node_modules', '.git', 'dist', 'tests', '.cursor', '.idea', '.vscode', 'storage\app\sqlite-backups', 'public\pda-preview')
 $robocopyArgs = @($Root, $OutputDir, '/MIR', '/NFL', '/NDL', '/NJH', '/NJS', '/nc', '/ns', '/np')
 foreach ($d in $excludeDirs) {
     $robocopyArgs += '/XD'

@@ -94,7 +94,16 @@ if (-not $UpdateBuild) {
         }
     }
 } else {
-    Write-Host '  OK: update build — SQLite databases not bundled (existing server files preserved)' -ForegroundColor DarkGray
+    $bundledSqlite = @(Get-ChildItem (Join-Path $ReleaseRoot 'database') -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '\.sqlite(-wal|-shm|-journal)?$' })
+    if ($bundledSqlite.Count -gt 0) {
+        $errors += "Update build must not contain SQLite files: $($bundledSqlite.Name -join ', ')"
+    } else {
+        Write-Host '  OK: update build — no SQLite files bundled (existing server files preserved)' -ForegroundColor DarkGray
+    }
+    if (Test-Path (Join-Path $ReleaseRoot '.env')) {
+        $errors += 'Update build must not contain .env'
+    }
 }
 
 $testDbs = Get-ChildItem (Join-Path $ReleaseRoot 'database') -Filter '*-test-*.sqlite' -ErrorAction SilentlyContinue

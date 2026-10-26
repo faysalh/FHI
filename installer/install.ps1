@@ -5,7 +5,9 @@
 
 .DESCRIPTION
     Run from the release package root (contains artisan + vendor).
-    Example: powershell -ExecutionPolicy Bypass -File installer\install.ps1
+    An upgrade keeps the existing .env, does not connect to SQL Server, and does
+    not replace any database\*.sqlite file. Example:
+    powershell -ExecutionPolicy Bypass -File installer\install.ps1
 #>
 param(
     [string]$InstallPath = '',
@@ -49,6 +51,12 @@ trap {
     Write-Host ''
     Write-Host 'Re-run as Administrator and read the messages above.' -ForegroundColor Yellow
     Write-Host 'You can also run installer\diagnose.cmd to check what is wrong.' -ForegroundColor Yellow
+    $appcmd = Join-Path $env:windir 'System32\inetsrv\appcmd.exe'
+    if (Test-Path -LiteralPath $appcmd) {
+        & $appcmd start apppool "/apppool.name:$AppPoolName" 2>$null | Out-Null
+        & $appcmd start site "/site.name:$SiteName" 2>$null | Out-Null
+        Write-Host "Started IIS site $SiteName so the update does not leave it stopped." -ForegroundColor Yellow
+    }
     try { Stop-Transcript | Out-Null } catch {}
     if ($script:PauseOnExit) { Read-Host 'Press Enter to close' | Out-Null }
     exit 1
@@ -174,6 +182,7 @@ function Ensure-EnvSqliteKeys([string]$EnvPath, [string]$InstallPath) {
         'MARKET_STUDY_SQLITE_DATABASE' = "$dbPath/database/market-study.sqlite"
         'PDA_LOCATIONS_SQLITE_DATABASE' = "$dbPath/database/pda-locations.sqlite"
         'CLIENT_SUSPENSIONS_SQLITE_DATABASE' = "$dbPath/database/client-suspensions.sqlite"
+        'SESSION_SECURE_COOKIE' = 'true'
     }
     $added = @()
     $lines = @(Read-TextLines -Path $EnvPath)
@@ -619,9 +628,7 @@ function Install-IisSite(
             Remove-WebBinding -Name $SiteName -Protocol 'http' -ErrorAction SilentlyContinue
             New-WebBinding -Name $SiteName -Protocol 'http' -Port $Port -IPAddress '*'
         }
-        if ((Get-Website -Name $SiteName).State -ne 'Started') {
-            Start-Website -Name $SiteName
-        }
+        Start-ReportingSite -SiteName $SiteName -AppPoolName $AppPoolName
     } else {
         New-Website -Name $SiteName -Port $Port -PhysicalPath $PublicPath -ApplicationPool $AppPoolName | Out-Null
     }
@@ -661,26 +668,95 @@ function Enable-FirewallPort([int]$Port, [string]$SiteName) {
     Write-Host "  Opened Windows Firewall TCP port $Port"
 }
 
+function Stop-ReportingSite([string]$SiteName, [string]$AppPoolName) {
+    $appcmd = Join-Path $env:windir 'System32\inetsrv\appcmd.exe'
+    if (-not (Test-Path -LiteralPath $appcmd)) {
+        return
+    }
+    & $appcmd stop apppool "/apppool.name:$AppPoolName" 2>$null | Out-Null
+    & $appcmd stop site "/site.name:$SiteName" 2>$null | Out-Null
+    Write-Host "  Stopped IIS site $SiteName so the update cannot write while files are copied."
+}
+
+function Start-ReportingSite([string]$SiteName, [string]$AppPoolName) {
+    $appcmd = Join-Path $env:windir 'System32\inetsrv\appcmd.exe'
+    if (Test-Path -LiteralPath $appcmd) {
+        & $appcmd start apppool "/apppool.name:$AppPoolName" 2>$null | Out-Null
+        & $appcmd start site "/site.name:$SiteName" 2>$null | Out-Null
+    }
+    try {
+        Import-Module WebAdministration -ErrorAction Stop
+        if ((Get-WebAppPoolState -Name $AppPoolName -ErrorAction Stop).Value -ne 'Started') {
+            Start-WebAppPool -Name $AppPoolName
+        }
+        if ((Get-Website -Name $SiteName -ErrorAction Stop).State -ne 'Started') {
+            Start-Website -Name $SiteName
+        }
+    } catch {
+        Write-Warning "Could not confirm IIS site $SiteName is started: $($_.Exception.Message)"
+    }
+    Write-Host "  Started IIS site $SiteName and app pool $AppPoolName."
+}
+
+function Get-RecentPreInstallBackups([string]$InstallPath) {
+    $root = Join-Path $InstallPath 'storage\app\sqlite-backups'
+    if (-not (Test-Path -LiteralPath $root)) {
+        return @()
+    }
+    $cutoff = (Get-Date).AddMinutes(-30)
+    return @(Get-ChildItem -LiteralPath $root -Directory -Filter 'pre-install-*' -ErrorAction SilentlyContinue |
+        Where-Object { $_.CreationTime -ge $cutoff } |
+        Sort-Object CreationTime)
+}
+
 function Backup-InstallSqlite([string]$InstallPath) {
     $dbDir = Join-Path $InstallPath 'database'
     if (-not (Test-Path $dbDir)) {
-        return
+        return ''
     }
-    $files = @(Get-ChildItem -Path $dbDir -Filter '*.sqlite' -File -ErrorAction SilentlyContinue)
+    $files = @(Get-ChildItem -Path $dbDir -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '\.sqlite(-wal|-shm|-journal)?$' })
     if ($files.Count -eq 0) {
-        return
+        return ''
     }
     $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $backupDir = Join-Path $InstallPath "storage\app\sqlite-backups\pre-install-$timestamp"
     New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
-    $copied = 0
     foreach ($file in $files) {
-        Copy-Item $file.FullName (Join-Path $backupDir $file.Name) -Force
-        $copied++
+        Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $backupDir $file.Name) -Force
     }
-    if ($copied -gt 0) {
-        Write-Host "  Backed up $copied SQLite file(s) to $backupDir" -ForegroundColor DarkGray
+    Write-Host "  Backed up $($files.Count) SQLite file(s) to $backupDir" -ForegroundColor DarkGray
+    return $backupDir
+}
+
+function Restore-SqliteFromBackup([string]$InstallPath, [string]$BackupDir) {
+    if ([string]::IsNullOrWhiteSpace($BackupDir) -or -not (Test-Path -LiteralPath $BackupDir)) {
+        return @()
     }
+    $dbDir = Join-Path $InstallPath 'database'
+    New-Item -ItemType Directory -Path $dbDir -Force | Out-Null
+    $restored = @()
+    foreach ($file in @(Get-ChildItem -LiteralPath $BackupDir -Filter '*.sqlite' -File -ErrorAction SilentlyContinue)) {
+        $live = Join-Path $dbDir $file.Name
+        $same = $false
+        if (Test-Path -LiteralPath $live) {
+            $liveHash = (Get-FileHash -LiteralPath $live -Algorithm SHA256).Hash
+            $backupHash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+            $same = $liveHash -eq $backupHash
+        }
+        if ($same) {
+            continue
+        }
+        Copy-Item -LiteralPath $file.FullName -Destination $live -Force
+        foreach ($suffix in @('-wal', '-shm', '-journal')) {
+            $sidecar = "$live$suffix"
+            if (Test-Path -LiteralPath $sidecar) {
+                Remove-Item -LiteralPath $sidecar -Force
+            }
+        }
+        $restored += $file.Name
+    }
+    return @($restored)
 }
 
 function Show-BundledSqliteStatus([string]$InstallPath) {
@@ -770,6 +846,7 @@ REPORTING_DASHBOARD_GOVERNORATE_NAME=Erbil
 REPORTING_DASHBOARD_GOVERNORATE_ID=0
 
 SESSION_DRIVER=file
+SESSION_SECURE_COOKIE=true
 SESSION_LIFETIME=120
 QUEUE_CONNECTION=sync
 CACHE_STORE=file
@@ -868,6 +945,23 @@ if ($SkipOdbc) {
     }
 }
 
+$upgradeBackupDir = ''
+if ((Test-Path (Join-Path $InstallPath '.env'))) {
+    Write-Step 'Upgrade leaves SQL Server and SQLite unchanged'
+    Write-Host '  No migrations, no SQL writes, and no SQLite files are replaced.'
+    Stop-ReportingSite -SiteName $SiteName -AppPoolName $AppPoolName
+    $existingBackups = @(Get-RecentPreInstallBackups -InstallPath $InstallPath)
+    if ($existingBackups.Count -gt 0) {
+        $upgradeBackupDir = $existingBackups[0].FullName
+        $restoredNow = @(Restore-SqliteFromBackup -InstallPath $InstallPath -BackupDir $upgradeBackupDir)
+        if ($restoredNow.Count -gt 0) {
+            Write-Host ("  Restored SQLite from the pre-copy backup: {0}" -f ($restoredNow -join ', ')) -ForegroundColor Yellow
+        }
+    } else {
+        $upgradeBackupDir = Backup-InstallSqlite -InstallPath $InstallPath
+    }
+}
+
 if (-not $installInPlace) {
     $envPathForUpgrade = Join-Path $InstallPath '.env'
     $isUpgradeCopy = Test-Path $envPathForUpgrade
@@ -877,7 +971,9 @@ if (-not $installInPlace) {
         if ($isUpgradeCopy) {
             Write-Host '  Existing installation detected - upgrading in place.' -ForegroundColor Yellow
             Write-Host '  Preserving: .env, database\*.sqlite, storage\app\sqlite-backups\' -ForegroundColor Yellow
-            Backup-InstallSqlite -InstallPath $InstallPath
+            if ([string]::IsNullOrWhiteSpace($upgradeBackupDir)) {
+                $upgradeBackupDir = Backup-InstallSqlite -InstallPath $InstallPath
+            }
         } elseif (-not $Quiet) {
             $confirm = Read-Host 'Folder exists but no .env was found. Overwrite entire folder? (y/N)'
             if ($confirm -notmatch '^y') { throw 'Installation cancelled.' }
@@ -896,7 +992,7 @@ if (-not $installInPlace) {
         $PackageRoot, $InstallPath,
         '/MIR',
         '/XD', 'node_modules', '.git', 'dist', 'storage\app\sqlite-backups',
-        '/XF', '.env', 'sqlite-auto-backup.json', 'pda-auto-sync.json', '*.sqlite',
+        '/XF', '.env', 'sqlite-auto-backup.json', 'pda-auto-sync.json', '*.sqlite', '*.sqlite-wal', '*.sqlite-shm', '*.sqlite-journal',
         '/NFL', '/NDL', '/NJH', '/NJS', '/nc', '/ns', '/np',
         '/R:2', '/W:1',
         "/LOG:$robocopyLog"
@@ -1033,11 +1129,22 @@ if (-not $SkipIis) {
         Write-Warning "Could not add firewall rule for port ${SitePort}: $($_.Exception.Message)"
     }
     iisreset /start | Out-Null
+    Start-ReportingSite -SiteName $SiteName -AppPoolName $AppPoolName
     Write-Step 'Verifying IIS + Laravel routing'
     Test-IisWebSetup -SiteName $SiteName -Port $SitePort -InstallPath $InstallPath -AppUrl $AppUrl
 }
 
-if (-not $SkipDbHealth) {
+if (-not [string]::IsNullOrWhiteSpace($upgradeBackupDir)) {
+    $restoredAfter = @(Restore-SqliteFromBackup -InstallPath $InstallPath -BackupDir $upgradeBackupDir)
+    if ($restoredAfter.Count -gt 0) {
+        throw ("Upgrade changed SQLite files and they were restored: {0}. SQL Server was not modified." -f ($restoredAfter -join ', '))
+    }
+    Write-Host '  SQLite files match the pre-update backup.' -ForegroundColor Green
+}
+
+if ($isUpdateInstall) {
+    Write-Host 'Skipped SQL Server health check. Upgrades do not connect to the main database.' -ForegroundColor Yellow
+} elseif (-not $SkipDbHealth) {
     Write-Step 'Testing database connection'
     Push-Location $InstallPath
     & $phpExe artisan reports:db-health
