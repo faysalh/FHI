@@ -80,6 +80,9 @@
         $text = (string) ($value ?? '');
         return preg_match('/\p{Arabic}/u', $text) ? Ar::glyphsKeepLatinDigits($text) : $text;
     };
+    $companyName = (string) ($branding['company_name'] ?? 'N.Z.Y. Company');
+    $companyHasArabic = preg_match('/\p{Arabic}/u', $companyName) === 1;
+    $printedOn = now()->format('Y-m-d');
 @endphp
 <html lang="{{ $isRtlInvoice ? 'ar' : 'en' }}" dir="{{ $invoiceDirection }}">
 <head>
@@ -103,7 +106,7 @@
             font-weight: 700;
             src: url('{{ public_path('fonts/NotoNaskhArabic-Bold.ttf') }}') format('truetype');
         }
-        @page { margin-top: 12px; }
+        @page { margin: 28px 0 22px 0; }
         body {
             font-family: Arial, sans-serif;
             font-size: 13px;
@@ -114,29 +117,41 @@
         }
         * { font-family: Arial, sans-serif; }
         .print-stamp {
+            width: 100%;
+            border-collapse: collapse;
             direction: ltr;
-            text-align: left;
-            margin: 0;
+            margin: 0 0 2px 0;
+        }
+        .print-stamp td {
             padding: 0;
-            height: 13px;
+            vertical-align: middle;
             line-height: 13px;
             font-size: 11px;
             white-space: nowrap;
-            overflow: hidden;
-            font-family: 'InvoiceNotoNaskhArabic', 'InvoiceNotoSans', sans-serif;
             color: #000000;
         }
-        .top { width: 100%; margin-top: 0; margin-bottom: 2px; table-layout: fixed; padding-bottom: 2px; }
+        .stamp-label {
+            width: 92px;
+            text-align: right;
+            padding-left: 8px;
+            font-family: 'InvoiceNotoNaskhArabic', 'InvoiceNotoSans', sans-serif;
+        }
+        .stamp-date {
+            width: 72px;
+            direction: ltr;
+            text-align: left;
+            font-family: Arial, sans-serif;
+        }
+        .top { width: 100%; margin-top: 0; margin-bottom: 2px; table-layout: fixed; padding-bottom: 2px; direction: ltr; }
         .top td { vertical-align: middle; }
-        .top-left { width: 19.1%; }
-        .top-right { width: 19.1%; }
-        .top-center { width: 61.8%; }
+        .top-side { width: 22%; }
+        .top-center { width: 56%; }
         .title {
             font-size: 21px; font-weight: 700; text-align: center; margin: 0;
             padding: 2px 8px; color: #000000; background: #ffffff; line-height: 1.05;
         }
         .header-separator { margin: 1px 0 2px; }
-        .company { font-size: 24px; font-weight: 700; text-align: center; line-height: 1.05; color: #000000; margin: 0; padding: 0; }
+        .company { font-size: 24px; font-weight: 700; text-align: center; line-height: 1.05; color: #000000; margin: 0; padding: 0; direction: {{ $companyHasArabic ? 'rtl' : 'ltr' }}; }
         .invoice-title-inline {
             font-size: 21px;
             font-weight: 700;
@@ -148,13 +163,12 @@
             font-family: 'InvoiceNotoNaskhArabic', 'InvoiceNotoSans', sans-serif;
         }
         .small { font-size: 12px; color: #000000; line-height: 1; font-family: 'InvoiceNotoNaskhArabic', 'InvoiceNotoSans', sans-serif; }
-        .logo { max-height: 96px; max-width: 240px; width: auto; height: auto; object-fit: contain; display: block; }
+        .logo { width: 78px; height: 78px; display: block; margin-left: auto; }
         .meta-grid { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 2px; direction: ltr; }
-        .meta-grid td { padding: 1px 6px; vertical-align: middle; line-height: 1.05; color: #000000; font-size: 12px; }
-        .meta-grid .meta-label { width: 10%; font-weight: 700; white-space: nowrap; text-align: {{ $isRtlInvoice ? 'right' : 'left' }}; }
-        .meta-grid .meta-value { width: 31%; unicode-bidi: plaintext; text-align: right; }
-        .meta-grid .meta-left-value { width: 21%; text-align: right; padding-left: 2px; padding-right: 4px; }
-        .meta-grid .meta-left-label { width: 7%; text-align: right; padding-left: 0; padding-right: 4px; }
+        .meta-grid td { padding: 1px 4px; vertical-align: middle; line-height: 1.15; color: #000000; font-size: 12px; }
+        .meta-grid .meta-label { width: 18%; font-weight: 700; white-space: nowrap; text-align: right; }
+        .meta-grid .meta-value { width: 32%; text-align: right; }
+        .meta-ltr { direction: ltr; unicode-bidi: isolate; display: inline-block; text-align: right; }
         .title, .meta-label, .items th, .label, .arabic, .arabic-cell {
             font-family: 'InvoiceNotoNaskhArabic', 'InvoiceNotoSans', sans-serif;
         }
@@ -216,17 +230,35 @@
     </style>
 </head>
 <body>
-    <div class="print-stamp">{{ e(now()->format('Y/m/d')) }} {{ $labels['printed_at'] }}</div>
+    <table class="print-stamp">
+        <tr>
+            @if ($isRtlInvoice)
+                <td></td>
+                <td class="stamp-date">{{ $printedOn }}</td>
+                <td class="stamp-label">{{ $labels['printed_at'] }}</td>
+            @else
+                <td class="stamp-date">{{ $printedOn }}</td>
+                <td class="stamp-label">{{ $labels['printed_at'] }}</td>
+                <td></td>
+            @endif
+        </tr>
+    </table>
     <table class="top">
         <tr>
-            <td class="top-left"></td>
+            <td class="top-side"></td>
             <td class="top-center">
-                <div class="company"><span class="arabic">{{ $renderMixedText((string) ($branding['company_name'] ?? 'N.Z.Y. Company')) }}</span></div>
+                <div class="company">
+                    @if ($companyHasArabic)
+                        <span class="arabic">{{ $renderMixedText($companyName) }}</span>
+                    @else
+                        {{ $companyName }}
+                    @endif
+                </div>
                 <div class="invoice-title-inline">{{ $labels['title'] }}</div>
             </td>
-            <td class="small top-right" style="text-align:right;">
+            <td class="top-side" style="text-align:right;">
                 @if (!empty($brandingLogoDataUri))
-                    <img class="logo" src="{{ $brandingLogoDataUri }}" alt="logo">
+                    <img class="logo" src="{{ $brandingLogoDataUri }}" width="78" height="78" alt="logo">
                 @endif
             </td>
         </tr>
@@ -236,15 +268,15 @@
 
     <table class="meta-grid">
         <tr>
-            <td class="meta-value meta-left-value">{{ e((string) ($invoice->client_phone ?? '')) }}</td>
+            <td class="meta-value meta-left-value"><span class="meta-ltr">{{ e((string) ($invoice->client_phone ?? '')) }}</span></td>
             <td class="meta-label meta-left-label">{{ $labels['client_phone'] }}</td>
-            <td class="meta-value">{{ e((string) ($invoice->invoice_date ?? '')) }}</td>
+            <td class="meta-value"><span class="meta-ltr">{{ e((string) ($invoice->invoice_date ?? '')) }}</span></td>
             <td class="meta-label">{{ $labels['date'] }}</td>
         </tr>
         <tr>
             <td class="meta-value meta-left-value"><span class="arabic">{{ e($renderMixedText((string) ($invoice->city_name ?? ''))) }}</span></td>
             <td class="meta-label meta-left-label">{{ $labels['city'] }}</td>
-            <td class="meta-value">{{ e((string) ($invoice->invoice_no ?? $invoice->invoice_id ?? '')) }}</td>
+            <td class="meta-value"><span class="meta-ltr">{{ e((string) ($invoice->invoice_no ?? $invoice->invoice_id ?? '')) }}</span></td>
             <td class="meta-label">{{ $labels['invoice_no'] }}</td>
         </tr>
         <tr>

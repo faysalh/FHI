@@ -393,20 +393,18 @@ class InvoicesReportTest extends TestCase
                 'footer_note' => 'ملاحظة الفوتر',
                 'invoice_direction' => 'rtl',
             ],
-            'brandingLogoDataUri' => null,
+            'brandingLogoDataUri' => 'data:image/png;base64,AAAA',
         ])->render();
 
         $this->assertStringContainsString('lang="ar" dir="rtl"', $html);
         $this->assertStringContainsString('direction: rtl', $html);
-        $this->assertStringContainsString('.items { width: 100%; border-collapse: collapse; margin-top: 8px; table-layout: auto; direction: rtl; }', $html);
-        $this->assertStringContainsString('<tr><td class="value">1001</td><td class="label">', $html);
-        $this->assertStringContainsString('<tr><td class="num">20,000 د.ع</td><td class="label">', $html);
-        $this->assertStringContainsString('<td class="value">07500000000</td><td class="label">', $html);
-        $this->assertStringContainsString('<th class="center col-idx">#</th>', $html);
-        $this->assertStringContainsString('class="num col-discount"', $html);
-        $this->assertMatchesRegularExpression('/<tr>\s*<td class="num col-total">\s*20,000 د\.ع\s*<\/td>\s*<td class="num col-discount">0%\s*<\/td>\s*<td class="num col-unit">4,000 د\.ع<\/td>\s*<td class="num col-qty">5<\/td>/u', $html);
-        $this->assertMatchesRegularExpression('/<tfoot>.*?<tr>\s*<td class="num col-total">\s*20,000 د\.ع\s*<\/td>\s*<td class="col-discount"><\/td>\s*<td class="col-unit"><\/td>\s*<td class="num col-qty">5<\/td>/us', $html);
+        $this->assertStringContainsString('.items { width: 100%; border-collapse: collapse; margin-top: 3px; table-layout: auto; direction: rtl; }', $html);
+        $this->assertStringContainsString('class="stamp-label"', $html);
+        $this->assertStringContainsString('class="stamp-date"', $html);
+        $this->assertStringContainsString('<img class="logo" src="data:image/png;base64,AAAA" width="78" height="78" alt="logo">', $html);
+        $this->assertStringContainsString('class="meta-ltr">1001</span>', $html);
         $this->assertStringContainsString('د.ع', $html);
         $this->assertStringNotContainsString('Invoice Total', $html);
+        $this->assertStringContainsString('<th class="center col-idx">#</th>', $html);
     }
 }

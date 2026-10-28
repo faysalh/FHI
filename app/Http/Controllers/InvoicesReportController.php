@@ -56,18 +56,6 @@ class InvoicesReportController extends Controller
 
         $grandTotals = null;
         try {
-            $rows = $this->repository->getReport(
-                $dateFrom,
-                $dateTo,
-                $cities,
-                $store !== '' ? $store : null,
-                $salesmanId !== '' ? $salesmanId : null,
-                $q !== '' ? $q : null,
-                $page,
-                $perPage
-            );
-            $selectedInvoices = $this->getSelectionMap();
-            $this->sortRowsBySelectionAndInvoiceNumber($rows, $selectedInvoices);
             $grandTotals = $this->repository->getReportTotals(
                 $dateFrom,
                 $dateTo,
@@ -76,6 +64,19 @@ class InvoicesReportController extends Controller
                 $salesmanId !== '' ? $salesmanId : null,
                 $q !== '' ? $q : null
             );
+            $rows = $this->repository->getReport(
+                $dateFrom,
+                $dateTo,
+                $cities,
+                $store !== '' ? $store : null,
+                $salesmanId !== '' ? $salesmanId : null,
+                $q !== '' ? $q : null,
+                $page,
+                $perPage,
+                (int) ($grandTotals->invoice_count ?? 0)
+            );
+            $selectedInvoices = $this->getSelectionMap();
+            $this->sortRowsBySelectionAndInvoiceNumber($rows, $selectedInvoices);
         } catch (Throwable $e) {
             Log::error('Invoices report failed.', ['message' => $e->getMessage()]);
 
@@ -352,7 +353,14 @@ class InvoicesReportController extends Controller
         $dompdf->render();
         $canvas = $dompdf->getCanvas();
         $font = $dompdf->getFontMetrics()->getFont('Helvetica', 'normal');
-        $canvas->page_text(14, 2, '{PAGE_NUM}/{PAGE_COUNT}', $font, 10, [0, 0, 0]);
+        $canvas->page_text(
+            $canvas->get_width() - 48,
+            $canvas->get_height() - 16,
+            '{PAGE_NUM}/{PAGE_COUNT}',
+            $font,
+            9,
+            [0, 0, 0]
+        );
 
         $invoiceNo = (string) ($invoice->invoice_no ?? $invoiceId);
         $output = $dompdf->output();

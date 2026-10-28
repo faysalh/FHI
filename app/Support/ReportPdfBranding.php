@@ -40,22 +40,65 @@ final class ReportPdfBranding
     {
         $logoPath = trim((string) ($branding['logo_path'] ?? ''));
         if ($logoPath === '') {
-            return null;
+            return self::fallbackLogoDataUri();
         }
 
         try {
             $disk = Storage::disk('public');
             if (! $disk->exists($logoPath)) {
-                return null;
+                return self::fallbackLogoDataUri();
             }
-            $mime = (string) ($disk->mimeType($logoPath) ?? 'image/png');
+            $mime = strtolower((string) ($disk->mimeType($logoPath) ?? 'image/png'));
             $contents = $disk->get($logoPath);
+            if ($contents === '') {
+                return self::fallbackLogoDataUri();
+            }
+            if (! self::dompdfCanEmbed($mime)) {
+                return self::fallbackLogoDataUri();
+            }
 
             return 'data:'.$mime.';base64,'.base64_encode($contents);
         } catch (Throwable $e) {
             Log::warning('report_pdf_logo_data_uri_failed', ['message' => $e->getMessage()]);
 
+            return self::fallbackLogoDataUri();
+        }
+    }
+
+    /**
+     * DomPDF embeds JPEG without the GD extension. PNG and GIF need GD, which
+     * is not available on every PHP install used to export invoices.
+     */
+    private static function dompdfCanEmbed(string $mime): bool
+    {
+        if (in_array($mime, ['image/jpeg', 'image/jpg'], true)) {
+            return true;
+        }
+
+        return function_exists('imagecreatefrompng')
+            && in_array($mime, ['image/png', 'image/gif'], true);
+    }
+
+    private static function fallbackLogoDataUri(): ?string
+    {
+        $jpeg = public_path('icons/invoice-logo.jpg');
+        if (is_file($jpeg)) {
+            return self::fileDataUri($jpeg, 'image/jpeg');
+        }
+
+        return self::fileDataUri(public_path('icons/apple-touch-icon.png'), 'image/png');
+    }
+
+    private static function fileDataUri(string $path, string $mime): ?string
+    {
+        if (! is_file($path)) {
             return null;
         }
+        $contents = file_get_contents($path);
+        if ($contents === false || $contents === '') {
+            return null;
+        }
+
+        return 'data:'.$mime.';base64,'.base64_encode($contents);
     }
 }
