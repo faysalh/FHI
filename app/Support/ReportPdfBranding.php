@@ -34,28 +34,62 @@ final class ReportPdfBranding
     }
 
     /**
+     * Settings array used by report PDFs that pass branding themselves.
+     *
+     * @return array<string, string>
+     */
+    public static function forCurrentRequest(): array
+    {
+        return self::settings();
+    }
+
+    /**
      * @param  array<string, string>  $branding
      */
-    public static function logoDataUri(array $branding): ?string
+    public static function logoDataUri(array $branding, bool $fallbackLogo = false): ?string
     {
         $logoPath = trim((string) ($branding['logo_path'] ?? ''));
         if ($logoPath === '') {
-            return null;
+            return $fallbackLogo ? self::fallbackLogoDataUri() : null;
         }
 
         try {
             $disk = Storage::disk('public');
             if (! $disk->exists($logoPath)) {
-                return null;
+                return $fallbackLogo ? self::fallbackLogoDataUri() : null;
             }
-            $mime = (string) ($disk->mimeType($logoPath) ?? 'image/png');
+            $mime = strtolower((string) ($disk->mimeType($logoPath) ?? 'image/png'));
+            if ($mime === 'image/jpg') {
+                $mime = 'image/jpeg';
+            }
             $contents = $disk->get($logoPath);
+            if ($contents === '') {
+                return $fallbackLogo ? self::fallbackLogoDataUri() : null;
+            }
 
             return 'data:'.$mime.';base64,'.base64_encode($contents);
         } catch (Throwable $e) {
             Log::warning('report_pdf_logo_data_uri_failed', ['message' => $e->getMessage()]);
 
+            return $fallbackLogo ? self::fallbackLogoDataUri() : null;
+        }
+    }
+
+    private static function fallbackLogoDataUri(): ?string
+    {
+        return self::fileDataUri(public_path('icons/invoice-logo.png'), 'image/png');
+    }
+
+    private static function fileDataUri(string $path, string $mime): ?string
+    {
+        if (! is_file($path)) {
             return null;
         }
+        $contents = file_get_contents($path);
+        if ($contents === false || $contents === '') {
+            return null;
+        }
+
+        return 'data:'.$mime.';base64,'.base64_encode($contents);
     }
 }

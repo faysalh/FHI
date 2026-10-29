@@ -9,6 +9,7 @@ use App\Repositories\VisitsReportRepository;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Cache;
 use Mockery;
+use ReflectionMethod;
 use Tests\TestCase;
 
 class InvoicesReportTest extends TestCase
@@ -45,12 +46,23 @@ class InvoicesReportTest extends TestCase
         $repo = Mockery::mock(InvoicesReportRepository::class);
         $repo->shouldReceive('normalizeCities')->andReturn([]);
         $repo->shouldReceive('getStoreOptions')->once()->andReturn(['Main Store']);
-        $repo->shouldReceive('getReport')->once()->andReturn($paginator);
-        $repo->shouldReceive('getReportTotals')->zeroOrMoreTimes()->andReturn((object) [
+        $repo->shouldReceive('getReportTotals')->once()->andReturn((object) [
+            'invoice_count' => 1,
             'quantity_total' => 15,
             'invoice_amount' => 250000,
             'client_due_amount' => 100000,
         ]);
+        $repo->shouldReceive('getReport')->once()->with(
+            '2026-04-01',
+            '2026-04-20',
+            [],
+            null,
+            null,
+            null,
+            1,
+            250,
+            1
+        )->andReturn($paginator);
 
         $visits = Mockery::mock(VisitsReportRepository::class);
         $visits->shouldReceive('getCityOptions')->once()->andReturn(['Erbil']);
@@ -285,12 +297,13 @@ class InvoicesReportTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('Deliver before noon');
-        $response->assertSee('وصف الفاتورة');
+        $response->assertSee('ملاحظة');
+        $response->assertSee('data:image/png;base64,', false);
         $response->assertSee('مجموع الفاتورة');
         $response->assertSee('الرصيد السابق');
         $response->assertSee('المجموع الكلي');
         $response->assertSee('120,000');
-        $response->assertSee('خصم / discount %');
+        $response->assertSee('خصم %');
     }
 
     public function test_invoice_first_print_can_mark_delivery_not_delivered(): void
@@ -393,20 +406,106 @@ class InvoicesReportTest extends TestCase
                 'footer_note' => 'ملاحظة الفوتر',
                 'invoice_direction' => 'rtl',
             ],
-            'brandingLogoDataUri' => null,
+            'brandingLogoDataUri' => 'data:image/png;base64,AAAA',
         ])->render();
 
         $this->assertStringContainsString('lang="ar" dir="rtl"', $html);
         $this->assertStringContainsString('direction: rtl', $html);
-        $this->assertStringContainsString('.items { width: 100%; border-collapse: collapse; margin-top: 8px; table-layout: auto; direction: rtl; }', $html);
-        $this->assertStringContainsString('<tr><td class="value">1001</td><td class="label">', $html);
-        $this->assertStringContainsString('<tr><td class="num">20,000 د.ع</td><td class="label">', $html);
-        $this->assertStringContainsString('<td class="value">07500000000</td><td class="label">', $html);
-        $this->assertStringContainsString('<th class="center col-idx">#</th>', $html);
-        $this->assertStringContainsString('class="num col-discount"', $html);
-        $this->assertMatchesRegularExpression('/<tr>\s*<td class="num col-total">\s*20,000 د\.ع\s*<\/td>\s*<td class="num col-discount">0%\s*<\/td>\s*<td class="num col-unit">4,000 د\.ع<\/td>\s*<td class="num col-qty">5<\/td>/u', $html);
-        $this->assertMatchesRegularExpression('/<tfoot>.*?<tr>\s*<td class="num col-total">\s*20,000 د\.ع\s*<\/td>\s*<td class="col-discount"><\/td>\s*<td class="col-unit"><\/td>\s*<td class="num col-qty">5<\/td>/us', $html);
+        $this->assertStringContainsString('.items { width: 100%; border-collapse: collapse; margin-top: 3px; table-layout: auto; direction: rtl; }', $html);
+        $this->assertStringContainsString('class="stamp-label"', $html);
+        $this->assertStringContainsString('class="stamp-date"', $html);
+        $this->assertStringContainsString('<img class="logo" src="data:image/png;base64,AAAA" width="128" height="128" alt="logo">', $html);
+        $this->assertStringContainsString('class="meta-ltr">1001</span>', $html);
         $this->assertStringContainsString('د.ع', $html);
         $this->assertStringNotContainsString('Invoice Total', $html);
+        $this->assertStringContainsString('<th class="center col-idx">#</th>', $html);
+    }
+
+    public function test_invoice_header_still_has_a_balance_expression(): void
+    {
+        $method = new ReflectionMethod(InvoicesReportRepository::class, 'clientDueExpr');
+        $method->setAccessible(true);
+        $sql = $method->invoke(new InvoicesReportRepository(new VisitsReportRepository()));
+
+        $this->assertStringContainsString('FN_Get_Prev_Account_Balance', $sql);
+        $this->assertStringContainsString('a.fld_account_id', $sql);
+    }
+
+    public function test_invoice_pdf_export_includes_the_logo(): void
+    {
+        $repo = Mockery::mock(InvoicesReportRepository::class);
+        $repo->shouldReceive('getInvoiceHeader')->twice()->with('inv-1')->andReturn((object) [
+            'invoice_id' => 'inv-1',
+            'invoice_no' => '1001',
+            'invoice_date' => '2026-04-20',
+            'last_print_date' => '2026-04-20 11:00:00',
+            'client_name' => 'Client One',
+            'quantity_total' => 5,
+            'invoice_amount' => 20000,
+        ]);
+        $repo->shouldReceive('getInvoiceItems')->once()->with('inv-1')->andReturn([
+            (object) [
+                'item_code' => 'IT-1',
+                'item_name' => 'Wings',
+                'quantity' => 5,
+                'amount' => 20000,
+            ],
+        ]);
+        $repo->shouldReceive('touchLastPrintDate')->once()->with('inv-1', false)->andReturn(0);
+        $this->app->instance(InvoicesReportRepository::class, $repo);
+
+        $response = $this->get('/reports/invoices/export/pdf?invoice_id=inv-1&date_from=2026-04-01&date_to=2026-04-20');
+
+        $response->assertOk();
+        $response->assertHeader('content-type', 'application/pdf');
+        $disposition = (string) $response->headers->get('content-disposition');
+        $this->assertStringContainsString('invoice-1001.pdf', $disposition);
+        $body = $response->getContent();
+        $this->assertIsString($body);
+        $this->assertStringStartsWith('%PDF', $body);
+        $this->assertStringContainsString('/Subtype /Image', $body);
+    }
+
+    public function test_invoice_list_pdf_and_csv_exports(): void
+    {
+        $repo = Mockery::mock(InvoicesReportRepository::class);
+        $repo->shouldReceive('normalizeCities')->andReturn([]);
+        $row = (object) [
+            'invoice_no' => '1001',
+            'invoice_date' => '2026-04-20',
+            'last_print_date' => '',
+            'client_code' => 'C-100',
+            'client_name' => 'Client One',
+            'city_name' => 'Erbil',
+            'salesman_name' => 'Salesman A',
+            'store_name' => 'Main Store',
+            'quantity_total' => 5,
+            'invoice_amount' => 20000,
+            'client_due_amount' => 1000,
+        ];
+        $totals = (object) [
+            'invoice_count' => 1,
+            'quantity_total' => 5,
+            'invoice_amount' => 20000,
+            'client_due_amount' => 1000,
+        ];
+        $repo->shouldReceive('getReportRowsForExport')->twice()->andReturn([$row]);
+        $repo->shouldReceive('getReportTotals')->once()->andReturn($totals);
+        $this->app->instance(InvoicesReportRepository::class, $repo);
+
+        $query = 'date_from=2026-04-01&date_to=2026-04-20';
+        $pdf = $this->get('/reports/invoices/export/list-pdf?'.$query);
+        $pdf->assertOk();
+        $pdf->assertHeader('content-type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF', (string) $pdf->getContent());
+
+        $csv = $this->get('/reports/invoices/export/list-csv?'.$query);
+        $csv->assertOk();
+        $contentType = (string) $csv->headers->get('content-type');
+        $this->assertTrue(
+            str_contains($contentType, 'text/csv') || str_contains($contentType, 'text/plain'),
+            $contentType
+        );
+        $this->assertStringContainsString('1001', $csv->streamedContent());
     }
 }

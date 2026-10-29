@@ -17,6 +17,9 @@ final class ReportNavigation
                 if (! empty($item['super_admin_only'])) {
                     continue;
                 }
+                if (! empty($item['nav_only'])) {
+                    continue;
+                }
                 $keys[] = $item['key'];
             }
         }
@@ -38,25 +41,143 @@ final class ReportNavigation
                     ['key' => 'sales-item-average', 'route' => 'reports.sales-item-average.index', 'label' => 'Item average', 'title' => 'Sales by item average'],
                     ['key' => 'sales-by-item', 'route' => 'reports.sales-by-item.index', 'label' => 'Sales by item', 'title' => 'Category sales split by client price group'],
                     ['key' => 'sales-by-salesman', 'route' => 'reports.sales-by-salesman.index', 'label' => 'By salesman', 'title' => 'Sales by salesman'],
-                    ['key' => 'comparison', 'route' => 'reports.comparison.index', 'label' => 'Comparison', 'title' => 'Compare two periods'],
+                    ['key' => 'comparison', 'route' => 'reports.comparison.asan.index', 'label' => 'Comparison', 'title' => 'Compare two periods'],
+                    ['key' => 'rankings', 'route' => 'reports.rankings.index', 'label' => 'Rankings', 'title' => 'Top clients, items, salesmen, and growth'],
                     ['key' => 'cities', 'route' => 'reports.cities.index', 'label' => 'Cities', 'title' => 'Sales by city'],
                     ['key' => 'visits', 'route' => 'reports.visits.index', 'label' => 'Visits', 'title' => 'Client visit status'],
+                    [
+                        'key' => 'market-study',
+                        'route' => 'reports.market-study.index',
+                        'label' => 'Market study',
+                        'title' => 'Market price logging and price trends',
+                        'nav_only' => true,
+                        'permission_any' => [
+                            'market-study-view',
+                            'market-study-add',
+                            'market-study-edit',
+                            'market-study-delete',
+                        ],
+                    ],
+                    [
+                        'key' => 'market-study-view',
+                        'route' => 'reports.market-study.index',
+                        'label' => 'Market study — View',
+                        'title' => 'View market price logs, charts, and exports',
+                        'permission_only' => true,
+                    ],
+                    [
+                        'key' => 'market-study-add',
+                        'route' => 'reports.market-study.index',
+                        'label' => 'Market study — Add',
+                        'title' => 'Add market price log entries',
+                        'permission_only' => true,
+                    ],
+                    [
+                        'key' => 'market-study-edit',
+                        'route' => 'reports.market-study.index',
+                        'label' => 'Market study — Edit',
+                        'title' => 'Edit market price log entries',
+                        'permission_only' => true,
+                    ],
+                    [
+                        'key' => 'market-study-delete',
+                        'route' => 'reports.market-study.index',
+                        'label' => 'Market study — Delete',
+                        'title' => 'Delete market price log entries',
+                        'permission_only' => true,
+                    ],
                 ],
             ],
             [
                 'label' => 'Inventory',
                 'items' => [
                     ['key' => 'storage-items', 'route' => 'reports.storage-items.index', 'label' => 'Items & forecast', 'title' => 'Inventory, sales averages, and forecast'],
+                    ['key' => 'storage-quantity', 'route' => 'reports.storage-quantity.index', 'label' => 'Storage quantity', 'title' => 'Item balance from stored procedures (Normal / Adv)'],
                     ['key' => 'storage', 'route' => 'reports.storage.index', 'label' => 'Stock snapshot', 'title' => 'Current stock by storage and category'],
+                ],
+            ],
+            [
+                'label' => 'Finance',
+                'items' => [
+                    ['key' => 'accounting', 'route' => 'reports.accounting.index', 'label' => 'Receipts', 'title' => 'Receipt booklets'],
+                    ['key' => 'client-balance', 'route' => 'reports.client-balance.index', 'label' => 'Client balance', 'title' => 'Client account balances by salesman (SP_Get_Account_Balance)'],
+                    ['key' => 'general-ledger', 'route' => 'reports.general-ledger.index', 'label' => 'General ledger', 'title' => 'Account ledger with opening balance and period movement (AsanMax GeneralLedgerAccount)'],
+                    ['key' => 'promotions', 'route' => 'reports.promotions.index', 'label' => 'Promotions', 'title' => 'Promoter schedules and client visit assignments'],
+                    ['key' => 'client-suspensions', 'route' => 'reports.client-suspensions.index', 'label' => 'Suspensions', 'title' => 'Suspend a client for late payment so PDA cannot sell to them'],
+                ],
+            ],
+            [
+                'label' => 'Manufacturing Storage',
+                'items' => [
+                    ['key' => 'manufacturing', 'route' => 'reports.manufacturing.index', 'label' => 'Manufacturing Storage', 'title' => 'Manufacturing items, purchases, exports, and stock'],
+                    [
+                        'key' => 'manufacturing-delete',
+                        'route' => 'reports.manufacturing.index',
+                        'label' => 'Delete manufacturing records',
+                        'title' => 'Allow deleting items, purchases, and exports (supervisor)',
+                        'permission_only' => true,
+                    ],
                 ],
             ],
             [
                 'label' => 'Operations',
                 'items' => [
+                    ['key' => 'pda', 'route' => 'reports.pda.index', 'label' => 'PDA', 'title' => 'Salesman customers, visits, and vouchers on the phone'],
+                    [
+                        'key' => 'pda-locations',
+                        'route' => 'reports.pda.locations',
+                        'label' => 'PDA locations',
+                        'title' => 'View GPS points saved for every salesman',
+                        'permission_only' => true,
+                    ],
+                    [
+                        'key' => 'pda-item-detail',
+                        'route' => 'reports.pda.items.show',
+                        'label' => 'PDA item detail',
+                        'title' => 'Open an item to see every price tier and stock in every store',
+                        'permission_only' => true,
+                    ],
+                    [
+                        'key' => 'pda-zero-stock',
+                        'route' => 'reports.pda.index',
+                        'label' => 'PDA sell zero stock',
+                        'title' => 'Allow a sale line when the item balance is zero',
+                        'permission_only' => true,
+                    ],
                     ['key' => 'deliveries', 'route' => 'reports.deliveries.index', 'label' => 'Deliveries', 'title' => 'Delivery status and teams'],
                     ['key' => 'invoices', 'route' => 'reports.invoices.index', 'label' => 'Invoices', 'title' => 'Invoice search and details'],
                     ['key' => 'tasks', 'route' => 'reports.tasks.index', 'label' => 'Tasks', 'title' => 'Task notes and invoice-day reminders'],
+                    ['key' => 'it-work-log', 'route' => 'reports.it-work-log.index', 'label' => 'IT Work', 'title' => 'Personal IT work start/finish log'],
                     ['key' => 'damages', 'route' => 'reports.damages.index', 'label' => 'Damages', 'title' => 'Damaged goods entries'],
+                    [
+                        'key' => 'face-id',
+                        'route' => 'reports.face-id.index',
+                        'label' => 'Face ID',
+                        'title' => 'Employee face enrollment and attendance',
+                        'nav_only' => true,
+                        'permission_any' => ['face-id-employees', 'face-id-logs', 'face-id-kiosk'],
+                    ],
+                    [
+                        'key' => 'face-id-employees',
+                        'route' => 'reports.face-id.index',
+                        'label' => 'Face ID — Employees',
+                        'title' => 'Register employees and enroll faces',
+                        'permission_only' => true,
+                    ],
+                    [
+                        'key' => 'face-id-logs',
+                        'route' => 'reports.face-id.index',
+                        'label' => 'Face ID — Attendance logs',
+                        'title' => 'View and export attendance logs',
+                        'permission_only' => true,
+                    ],
+                    [
+                        'key' => 'face-id-kiosk',
+                        'route' => 'reports.face-id.index',
+                        'label' => 'Face ID — Kiosk link',
+                        'title' => 'View and regenerate the public workplace kiosk link',
+                        'permission_only' => true,
+                    ],
                     ['key' => 'report-assembly', 'route' => 'reports.report-assembly.index', 'label' => 'Assembly order', 'title' => 'Category and item sort priority'],
                 ],
             ],
@@ -71,6 +192,7 @@ final class ReportNavigation
                     ['key' => 'identifier', 'route' => 'reports.identifier.index', 'label' => 'Glossary', 'title' => 'Field and term definitions'],
                     ['key' => 'users', 'route' => 'reports.users.index', 'label' => 'Users', 'title' => 'App users and report access', 'super_admin_only' => true],
                     ['key' => 'sqlite-backups', 'route' => 'reports.sqlite-backups.index', 'label' => 'SQLite backups', 'title' => 'Back up and restore local app databases', 'super_admin_only' => true],
+                    ['key' => 'database-sync', 'route' => 'reports.database-sync.index', 'label' => 'PDA sync', 'title' => 'Import PDA client invoices into the main system', 'super_admin_only' => true],
                 ],
             ],
         ];
@@ -104,10 +226,27 @@ final class ReportNavigation
                 if (! empty($item['super_admin_only']) && ! $isSuperAdmin) {
                     continue;
                 }
+                if (! empty($item['permission_only'])) {
+                    continue;
+                }
                 if (! $isSuperAdmin) {
                     $key = $item['key'];
                     $isGuide = $key === 'guide';
-                    if (! $isGuide && ! isset($allowed[$key])) {
+                    $permissionAny = is_array($item['permission_any'] ?? null) ? $item['permission_any'] : null;
+                    if ($permissionAny !== null) {
+                        $hasAny = in_array('face-id', $allowedKeys, true);
+                        if (! $hasAny) {
+                            foreach ($permissionAny as $anyKey) {
+                                if (isset($allowed[$anyKey])) {
+                                    $hasAny = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (! $hasAny) {
+                            continue;
+                        }
+                    } elseif (! $isGuide && ! isset($allowed[$key])) {
                         continue;
                     }
                 }
@@ -138,7 +277,17 @@ final class ReportNavigation
     }
 
     /**
-     * @return list<array{label: string, section_label: string, label: string, title?: string}>
+     * Keys that can be assigned on the Users page (includes permission-only grants).
+     *
+     * @return list<string>
+     */
+    public static function assignablePermissionKeys(): array
+    {
+        return array_values(array_unique(array_column(self::permissionMatrix(), 'key')));
+    }
+
+    /**
+     * @return list<array{key: string, section_label: string, label: string, title?: string}>
      */
     public static function permissionMatrix(): array
     {
@@ -146,6 +295,9 @@ final class ReportNavigation
         foreach (self::sectionsDefinition() as $section) {
             foreach ($section['items'] as $item) {
                 if (! empty($item['super_admin_only']) || $item['key'] === 'guide') {
+                    continue;
+                }
+                if (! empty($item['nav_only'])) {
                     continue;
                 }
                 $matrix[] = [
@@ -170,24 +322,39 @@ final class ReportNavigation
             str_starts_with($routeName, 'reports.sales-by-item') => 'sales-by-item',
             str_starts_with($routeName, 'reports.sales-by-salesman') => 'sales-by-salesman',
             str_starts_with($routeName, 'reports.sales') => 'sales',
+            str_starts_with($routeName, 'reports.storage-quantity') => 'storage-quantity',
             str_starts_with($routeName, 'reports.storage-items') => 'storage-items',
             str_starts_with($routeName, 'reports.storage') => 'storage',
+            str_starts_with($routeName, 'reports.pda.locations') => 'pda-locations',
+            $routeName === 'reports.pda.items.show' => 'pda-item-detail',
+            str_starts_with($routeName, 'reports.pda') => 'pda',
             str_starts_with($routeName, 'reports.deliveries') => 'deliveries',
             str_starts_with($routeName, 'reports.invoices') => 'invoices',
             str_starts_with($routeName, 'reports.tasks') => 'tasks',
+            str_starts_with($routeName, 'reports.it-work-log') => 'it-work-log',
             str_starts_with($routeName, 'reports.holidays') => 'holidays',
             str_starts_with($routeName, 'reports.governorates') => 'governorates',
             str_starts_with($routeName, 'reports.invoice-branding') => 'invoice-branding',
             str_starts_with($routeName, 'reports.report-assembly') => 'report-assembly',
             str_starts_with($routeName, 'reports.comparison') => 'comparison',
+            str_starts_with($routeName, 'reports.rankings') => 'rankings',
             str_starts_with($routeName, 'reports.cities') => 'cities',
             str_starts_with($routeName, 'reports.visits') => 'visits',
+            str_starts_with($routeName, 'reports.market-study') => 'market-study',
             str_starts_with($routeName, 'reports.damages') => 'damages',
+            str_starts_with($routeName, 'reports.accounting') => 'accounting',
+            str_starts_with($routeName, 'reports.client-balance') => 'client-balance',
+            str_starts_with($routeName, 'reports.general-ledger') => 'general-ledger',
+            str_starts_with($routeName, 'reports.promotions') => 'promotions',
+            str_starts_with($routeName, 'reports.client-suspensions') => 'client-suspensions',
+            str_starts_with($routeName, 'reports.manufacturing') => 'manufacturing',
+            str_starts_with($routeName, 'reports.face-id') => 'face-id',
             str_starts_with($routeName, 'reports.schema') => 'schema',
             str_starts_with($routeName, 'reports.guide') => 'guide',
             str_starts_with($routeName, 'reports.identifier') => 'identifier',
             str_starts_with($routeName, 'reports.users') => 'users',
             str_starts_with($routeName, 'reports.sqlite-backups') => 'sqlite-backups',
+            str_starts_with($routeName, 'reports.database-sync') => 'database-sync',
             default => '',
         };
     }

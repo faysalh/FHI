@@ -4,12 +4,20 @@
     $activeKey = ReportNavigation::activeKey();
     $sections = ReportNavigation::sections();
     $homeRoute = ReportAuthSession::defaultLandingRouteName();
+    $pdaFocused = ReportAuthSession::isPdaFocused();
 @endphp
-<header class="report-topbar">
+<header class="report-topbar @if ($pdaFocused) report-topbar--pda @endif">
     <div class="report-topbar__inner">
-        <a href="{{ route($homeRoute) }}" class="report-topbar__brand">
-            <span class="report-topbar__title">Reporting</span>
+        <a href="{{ route($pdaFocused ? 'reports.pda.index' : $homeRoute) }}" class="report-topbar__brand">
+            <span class="report-topbar__title">{{ $pdaFocused ? (view()->shared('pdaSalesmanName') ?: (ReportAuthSession::username() ?? 'Selling')) : 'Reporting' }}</span>
         </a>
+        @include('reports.partials.pwa-install')
+        @if ($pdaFocused)
+            <nav class="pda-focus-nav" aria-label="Selling">
+                <a href="{{ route('reports.pda.index') }}" @class(['pda-focus-link', 'is-active' => request()->routeIs('reports.pda.index', 'reports.pda.customers.show', 'reports.pda.visits.show', 'reports.pda.vouchers.create')])>Customers</a>
+                <a href="{{ route('reports.pda.unposted') }}" @class(['pda-focus-link', 'is-active' => request()->routeIs('reports.pda.unposted')])>Unposted</a>
+            </nav>
+        @else
         <button
             type="button"
             class="report-nav-toggle btn-icon"
@@ -21,7 +29,8 @@
                 <path d="M4 7h16M4 12h16M4 17h16"/>
             </svg>
         </button>
-        @if (ReportAuthSession::username())
+        @endif
+        @if (! $pdaFocused && ReportAuthSession::username())
             <span class="report-topbar__user muted">{{ ReportAuthSession::username() }}{{ ReportAuthSession::isSuperAdmin() ? ' · Admin' : '' }}</span>
         @endif
         <form method="POST" action="{{ route('logout') }}" class="report-topbar__logout">
@@ -30,10 +39,20 @@
         </form>
     </div>
 </header>
+@if (! $pdaFocused)
 <nav id="report-nav-menu" class="report-nav" aria-label="Report sections">
     @foreach ($sections as $section)
-        <div class="report-nav__group">
-            <span class="report-nav__label">{{ $section['label'] }}</span>
+        @php
+            $sectionOpen = false;
+            foreach ($section['items'] as $navItem) {
+                if ($activeKey === $navItem['key']) {
+                    $sectionOpen = true;
+                    break;
+                }
+            }
+        @endphp
+        <div @class(['report-nav__group', 'is-open' => $sectionOpen])>
+            <button type="button" class="report-nav__label" aria-expanded="{{ $sectionOpen ? 'true' : 'false' }}">{{ $section['label'] }}</button>
             <div class="report-nav__links">
                 @foreach ($section['items'] as $item)
                     <a href="{{ route($item['route']) }}"
@@ -45,6 +64,7 @@
         </div>
     @endforeach
 </nav>
+@endif
 <style>
     .report-topbar {
         background: linear-gradient(90deg, #312e81 0%, #4f46e5 55%, #4338ca 100%);
@@ -80,6 +100,17 @@
         border-color: rgba(255, 255, 255, 0.5);
     }
     .report-nav-toggle svg { width: 20px; height: 20px; }
+    .pda-focus-nav { display: flex; align-items: center; gap: 4px; min-width: 0; }
+    .pda-focus-link {
+        display: inline-flex; align-items: center; min-height: 40px; padding: 8px 10px;
+        border-radius: 8px; color: #f8fafc; text-decoration: none; font-size: 14px; font-weight: 700;
+    }
+    .pda-focus-link.is-active { background: rgba(255, 255, 255, 0.18); }
+    .report-topbar--pda .report-topbar__title { font-size: 15px; }
+    @media (max-width: 768px) {
+        .report-topbar--pda .pda-focus-nav { order: 2; }
+        .report-topbar--pda .report-topbar__logout { margin-left: auto; }
+    }
     .btn--sm { padding: 5px 10px; font-size: 12px; }
     .report-nav {
         background: #fff;
@@ -92,14 +123,23 @@
     }
     .report-nav__group { min-width: 0; }
     .report-nav__label {
-        display: block;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        margin: 0 0 6px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        font: inherit;
         font-size: 10px;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.06em;
         color: #94a3b8;
-        margin-bottom: 6px;
+        text-align: left;
     }
+    .report-nav__label::after { content: none; }
     .report-nav__links {
         display: flex;
         flex-wrap: wrap;
@@ -127,7 +167,11 @@
     }
     @media (max-width: 768px) {
         .report-topbar__inner {
-            flex-wrap: nowrap;
+            flex-wrap: wrap;
+        }
+        .report-topbar .pwa-install {
+            order: 4;
+            flex: 1 0 100%;
         }
         .report-topbar__user {
             display: none;
@@ -144,8 +188,11 @@
         .report-nav {
             display: none;
             flex-direction: column;
+            flex-wrap: nowrap;
+            align-items: stretch;
             gap: 14px;
             max-height: min(70vh, calc(100vh - 120px));
+            overflow-x: hidden;
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
             box-shadow: inset 0 1px 0 #f1f5f9;
@@ -153,7 +200,25 @@
         .report-nav.is-open {
             display: flex;
         }
-        .report-nav__links {
+        .report-nav__group { width: 100%; }
+        .report-nav__group:not(.is-open) .report-nav__links { display: none; }
+        .report-nav__label {
+            min-height: 44px;
+            margin-bottom: 0;
+            padding: 8px 4px;
+            font-size: 13px;
+            color: #334155;
+            cursor: pointer;
+        }
+        .report-nav__label::after {
+            content: '▸';
+            font-size: 12px;
+            color: #94a3b8;
+        }
+        .report-nav__group.is-open .report-nav__label::after { content: '▾'; }
+        .report-nav__group.is-open .report-nav__label { margin-bottom: 6px; }
+        .report-nav__group.is-open .report-nav__links {
+            display: flex;
             flex-direction: column;
             align-items: stretch;
         }
@@ -167,6 +232,7 @@
         .report-nav-toggle {
             display: none !important;
         }
+        .report-nav__label { pointer-events: none; }
     }
 </style>
 <script>
@@ -181,8 +247,42 @@
         toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
         toggle.setAttribute('aria-label', open ? 'Close report menu' : 'Open report menu');
     }
+    function syncSectionButtons() {
+        var desktop = window.matchMedia('(min-width: 769px)').matches;
+        nav.querySelectorAll('.report-nav__label').forEach(function (button) {
+            if (desktop) {
+                button.setAttribute('tabindex', '-1');
+            } else {
+                button.removeAttribute('tabindex');
+            }
+        });
+    }
+    syncSectionButtons();
     toggle.addEventListener('click', function () {
         setOpen(!nav.classList.contains('is-open'));
+    });
+    nav.querySelectorAll('.report-nav__label').forEach(function (button) {
+        button.addEventListener('click', function () {
+            if (!window.matchMedia('(max-width: 768px)').matches) {
+                return;
+            }
+            var group = button.closest('.report-nav__group');
+            var willOpen = !group.classList.contains('is-open');
+            nav.querySelectorAll('.report-nav__group').forEach(function (other) {
+                other.classList.remove('is-open');
+                var label = other.querySelector('.report-nav__label');
+                if (label) {
+                    label.setAttribute('aria-expanded', 'false');
+                }
+            });
+            if (willOpen) {
+                group.classList.add('is-open');
+                button.setAttribute('aria-expanded', 'true');
+                var navTop = nav.getBoundingClientRect().top;
+                var groupTop = group.getBoundingClientRect().top;
+                nav.scrollTop += groupTop - navTop;
+            }
+        });
     });
     nav.querySelectorAll('.report-nav__link').forEach(function (link) {
         link.addEventListener('click', function () {
@@ -201,6 +301,7 @@
         setOpen(false);
     });
     window.addEventListener('resize', function () {
+        syncSectionButtons();
         if (window.matchMedia('(min-width: 769px)').matches) {
             setOpen(false);
         }

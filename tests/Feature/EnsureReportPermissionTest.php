@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Repositories\VisitsReportRepository;
 use App\Services\CitiesGovernorateSqliteService;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 use Mockery;
 use Tests\TestCase;
 
@@ -16,6 +17,9 @@ class EnsureReportPermissionTest extends TestCase
     {
         parent::setUp();
         Config::set('database.connections.deliveries_sqlite.database', ':memory:');
+        Config::set('database.connections.reports_users_sqlite.database', ':memory:');
+        DB::purge('deliveries_sqlite');
+        DB::purge('reports_users_sqlite');
         $this->app['env'] = 'local';
     }
 

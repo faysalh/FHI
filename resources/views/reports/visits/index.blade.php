@@ -6,12 +6,6 @@
     use App\Support\VisitsReportRowValues;
 @endphp
 <header class="page-header"><h1>Visits report</h1></header>
-<p class="hint">
-        <strong>Clients</strong> and <strong>salesmen</strong> follow the <a href="{{ route('reports.identifier.index') }}">Identifier</a> rules.
-        A client is <strong>visited</strong> in a period if there is at least one non-cancelled store document line with a title date in that period for that account.
-        If your date range spans <strong>more than one calendar month</strong>, you get one column per month (visit in that month only). Otherwise a single <strong>Visit status</strong> column is used.
-        Leave <strong>salesman</strong> empty to list all clients (with city filters applied). Leave <strong>cities</strong> unselected to include all cities.
-    </p>
 
     <form id="visits-filter-form" method="get" action="{{ route('reports.visits.index') }}">
         <details class="filters-panel" open>

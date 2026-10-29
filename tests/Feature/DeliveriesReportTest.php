@@ -228,6 +228,50 @@ class DeliveriesReportTest extends TestCase
         $response->assertSessionHas('status', 'Batch assignment completed.');
     }
 
+    public function test_batch_assignment_from_excel_csv(): void
+    {
+        $repo = Mockery::mock(DeliveriesReportRepository::class);
+        $repo->shouldReceive('findInvoicesByInvoiceNumbersForBatch')
+            ->once()
+            ->with(['53267', '53265'])
+            ->andReturn([
+                (object) [
+                    'invoice_id' => '2001',
+                    'invoice_no' => '53267',
+                    'document_date' => '2026-02-01',
+                ],
+                (object) [
+                    'invoice_id' => '2002',
+                    'invoice_no' => '53265',
+                    'document_date' => '2026-02-02',
+                ],
+            ]);
+
+        $teams = Mockery::mock(DeliveriesTeamSqliteService::class);
+        $teams->shouldReceive('listAllAssignedInvoiceIds')->never();
+        $teams->shouldReceive('assignmentsByInvoiceIds')
+            ->once()
+            ->with(['2001', '2002'])
+            ->andReturn([]);
+        $teams->shouldReceive('assignInvoiceTeam')->twice();
+
+        $this->app->instance(DeliveriesReportRepository::class, $repo);
+        $this->app->instance(DeliveriesTeamSqliteService::class, $teams);
+
+        $csv = "Invoice Number\n53267\n53265\n";
+        $path = tempnam(sys_get_temp_dir(), 'deliveries_batch_');
+        $this->assertNotFalse($path);
+        file_put_contents($path, $csv);
+
+        $response = $this->post('/reports/deliveries/batch-assign?tab=batch-assignment&team_date=2026-04-20', [
+            'team_id' => 3,
+            'batch_excel' => new \Illuminate\Http\UploadedFile($path, 'invoices.csv', 'text/csv', null, true),
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHas('status', 'Batch assignment completed.');
+    }
+
     public function test_clear_team_assignments_removes_all_invoices_for_team(): void
     {
         $teams = Mockery::mock(DeliveriesTeamSqliteService::class);
@@ -265,6 +309,27 @@ class DeliveriesReportTest extends TestCase
         $response->assertSessionHas('status', 'Delivery status changed to delivered.');
     }
 
+    public function test_invoice_team_assignment_can_be_removed(): void
+    {
+        $teams = Mockery::mock(DeliveriesTeamSqliteService::class);
+        $teams->shouldReceive('clearInvoiceAssignment')
+            ->once()
+            ->with('1001')
+            ->andReturn(1);
+        $teams->shouldReceive('assignInvoiceTeam')->never();
+
+        $this->app->instance(DeliveriesTeamSqliteService::class, $teams);
+
+        $response = $this->post('/reports/deliveries/assign-team?date_from=2026-04-01&date_to=2026-04-20', [
+            'invoice_id' => '1001',
+            'document_date' => '2026-04-20',
+            'team_id' => 0,
+        ]);
+
+        $response->assertRedirect('/reports/deliveries?date_from=2026-04-01&date_to=2026-04-20');
+        $response->assertSessionHas('status', 'Invoice team assignment removed.');
+    }
+
     public function test_deliveries_pdf_export_returns_file(): void
     {
         $repo = Mockery::mock(DeliveriesReportRepository::class);
@@ -272,6 +337,8 @@ class DeliveriesReportTest extends TestCase
         $repo->shouldReceive('normalizeSalesmanIds')->andReturn([]);
         $repo->shouldReceive('exportRows')->once()->andReturn([
             (object) [
+                'invoice_id' => '1001',
+                'invoice_no' => '8842',
                 'document_date' => '2026-04-20',
                 'client_code' => 'C-100',
                 'client_name' => 'Client One',
@@ -281,17 +348,38 @@ class DeliveriesReportTest extends TestCase
                 'delivery_status' => 'Delivered',
             ],
         ]);
-        $visits = Mockery::mock(VisitsReportRepository::class);
-        $visits->shouldReceive('getCityOptions')->andReturn([]);
-        $visits->shouldReceive('getSalesmanOptions')->andReturn([]);
-        $teams = Mockery::mock(DeliveriesTeamSqliteService::class);
-        $teams->shouldReceive('assignmentsByInvoiceIds')->andReturn([]);
 
         $this->app->instance(DeliveriesReportRepository::class, $repo);
-        $this->app->instance(VisitsReportRepository::class, $visits);
-        $this->app->instance(DeliveriesTeamSqliteService::class, $teams);
 
         $response = $this->get('/reports/deliveries/export/pdf?date_from=2026-04-01&date_to=2026-04-20');
+
+        $response->assertOk();
+        $response->assertHeader('content-type', 'application/pdf');
+    }
+
+    public function test_deliveries_items_pdf_export_returns_file(): void
+    {
+        $repo = Mockery::mock(DeliveriesReportRepository::class);
+        $repo->shouldReceive('normalizeCities')->andReturn([]);
+        $repo->shouldReceive('normalizeSalesmanIds')->andReturn([]);
+        $repo->shouldReceive('exportItemRows')->once()->andReturn([
+            (object) [
+                'category_name' => 'Poultry',
+                'item_name' => 'Whole chicken',
+                'quantity' => 40,
+                'weight_total' => 80,
+            ],
+        ]);
+
+        $assembly = Mockery::mock(\App\Services\ReportAssemblyPriorityService::class);
+        $assembly->shouldReceive('sortRows')
+            ->once()
+            ->andReturnUsing(static fn (array $rows): array => $rows);
+
+        $this->app->instance(DeliveriesReportRepository::class, $repo);
+        $this->app->instance(\App\Services\ReportAssemblyPriorityService::class, $assembly);
+
+        $response = $this->get('/reports/deliveries/export/items/pdf?date_from=2026-04-01&date_to=2026-04-20');
 
         $response->assertOk();
         $response->assertHeader('content-type', 'application/pdf');
