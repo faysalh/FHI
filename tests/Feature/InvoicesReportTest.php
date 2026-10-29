@@ -9,6 +9,7 @@ use App\Repositories\VisitsReportRepository;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Cache;
 use Mockery;
+use ReflectionMethod;
 use Tests\TestCase;
 
 class InvoicesReportTest extends TestCase
@@ -297,7 +298,7 @@ class InvoicesReportTest extends TestCase
         $response->assertOk();
         $response->assertSee('Deliver before noon');
         $response->assertSee('ملاحظة');
-        $response->assertSee('data:image/jpeg;base64,', false);
+        $response->assertSee('data:image/png;base64,', false);
         $response->assertSee('مجموع الفاتورة');
         $response->assertSee('الرصيد السابق');
         $response->assertSee('المجموع الكلي');
@@ -413,11 +414,21 @@ class InvoicesReportTest extends TestCase
         $this->assertStringContainsString('.items { width: 100%; border-collapse: collapse; margin-top: 3px; table-layout: auto; direction: rtl; }', $html);
         $this->assertStringContainsString('class="stamp-label"', $html);
         $this->assertStringContainsString('class="stamp-date"', $html);
-        $this->assertStringContainsString('<img class="logo" src="data:image/png;base64,AAAA" width="78" height="78" alt="logo">', $html);
+        $this->assertStringContainsString('<img class="logo" src="data:image/png;base64,AAAA" width="128" height="128" alt="logo">', $html);
         $this->assertStringContainsString('class="meta-ltr">1001</span>', $html);
         $this->assertStringContainsString('د.ع', $html);
         $this->assertStringNotContainsString('Invoice Total', $html);
         $this->assertStringContainsString('<th class="center col-idx">#</th>', $html);
+    }
+
+    public function test_invoice_header_still_has_a_balance_expression(): void
+    {
+        $method = new ReflectionMethod(InvoicesReportRepository::class, 'clientDueExpr');
+        $method->setAccessible(true);
+        $sql = $method->invoke(new InvoicesReportRepository(new VisitsReportRepository()));
+
+        $this->assertStringContainsString('FN_Get_Prev_Account_Balance', $sql);
+        $this->assertStringContainsString('a.fld_account_id', $sql);
     }
 
     public function test_invoice_pdf_export_includes_the_logo(): void
@@ -452,7 +463,7 @@ class InvoicesReportTest extends TestCase
         $body = $response->getContent();
         $this->assertIsString($body);
         $this->assertStringStartsWith('%PDF', $body);
-        $this->assertStringContainsString("\xFF\xD8\xFF", $body);
+        $this->assertStringContainsString('/Subtype /Image', $body);
     }
 
     public function test_invoice_list_pdf_and_csv_exports(): void

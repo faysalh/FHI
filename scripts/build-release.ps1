@@ -122,13 +122,22 @@ if (-not $SkipNpm) {
     Write-Host "Building front-end assets..."
     Assert-Command npm
     Push-Location $Root
+    # npm writes notices to stderr. Run it through cmd so those notices do not abort the build.
     if (Test-Path 'package-lock.json') {
-        npm ci 2>$null
-        if ($LASTEXITCODE -ne 0) { npm install }
+        cmd /c "npm ci"
+        if ($LASTEXITCODE -ne 0) { cmd /c "npm install" }
     } else {
-        npm install
+        cmd /c "npm install"
     }
-    npm run build
+    if ($LASTEXITCODE -ne 0) {
+        Pop-Location
+        throw "npm install failed with exit code $LASTEXITCODE"
+    }
+    cmd /c "npm run build"
+    if ($LASTEXITCODE -ne 0) {
+        Pop-Location
+        throw "npm run build failed with exit code $LASTEXITCODE"
+    }
     Pop-Location
 }
 

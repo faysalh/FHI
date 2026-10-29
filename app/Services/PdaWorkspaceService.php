@@ -278,6 +278,126 @@ class PdaWorkspaceService
         return $this->read('EXEC dbo.SP_GET_PDA_LAST_LOCATIONS');
     }
 
+    public const MAX_VOUCHER_LOCATIONS = 200;
+
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array{date_from: string, date_to: string, salesman_user_id: string, client_name: string}
+     */
+    public function normalizeLocationFilters(array $input): array
+    {
+        $client = trim((string) ($input['client_name'] ?? ''));
+        if (mb_strlen($client) > 200) {
+            $client = mb_substr($client, 0, 200);
+        }
+
+        $from = $this->locationDate((string) ($input['date_from'] ?? ''));
+        $to = $this->locationDate((string) ($input['date_to'] ?? ''));
+        if ($from !== '' && $to !== '' && $from > $to) {
+            [$from, $to] = [$to, $from];
+        }
+
+        return [
+            'date_from' => $from,
+            'date_to' => $to,
+            'salesman_user_id' => $this->guid($input['salesman_user_id'] ?? ''),
+            'client_name' => $client,
+        ];
+    }
+
+    /**
+     * Latest handheld points have a salesman and a time, not a customer.
+     *
+     * @param  list<object>  $points
+     * @param  array{date_from?: string, date_to?: string, salesman_name?: string}  $filters
+     * @return list<object>
+     */
+    public function filterLastLocations(array $points, array $filters): array
+    {
+        $dateFrom = $this->locationDate((string) ($filters['date_from'] ?? ''));
+        $dateTo = $this->locationDate((string) ($filters['date_to'] ?? ''));
+        $salesmanName = trim((string) ($filters['salesman_name'] ?? ''));
+        $matched = [];
+
+        foreach ($points as $point) {
+            if (! is_object($point)) {
+                continue;
+            }
+            $day = $this->locationDay($point->fld_date ?? null);
+            if ($dateFrom !== '' && ($day === '' || $day < $dateFrom)) {
+                continue;
+            }
+            if ($dateTo !== '' && ($day === '' || $day > $dateTo)) {
+                continue;
+            }
+            $name = trim((string) ($point->fld_account_name ?? ''));
+            if ($salesmanName !== '' && $name !== $salesmanName) {
+                continue;
+            }
+            $matched[] = $point;
+        }
+
+        return $matched;
+    }
+
+    /**
+     * Voucher GPS stored on the handheld, filtered by date, salesman, and client name.
+     *
+     * @param  array{date_from?: string, date_to?: string, salesman_user_id?: string, client_name?: string}  $filters
+     * @return list<object>
+     */
+    public function voucherLocations(array $filters): array
+    {
+        $filters = $this->normalizeLocationFilters($filters);
+        $where = [
+            't.fld_lat IS NOT NULL',
+            't.fld_long IS NOT NULL',
+            't.fld_lat <> 0',
+            't.fld_long <> 0',
+        ];
+        $bindings = [];
+
+        if ($filters['date_from'] !== '') {
+            $where[] = 't.fld_date >= CAST(? AS datetime)';
+            $bindings[] = $filters['date_from'];
+        }
+        if ($filters['date_to'] !== '') {
+            $where[] = 't.fld_date < DATEADD(day, 1, CAST(? AS datetime))';
+            $bindings[] = $filters['date_to'];
+        }
+        if ($filters['salesman_user_id'] !== '') {
+            $where[] = 't.fld_user_id = CAST(? AS uniqueidentifier)';
+            $bindings[] = $filters['salesman_user_id'];
+        }
+        if ($filters['client_name'] !== '') {
+            $where[] = "t.fld_customer_name LIKE ? ESCAPE '\\'";
+            $bindings[] = '%'.$this->likeEscape($filters['client_name']).'%';
+        }
+
+        $limit = self::MAX_VOUCHER_LOCATIONS;
+
+        return $this->read(
+            'SELECT TOP ('.$limit.')
+                CAST(t.fld_voucher_id AS nvarchar(36)) AS voucher_id,
+                LTRIM(RTRIM(CAST(ISNULL(t.fld_customer_name, N\'\') AS nvarchar(300)))) AS customer_name,
+                LTRIM(RTRIM(CAST(ISNULL(t.fld_voucher_Type, N\'\') AS nvarchar(40)))) AS voucher_type,
+                CONVERT(varchar(19), t.fld_date, 120) AS captured_at,
+                t.fld_lat AS latitude,
+                t.fld_long AS longitude,
+                LTRIM(RTRIM(CAST(ISNULL(sm.salesman_name, N\'\') AS nvarchar(200)))) AS salesman_name
+             FROM dbo.tbl_pda_store_title AS t
+             OUTER APPLY (
+                SELECT TOP 1 a.fld_account_name AS salesman_name
+                FROM dbo.tbl_accounting_accounts AS a
+                WHERE a.fld_user_id_ref = t.fld_user_id
+                ORDER BY CASE WHEN ISNULL(a.fld_is_sales_man, 0) = 1 THEN 0 ELSE 1 END, a.fld_account_name
+             ) AS sm
+             WHERE '.implode(' AND ', $where).'
+             ORDER BY t.fld_date DESC',
+            $bindings
+        );
+    }
+
     /**
      * @return list<object>
      */
@@ -1128,6 +1248,38 @@ CS);
         }
 
         return null;
+    }
+
+    private function locationDate(string $value): string
+    {
+        $value = trim($value);
+        if (! preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $value, $match)) {
+            return '';
+        }
+        if (! checkdate((int) $match[2], (int) $match[3], (int) $match[1])) {
+            return '';
+        }
+
+        return $value;
+    }
+
+    private function locationDay(mixed $value): string
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+
+        $text = trim((string) $value);
+        if (preg_match('/^(\d{4}-\d{2}-\d{2})/', $text, $match) === 1) {
+            return $match[1];
+        }
+
+        return '';
+    }
+
+    private function likeEscape(string $value): string
+    {
+        return str_replace(['\\', '%', '_', '['], ['\\\\', '\\%', '\\_', '\\['], $value);
     }
 
     private function guid(mixed $value): string

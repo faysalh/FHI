@@ -163,7 +163,7 @@
             font-family: 'InvoiceNotoNaskhArabic', 'InvoiceNotoSans', sans-serif;
         }
         .small { font-size: 12px; color: #000000; line-height: 1; font-family: 'InvoiceNotoNaskhArabic', 'InvoiceNotoSans', sans-serif; }
-        .logo { width: 78px; height: 78px; display: block; margin-left: auto; }
+        .logo { width: 128px; height: 128px; display: block; margin-left: auto; }
         .meta-grid { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 2px; direction: ltr; }
         .meta-grid td { padding: 1px 4px; vertical-align: middle; line-height: 1.15; color: #000000; font-size: 12px; }
         .meta-grid .meta-label { width: 18%; font-weight: 700; white-space: nowrap; text-align: right; }
@@ -258,7 +258,7 @@
             </td>
             <td class="top-side" style="text-align:right;">
                 @if (!empty($brandingLogoDataUri))
-                    <img class="logo" src="{{ $brandingLogoDataUri }}" width="78" height="78" alt="logo">
+                    <img class="logo" src="{{ $brandingLogoDataUri }}" width="128" height="128" alt="logo">
                 @endif
             </td>
         </tr>

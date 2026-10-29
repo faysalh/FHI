@@ -304,7 +304,7 @@ class PdaController extends Controller
         ]));
     }
 
-    public function locations(): View
+    public function locations(Request $request): View
     {
         if (! ReportAuthSession::canAccessReport('pda-locations')) {
             abort(403, 'You do not have access to salesman locations.');
@@ -321,9 +321,34 @@ class PdaController extends Controller
             'name' => '',
         ];
 
+        $filters = $this->pda->normalizeLocationFilters([
+            'date_from' => $request->query('date_from', ''),
+            'date_to' => $request->query('date_to', ''),
+            'salesman_user_id' => $request->query('salesman_user_id', ''),
+            'client_name' => $request->query('client_name', ''),
+        ]);
+        $salesmen = $this->guarded(fn (): array => $this->pda->listSalesmen(), []);
+        $salesmanName = '';
+        foreach ($salesmen as $row) {
+            if (($row['user_id'] ?? '') === $filters['salesman_user_id']) {
+                $salesmanName = (string) ($row['name'] ?? '');
+                break;
+            }
+        }
+
         return view('reports.pda.locations', $this->page($salesman, [
-            'points' => $this->guarded(fn (): array => $this->pda->lastLocations(), []),
-            'stored' => $this->guarded(fn (): array => $this->pda->storedLocations(null, true), []),
+            'points' => $this->guarded(fn (): array => $this->pda->filterLastLocations(
+                $this->pda->lastLocations(),
+                [
+                    'date_from' => $filters['date_from'],
+                    'date_to' => $filters['date_to'],
+                    'salesman_name' => $salesmanName,
+                ]
+            ), []),
+            'stored' => $this->guarded(fn (): array => $this->pda->voucherLocations($filters), []),
+            'filters' => $filters,
+            'salesmen' => $salesmen,
+            'locationLimit' => PdaWorkspaceService::MAX_VOUCHER_LOCATIONS,
             'showAll' => true,
         ]));
     }

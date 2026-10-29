@@ -11,6 +11,7 @@ use App\Services\ReportsUsersSqliteService;
 use App\Support\ReportNavigation;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Mockery;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -111,6 +112,90 @@ class PdaWorkspaceTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('not linked to a salesman');
+    }
+
+    public function test_locations_page_filters_latest_points_and_voucher_customers(): void
+    {
+        $pda = Mockery::mock(PdaWorkspaceService::class, [
+            new ReportsUsersSqliteService,
+            new PdaLocationSqliteService,
+            new ClientSuspensionSqliteService,
+        ])->makePartial();
+        $pda->shouldReceive('listSalesmen')->andReturn([
+            [
+                'user_id' => '11111111-1111-1111-1111-111111111111',
+                'account_id' => '22222222-2222-2222-2222-222222222222',
+                'name' => 'Ali',
+                'code' => '1',
+            ],
+        ]);
+        $pda->shouldReceive('companyName')->andReturn('');
+        $pda->shouldReceive('lastLocations')->andReturn([
+            (object) ['fld_account_name' => 'Ali', 'fld_date' => '2026-10-05 08:00:00', 'Lat' => '36.100', 'Long' => '44.100', 'fld_vehicle_name' => 'Van'],
+            (object) ['fld_account_name' => 'Ali', 'fld_date' => '2026-09-01 08:00:00', 'Lat' => '1.000', 'Long' => '2.000', 'fld_vehicle_name' => ''],
+            (object) ['fld_account_name' => 'Omar', 'fld_date' => '2026-10-05 08:00:00', 'Lat' => '3.000', 'Long' => '4.000', 'fld_vehicle_name' => ''],
+        ]);
+        $pda->shouldReceive('voucherLocations')->once()->with([
+            'date_from' => '2026-10-01',
+            'date_to' => '2026-10-10',
+            'salesman_user_id' => '11111111-1111-1111-1111-111111111111',
+            'client_name' => 'Shop',
+        ])->andReturn([
+            (object) [
+                'customer_name' => 'Shop A',
+                'voucher_type' => 'sale',
+                'captured_at' => '2026-10-05 09:00:00',
+                'salesman_name' => 'Ali',
+                'latitude' => 36.2,
+                'longitude' => 44.0,
+            ],
+        ]);
+        $this->app->instance(PdaWorkspaceService::class, $pda);
+
+        $response = $this->withSession([
+            'reports_admin_authenticated' => true,
+            'reports_user_id' => 1,
+            'reports_username' => 'admin',
+            'reports_is_super_admin' => true,
+            'reports_allowed_keys' => ['pda-locations'],
+        ])->get('/reports/pda/locations?date_from=2026-10-10&date_to=2026-10-01&salesman_user_id=11111111-1111-1111-1111-111111111111&client_name=Shop');
+
+        $response->assertOk();
+        $response->assertSee('name="date_from"', false);
+        $response->assertSee('name="salesman_user_id"', false);
+        $response->assertSee('name="client_name"', false);
+        $response->assertSee('value="Shop"', false);
+        $response->assertSee('36.100');
+        $response->assertDontSee('2026-09-01');
+        $response->assertDontSee('Omar');
+        $response->assertSee('Shop A');
+    }
+
+    public function test_location_filters_drop_invalid_dates_and_salesman_ids(): void
+    {
+        $service = new PdaWorkspaceService(new ReportsUsersSqliteService, new PdaLocationSqliteService, new ClientSuspensionSqliteService);
+
+        $this->assertSame([
+            'date_from' => '',
+            'date_to' => '2026-10-29',
+            'salesman_user_id' => '',
+            'client_name' => 'بازار',
+        ], $service->normalizeLocationFilters([
+            'date_from' => '2026-13-01',
+            'date_to' => '2026-10-29',
+            'salesman_user_id' => 'not-a-guid',
+            'client_name' => ' بازار ',
+        ]));
+
+        $points = $service->filterLastLocations([
+            (object) ['fld_account_name' => 'Ali', 'fld_date' => '2026-10-29 12:00:00'],
+        ], [
+            'date_from' => '2026-10-01',
+            'date_to' => '2026-10-31',
+            'salesman_name' => 'Ali',
+        ]);
+        $this->assertCount(1, $points);
+        $this->assertSame([], $service->filterLastLocations($points, ['salesman_name' => 'Omar']));
     }
 
     public function test_pda_user_cannot_open_every_salesman_locations(): void

@@ -21,12 +21,12 @@ class ReportPdfBrandingTest extends TestCase
         $this->assertNull($view['brandingLogoDataUri']);
     }
 
-    public function test_invoice_export_falls_back_to_the_jpeg_logo(): void
+    public function test_invoice_export_falls_back_to_the_transparent_logo(): void
     {
         $uri = ReportPdfBranding::logoDataUri(['logo_path' => ''], true);
 
         $this->assertNotNull($uri);
-        $this->assertStringStartsWith('data:image/jpeg;base64,', (string) $uri);
+        $this->assertStringStartsWith('data:image/png;base64,', (string) $uri);
     }
 
     public function test_for_current_request_returns_branding_settings(): void

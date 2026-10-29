@@ -606,6 +606,18 @@ class InvoicesReportRepository
         return 't.'.$this->bracketSqlIdentifier($col);
     }
 
+    private function clientDueExpr(): string
+    {
+        return 'COALESCE(
+            CAST(dbo.FN_Get_Prev_Account_Balance(
+                a.fld_account_id,
+                t.fld_store_document_title_date,
+                t.fld_year_id_ref
+            ) AS decimal(24, 6)),
+            CAST(0 AS decimal(24, 6))
+        )';
+    }
+
     private function clientDueFromInvoiceExpr(string $alias): string
     {
         return "COALESCE(

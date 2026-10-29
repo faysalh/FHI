@@ -77,12 +77,7 @@ final class ReportPdfBranding
 
     private static function fallbackLogoDataUri(): ?string
     {
-        $jpeg = public_path('icons/invoice-logo.jpg');
-        if (is_file($jpeg)) {
-            return self::fileDataUri($jpeg, 'image/jpeg');
-        }
-
-        return self::fileDataUri(public_path('icons/apple-touch-icon.png'), 'image/png');
+        return self::fileDataUri(public_path('icons/invoice-logo.png'), 'image/png');
     }
 
     private static function fileDataUri(string $path, string $mime): ?string
