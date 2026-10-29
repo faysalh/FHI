@@ -167,7 +167,7 @@
             <td class="company">{{ $branding['company_name'] ?? 'N.Z.Y. Company' }}</td>
             <td class="small" style="text-align:right;">
                 @if (!empty($brandingLogoDataUri))
-                    <img src="{{ $brandingLogoDataUri }}" class="logo" alt="logo">
+                    <img src="{{ $brandingLogoDataUri }}" class="logo" width="92" height="92" alt="logo">
                 @endif
             </td>
         </tr>

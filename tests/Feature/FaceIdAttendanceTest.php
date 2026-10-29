@@ -311,6 +311,18 @@ class FaceIdAttendanceTest extends TestCase
             ->assertHeader('content-type', 'text/csv; charset=UTF-8');
     }
 
+    public function test_attendance_pdf_export(): void
+    {
+        $today = now()->toDateString();
+
+        $response = $this->withFaceIdSession()
+            ->get('/reports/face-id/export/pdf?date_from='.$today.'&date_to='.$today);
+
+        $response->assertOk();
+        $response->assertHeader('content-type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF', (string) $response->getContent());
+    }
+
     public function test_kiosk_punch_requires_location(): void
     {
         $svc = app(FaceIdSqliteService::class);

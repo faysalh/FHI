@@ -16,4 +16,4 @@
     font-weight: 700;
 }
 .branding .logo-cell { text-align: right; width: 260px; }
-.branding .logo-cell img { max-height: 88px; max-width: 220px; object-fit: contain; }
+.branding .logo-cell img { width: 78px; height: 78px; }

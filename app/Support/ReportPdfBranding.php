@@ -34,49 +34,45 @@ final class ReportPdfBranding
     }
 
     /**
+     * Settings array used by report PDFs that pass branding themselves.
+     *
+     * @return array<string, string>
+     */
+    public static function forCurrentRequest(): array
+    {
+        return self::settings();
+    }
+
+    /**
      * @param  array<string, string>  $branding
      */
-    public static function logoDataUri(array $branding): ?string
+    public static function logoDataUri(array $branding, bool $fallbackLogo = false): ?string
     {
         $logoPath = trim((string) ($branding['logo_path'] ?? ''));
         if ($logoPath === '') {
-            return self::fallbackLogoDataUri();
+            return $fallbackLogo ? self::fallbackLogoDataUri() : null;
         }
 
         try {
             $disk = Storage::disk('public');
             if (! $disk->exists($logoPath)) {
-                return self::fallbackLogoDataUri();
+                return $fallbackLogo ? self::fallbackLogoDataUri() : null;
             }
             $mime = strtolower((string) ($disk->mimeType($logoPath) ?? 'image/png'));
+            if ($mime === 'image/jpg') {
+                $mime = 'image/jpeg';
+            }
             $contents = $disk->get($logoPath);
             if ($contents === '') {
-                return self::fallbackLogoDataUri();
-            }
-            if (! self::dompdfCanEmbed($mime)) {
-                return self::fallbackLogoDataUri();
+                return $fallbackLogo ? self::fallbackLogoDataUri() : null;
             }
 
             return 'data:'.$mime.';base64,'.base64_encode($contents);
         } catch (Throwable $e) {
             Log::warning('report_pdf_logo_data_uri_failed', ['message' => $e->getMessage()]);
 
-            return self::fallbackLogoDataUri();
+            return $fallbackLogo ? self::fallbackLogoDataUri() : null;
         }
-    }
-
-    /**
-     * DomPDF embeds JPEG without the GD extension. PNG and GIF need GD, which
-     * is not available on every PHP install used to export invoices.
-     */
-    private static function dompdfCanEmbed(string $mime): bool
-    {
-        if (in_array($mime, ['image/jpeg', 'image/jpg'], true)) {
-            return true;
-        }
-
-        return function_exists('imagecreatefrompng')
-            && in_array($mime, ['image/png', 'image/gif'], true);
     }
 
     private static function fallbackLogoDataUri(): ?string

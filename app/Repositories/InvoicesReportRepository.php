@@ -86,7 +86,7 @@ class InvoicesReportRepository
             throw new RuntimeException('Invoices report requires SQL Server (sqlsrv).');
         }
 
-        $perPage = max(1, min(100, $perPage));
+        $perPage = max(1, min(250, $perPage));
         $page = max(1, $page);
         [$baseFrom, $bindings] = $this->baseFromAndBindings($dateFrom, $dateTo, $cities, $store, $salesmanId, $searchText);
 

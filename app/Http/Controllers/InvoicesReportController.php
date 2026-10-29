@@ -9,6 +9,7 @@ use App\Http\Requests\InvoicesReportRequest;
 use App\Repositories\InvoicesReportRepository;
 use App\Repositories\VisitsReportRepository;
 use App\Support\ReportCityPickerOptions;
+use App\Support\ReportPdfBranding;
 use App\Services\ReportAssemblyPriorityService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Contracts\View\View;
@@ -20,7 +21,6 @@ use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\ResponseHeaderBag;
@@ -64,6 +64,9 @@ class InvoicesReportController extends Controller
                 $salesmanId !== '' ? $salesmanId : null,
                 $q !== '' ? $q : null
             );
+            $knownTotal = is_object($grandTotals) && property_exists($grandTotals, 'invoice_count')
+                ? (int) $grandTotals->invoice_count
+                : null;
             $rows = $this->repository->getReport(
                 $dateFrom,
                 $dateTo,
@@ -73,7 +76,7 @@ class InvoicesReportController extends Controller
                 $q !== '' ? $q : null,
                 $page,
                 $perPage,
-                (int) ($grandTotals->invoice_count ?? 0)
+                $knownTotal
             );
             $selectedInvoices = $this->getSelectionMap();
             $this->sortRowsBySelectionAndInvoiceNumber($rows, $selectedInvoices);
@@ -193,7 +196,7 @@ class InvoicesReportController extends Controller
             'salesmanId' => $salesmanId,
             'searchText' => $q,
             'cities' => $cities,
-            ...\App\Support\ReportPdfBranding::viewData($branding),
+            ...ReportPdfBranding::viewData($branding),
         ])->setPaper('a4', 'landscape');
 
         return $pdf->download('invoices-'.$dateFrom.'-'.$dateTo.'.pdf');
@@ -270,22 +273,7 @@ class InvoicesReportController extends Controller
         }
 
         try {
-            $invoice = $this->repository->getInvoiceHeader($invoiceId);
-            $items = $this->repository->getInvoiceItems($invoiceId);
-            $items = $this->assemblyPriority->sortRows($items, 'category_name', 'item_name');
-            if ($invoice !== null) {
-                $shouldResetDelivery = $this->shouldMarkNotDeliveredOnPrint($invoice);
-                $updatedDeliveryRows = $this->repository->touchLastPrintDate($invoiceId, $shouldResetDelivery);
-                $this->markInvoiceSelected($invoiceId);
-                if ($shouldResetDelivery && $updatedDeliveryRows < 1) {
-                    Log::warning('Invoice print did not update delivery rows.', [
-                        'invoice_id' => $invoiceId,
-                        'picked' => (int) $request->boolean('picked'),
-                        'last_print_date' => (string) ($invoice->last_print_date ?? ''),
-                    ]);
-                }
-                $invoice = $this->repository->getInvoiceHeader($invoiceId);
-            }
+            [$invoice, $items] = $this->preparedInvoice($invoiceId, 'Invoice print did not update delivery rows.');
         } catch (Throwable $e) {
             Log::error('Invoice print view failed.', ['message' => $e->getMessage()]);
 
@@ -302,7 +290,7 @@ class InvoicesReportController extends Controller
             'invoice' => $invoice,
             'items' => $items,
             'branding' => $branding,
-            'brandingLogoDataUri' => \App\Support\ReportPdfBranding::logoDataUri($branding),
+            'brandingLogoDataUri' => ReportPdfBranding::logoDataUri($branding, true),
         ]);
     }
 
@@ -314,22 +302,7 @@ class InvoicesReportController extends Controller
         }
 
         try {
-            $invoice = $this->repository->getInvoiceHeader($invoiceId);
-            $items = $this->repository->getInvoiceItems($invoiceId);
-            $items = $this->assemblyPriority->sortRows($items, 'category_name', 'item_name');
-            if ($invoice !== null) {
-                $shouldResetDelivery = $this->shouldMarkNotDeliveredOnPrint($invoice);
-                $updatedDeliveryRows = $this->repository->touchLastPrintDate($invoiceId, $shouldResetDelivery);
-                $this->markInvoiceSelected($invoiceId);
-                if ($shouldResetDelivery && $updatedDeliveryRows < 1) {
-                    Log::warning('Invoice PDF export did not update delivery rows.', [
-                        'invoice_id' => $invoiceId,
-                        'picked' => (int) $request->boolean('picked'),
-                        'last_print_date' => (string) ($invoice->last_print_date ?? ''),
-                    ]);
-                }
-                $invoice = $this->repository->getInvoiceHeader($invoiceId);
-            }
+            [$invoice, $items] = $this->preparedInvoice($invoiceId, 'Invoice PDF export did not update delivery rows.');
         } catch (Throwable $e) {
             Log::error('Invoice PDF export failed.', ['message' => $e->getMessage()]);
 
@@ -347,7 +320,7 @@ class InvoicesReportController extends Controller
             'invoice' => $invoice,
             'items' => $items,
             'branding' => $branding,
-            'brandingLogoDataUri' => \App\Support\ReportPdfBranding::logoDataUri($branding),
+            'brandingLogoDataUri' => ReportPdfBranding::logoDataUri($branding, true),
         ])->setPaper('a4', 'portrait');
         $dompdf = $pdf->getDomPDF();
         $dompdf->render();
@@ -375,29 +348,32 @@ class InvoicesReportController extends Controller
     }
 
     /**
-     * @param  array<string, string>  $branding
+     * @return array{0: object|null, 1: list<mixed>}
      */
-    private function resolveBrandingLogoDataUri(array $branding): ?string
+    private function preparedInvoice(string $invoiceId, string $deliveryWarning): array
     {
-        $logoPath = trim((string) ($branding['logo_path'] ?? ''));
-        if ($logoPath === '') {
-            return null;
+        $invoice = $this->repository->getInvoiceHeader($invoiceId);
+        $items = $this->assemblyPriority->sortRows(
+            $this->repository->getInvoiceItems($invoiceId),
+            'category_name',
+            'item_name'
+        );
+        if ($invoice === null) {
+            return [null, $items];
         }
 
-        try {
-            $disk = Storage::disk('public');
-            if (! $disk->exists($logoPath)) {
-                return null;
-            }
-            $mime = (string) ($disk->mimeType($logoPath) ?? 'image/png');
-            $contents = $disk->get($logoPath);
-
-            return 'data:'.$mime.';base64,'.base64_encode($contents);
-        } catch (Throwable $e) {
-            Log::warning('invoice_logo_data_uri_failed', ['message' => $e->getMessage()]);
-
-            return null;
+        $shouldResetDelivery = $this->shouldMarkNotDeliveredOnPrint($invoice);
+        $updatedDeliveryRows = $this->repository->touchLastPrintDate($invoiceId, $shouldResetDelivery);
+        $this->markInvoiceSelected($invoiceId);
+        if ($shouldResetDelivery && $updatedDeliveryRows < 1) {
+            Log::warning($deliveryWarning, [
+                'invoice_id' => $invoiceId,
+                'picked' => (int) request()->boolean('picked'),
+                'last_print_date' => (string) ($invoice->last_print_date ?? ''),
+            ]);
         }
+
+        return [$this->repository->getInvoiceHeader($invoiceId), $items];
     }
 
     private function shouldMarkNotDeliveredOnPrint(object $invoice): bool
