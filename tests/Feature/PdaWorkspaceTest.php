@@ -8,7 +8,9 @@ use App\Services\ClientSuspensionSqliteService;
 use App\Services\PdaLocationSqliteService;
 use App\Services\PdaWorkspaceService;
 use App\Services\ReportsUsersSqliteService;
+use App\Support\ReportAuthSession;
 use App\Support\ReportNavigation;
+use ReflectionMethod;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Mockery;
@@ -218,5 +220,91 @@ class PdaWorkspaceTest extends TestCase
             'reports_is_super_admin' => false,
             'reports_allowed_keys' => ['pda'],
         ])->get('/reports/pda/items/BD799886-F787-4CE7-B484-1EFB027DA26B')->assertForbidden();
+    }
+
+    public function test_pda_only_user_lands_on_pda_without_the_report_menu(): void
+    {
+        $users = new ReportsUsersSqliteService;
+        $users->ensureReady();
+        $users->createUser('pda-only', 'password123', false, ['pda', 'pda-zero-stock']);
+
+        $login = $this->withSession([
+            'reports_admin_intended_url' => 'http://127.0.0.1:8024/reports/sales',
+        ])->post('/login', [
+            'username' => 'pda-only',
+            'password' => 'password123',
+        ]);
+
+        $login->assertRedirect(route('reports.pda.index'));
+        $this->assertTrue(ReportAuthSession::isPdaFocused());
+        $this->assertSame('reports.pda.index', ReportAuthSession::defaultLandingRouteName());
+        $this->assertTrue(ReportAuthSession::mustStayOnPda('reports.sales.index'));
+        $this->assertFalse(ReportAuthSession::mustStayOnPda('reports.pda.vouchers.create'));
+        $this->assertFalse(ReportAuthSession::mustStayOnPda('reports.guide.index'));
+
+        $page = $this->get('/reports/pda');
+        $page->assertOk();
+        $page->assertDontSee('class="report-nav-toggle btn-icon"', false);
+        $page->assertDontSee('Open report menu', false);
+        $page->assertDontSee('id="report-nav-menu"', false);
+        $page->assertSee('Customers', false);
+        $page->assertSee('Unposted', false);
+
+        $this->get('/')->assertRedirect(route('reports.pda.index'));
+    }
+
+    public function test_pda_only_login_keeps_a_pda_page_that_was_requested(): void
+    {
+        $users = new ReportsUsersSqliteService;
+        $users->ensureReady();
+        $users->createUser('pda-return', 'password123', false, ['pda']);
+
+        $target = 'http://127.0.0.1:8024/reports/pda/unposted';
+        $this->withSession([
+            'reports_admin_intended_url' => $target,
+        ])->post('/login', [
+            'username' => 'pda-return',
+            'password' => 'password123',
+        ])->assertRedirect($target);
+    }
+
+    public function test_user_with_pda_and_another_report_keeps_the_report_menu(): void
+    {
+        $page = $this->withSession([
+            'reports_admin_authenticated' => true,
+            'reports_user_id' => 9,
+            'reports_username' => 'mixed',
+            'reports_is_super_admin' => false,
+            'reports_allowed_keys' => ['pda', 'invoices'],
+        ])->get('/reports/pda');
+
+        $page->assertOk();
+        $page->assertSee('class="report-nav-toggle btn-icon"', false);
+        $page->assertSee('Open report menu', false);
+        $page->assertSee('id="report-nav-menu"', false);
+        $this->assertFalse(ReportAuthSession::isPdaFocused());
+        $this->get('/')->assertOk();
+    }
+
+    public function test_a_sale_cannot_exceed_the_available_quantity(): void
+    {
+        $service = new PdaWorkspaceService(
+            new ReportsUsersSqliteService,
+            new PdaLocationSqliteService,
+            new ClientSuspensionSqliteService
+        );
+        $guard = new ReflectionMethod(PdaWorkspaceService::class, 'takeSaleStock');
+
+        $this->assertSame(5.0, $guard->invoke($service, 'sale', 'Chicken', 5.0, 0.0, 5.0, 1.0));
+        $this->assertSame(5.0, $guard->invoke($service, 'sale', 'Chicken', 5.0, 0.0, 0.5, 10.0));
+        $this->assertSame(0.0, $guard->invoke($service, 'order', 'Chicken', 5.0, 0.0, 10.0, 1.0));
+        $this->assertSame(0.0, $guard->invoke($service, 'sale', 'Chicken', 0.0, 0.0, 4.0, 1.0));
+
+        try {
+            $guard->invoke($service, 'sale', 'Chicken', 5.0, 4.0, 2.0, 1.0);
+            $this->fail('A sale past the available quantity was accepted.');
+        } catch (RuntimeException $e) {
+            $this->assertSame('Chicken only has 5 available.', $e->getMessage());
+        }
     }
 }

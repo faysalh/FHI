@@ -33,6 +33,7 @@
                     'name' => $item['name'],
                     'code' => $item['code'],
                     'available' => (float) $item['balance'],
+                    'scale' => (float) ($unit['scale'] ?? 1),
                     'unit_row_id' => $unit['unit_row_id'],
                     'unit' => $unit['name'],
                     'price' => (float) ($unit['prices'][$priceGroup] ?? 0),
@@ -110,6 +111,7 @@
                                 data-unit="{{ $tile['unit'] }}"
                                 data-price="{{ $tile['price'] }}"
                                 data-available="{{ $tile['available'] }}"
+                                data-scale="{{ $tile['scale'] > 0 ? $tile['scale'] : 1 }}"
                                 data-category="{{ $tile['category_id'] }}"
                                 data-subcategory="{{ $tile['subcategory_id'] }}"
                             >
@@ -147,7 +149,6 @@
                             </div>
                             <div id="pda-lines"></div>
                             <p class="muted" id="pda-empty">Tap an item to add it.</p>
-                            <p class="pda-stock-note" id="pda-stock-note" hidden></p>
                             <div class="pda-pay">
                                 <label for="pda-paid">Amount collected now</label>
                                 <input id="pda-paid" name="paid" type="number" min="0" step="0.01" value="{{ old('paid', 0) }}">
@@ -159,30 +160,9 @@
                             <button type="button" class="pda-btn" id="pda-ticket-toggle" aria-expanded="false" aria-controls="pda-cart-sheet">Ticket</button>
                             <span id="pda-count" class="pda-cart__count"></span>
                             <span class="pda-total" id="pda-total">Total 0</span>
+                            <p class="pda-stock-note" id="pda-stock-note" hidden></p>
                             <p class="pda-locate-status" id="pda-review-hint"></p>
                             <button type="button" class="pda-btn pda-btn--primary" id="pda-review-open">Save sale</button>
-                        </div>
-                        <div class="pda-review" id="pda-review" hidden>
-                            <div class="pda-review__sheet" role="dialog" aria-modal="true" aria-labelledby="pda-review-title">
-                                <div class="pda-review__brand">
-                                    <img src="/icons/apple-touch-icon.png" alt="Akre Chicken" width="72" height="72">
-                                    <p id="pda-review-salesman">{{ $salesman['name'] ?? '' }}</p>
-                                </div>
-                                <h2 id="pda-review-title">Review sale</h2>
-                                <p class="pda-review__client" id="pda-review-client"></p>
-                                <div class="pda-review__lines" id="pda-review-lines"></div>
-                                <div class="pda-review__totals">
-                                    <div><span>Collected now</span><b id="pda-review-paid"></b></div>
-                                    <div class="pda-review__grand"><span>Total</span><b id="pda-review-total"></b></div>
-                                </div>
-                                <p class="pda-locate-status" data-locate-status></p>
-                                <p class="pda-locate-status" id="pda-picture-status"></p>
-                                <div class="pda-review__actions">
-                                    <button type="button" class="pda-btn" id="pda-review-share">Send picture</button>
-                                    <button type="button" class="pda-btn" id="pda-review-close">Change</button>
-                                    <button class="pda-btn pda-btn--primary" type="submit">Confirm sale</button>
-                                </div>
-                            </div>
                         </div>
                     @else
                         <div class="pda-cart__head">
@@ -201,6 +181,30 @@
                         <button class="pda-btn pda-btn--primary" type="submit">Save {{ strtolower($titles[$kind] ?? 'voucher') }}</button>
                     @endif
                 </aside>
+            </div>
+        @endif
+        @if ($kind === 'sale')
+            <div class="pda-review" id="pda-review" hidden>
+                <div class="pda-review__sheet" role="dialog" aria-modal="true" aria-labelledby="pda-review-title">
+                    <div class="pda-review__brand">
+                        <img src="/icons/apple-touch-icon.png" alt="Akre Chicken" width="72" height="72">
+                        <p id="pda-review-salesman">{{ $salesman['name'] ?? '' }}</p>
+                    </div>
+                    <h2 id="pda-review-title">Review sale</h2>
+                    <p class="pda-review__client" id="pda-review-client"></p>
+                    <div class="pda-review__lines" id="pda-review-lines"></div>
+                    <div class="pda-review__totals">
+                        <div><span>Collected now</span><b id="pda-review-paid"></b></div>
+                        <div class="pda-review__grand"><span>Total</span><b id="pda-review-total"></b></div>
+                    </div>
+                    <p class="pda-locate-status" data-locate-status></p>
+                    <p class="pda-locate-status" id="pda-picture-status"></p>
+                    <div class="pda-review__actions">
+                        <button type="button" class="pda-btn" id="pda-review-share">Send picture</button>
+                        <button type="button" class="pda-btn" id="pda-review-close">Change</button>
+                        <button class="pda-btn pda-btn--primary" type="submit">Confirm sale</button>
+                    </div>
+                </div>
             </div>
         @endif
     </form>
@@ -224,6 +228,7 @@
                     var cart = {};
                     var restored = @json(old('lines', []));
                     var blockZero = @json($kind === 'sale' && empty($allowZeroStock));
+                    var capSales = @json($kind === 'sale');
                     var stockNote = document.getElementById('pda-stock-note');
 
                     function money(value) {
@@ -236,40 +241,118 @@
                     }
 
                     function tileFor(key) {
-                        return grid.querySelector('[data-item-id="' + key.split('|')[0] + '"][data-unit-row-id="' + key.split('|')[1] + '"]');
+                        var found = null;
+                        grid.querySelectorAll('.pda-tile').forEach(function (tile) {
+                            if (found) return;
+                            if (keyOf(tile.getAttribute('data-item-id'), tile.getAttribute('data-unit-row-id')) === key) {
+                                found = tile;
+                            }
+                        });
+                        return found;
+                    }
+
+                    function roundQty(value) {
+                        return Math.round((Number(value) || 0) * 1000) / 1000;
+                    }
+
+                    function showStock(message) {
+                        if (!stockNote) return;
+                        stockNote.hidden = false;
+                        stockNote.textContent = message;
+                    }
+
+                    function hideStock() {
+                        if (stockNote) stockNote.hidden = true;
+                    }
+
+                    function lineScale(row) {
+                        return row.scale > 0 ? row.scale : 1;
+                    }
+
+                    function itemBaseUsed(itemId, exceptKey) {
+                        var used = 0;
+                        Object.keys(cart).forEach(function (key) {
+                            if (key === exceptKey) return;
+                            var row = cart[key];
+                            if (String(row.itemId).toUpperCase() !== String(itemId).toUpperCase()) return;
+                            used += row.qty * lineScale(row);
+                        });
+                        return used;
+                    }
+
+                    function maxQtyFor(row, key) {
+                        var room = row.available - itemBaseUsed(row.itemId, key);
+                        return roundQty(room / lineScale(row));
                     }
 
                     function noStock(tile) {
                         return blockZero && (Number(tile.getAttribute('data-available')) || 0) <= 0;
                     }
 
+                    function applyQty(key, requested, notify, redraw) {
+                        var row = cart[key];
+                        if (!row) return;
+                        var next = roundQty(requested);
+                        if (next < 0) next = 0;
+                        if (capSales && next > 0 && row.available > 0) {
+                            var maxQty = maxQtyFor(row, key);
+                            if (maxQty < 0) maxQty = 0;
+                            if (next > maxQty + 0.0001) {
+                                if (notify) showStock(row.name + ' only has ' + money(row.available) + ' available.');
+                                next = maxQty;
+                            } else if (notify) {
+                                hideStock();
+                            }
+                        } else if (notify) {
+                            hideStock();
+                        }
+                        if (next <= 0) delete cart[key];
+                        else row.qty = next;
+                        if (redraw !== false) render();
+                    }
+
+                    function syncQtyFields() {
+                        var pending = [];
+                        lines.querySelectorAll('.pda-line').forEach(function (box) {
+                            var itemInput = box.querySelector('[name$="[item_id]"]');
+                            var unitInput = box.querySelector('[name$="[unit_row_id]"]');
+                            var qtyInput = box.querySelector('[data-qty]');
+                            if (!itemInput || !unitInput || !qtyInput) return;
+                            var typed = Number(qtyInput.value);
+                            pending.push({
+                                key: keyOf(itemInput.value, unitInput.value),
+                                qty: isFinite(typed) ? typed : 0
+                            });
+                        });
+                        pending.forEach(function (entry) {
+                            applyQty(entry.key, entry.qty, true, false);
+                        });
+                        render();
+                    }
+
                     function addTile(tile, qty) {
                         if (!tile) return;
+                        var name = tile.getAttribute('data-name') || 'This item';
                         if (qty > 0 && noStock(tile)) {
-                            if (stockNote) {
-                                stockNote.hidden = false;
-                                stockNote.textContent = (tile.getAttribute('data-name') || 'This item') + ' has no stock.';
-                            }
+                            showStock(name + ' has no stock.');
                             return;
                         }
-                        if (stockNote && qty > 0) stockNote.hidden = true;
                         var key = keyOf(tile.getAttribute('data-item-id'), tile.getAttribute('data-unit-row-id'));
                         if (!cart[key]) {
+                            var scale = Number(tile.getAttribute('data-scale')) || 1;
                             cart[key] = {
                                 itemId: tile.getAttribute('data-item-id'),
                                 unitRowId: tile.getAttribute('data-unit-row-id'),
-                                name: tile.getAttribute('data-name') || '',
+                                name: name,
                                 unit: tile.getAttribute('data-unit') || '',
                                 price: Number(tile.getAttribute('data-price')) || 0,
                                 available: Number(tile.getAttribute('data-available')) || 0,
+                                scale: scale > 0 ? scale : 1,
                                 qty: 0
                             };
                         }
-                        cart[key].qty = Math.round((cart[key].qty + qty) * 1000) / 1000;
-                        if (cart[key].qty <= 0) {
-                            delete cart[key];
-                        }
-                        render();
+                        if (qty < 0) hideStock();
+                        applyQty(key, cart[key].qty + qty, qty > 0);
                     }
 
                     function render() {
@@ -281,7 +364,7 @@
                             var row = cart[key];
                             sum += row.qty * row.price;
                             var box = document.createElement('div');
-                            var over = row.qty > row.available;
+                            var over = capSales && row.available > 0 && (row.qty * lineScale(row)) > row.available + 0.0001;
                             box.className = 'pda-line' + (over ? ' pda-line--over' : '');
                             box.innerHTML =
                                 '<div class="pda-line__head"><strong></strong><span class="pda-line__sum"></span></div>' +
@@ -304,12 +387,24 @@
                             box.querySelector('[name$="[unit_row_id]"]').value = row.unitRowId;
                             box.querySelector('[name$="[price]"]').value = String(row.price);
                             box.querySelector('[data-qty]').value = String(row.qty);
-                            box.querySelector('[data-minus]').addEventListener('click', function () { addTile(tileFor(key), -1); });
-                            box.querySelector('[data-plus]').addEventListener('click', function () { addTile(tileFor(key), 1); });
-                            box.querySelector('[data-qty]').addEventListener('change', function (event) {
-                                var next = Number(event.target.value) || 0;
-                                row.qty = 0;
-                                addTile(tileFor(key), next);
+                            box.querySelector('[data-minus]').addEventListener('click', function () {
+                                if (!cart[key]) return;
+                                applyQty(key, cart[key].qty - 1, true);
+                            });
+                            var plus = box.querySelector('[data-plus]');
+                            plus.addEventListener('click', function () {
+                                if (!cart[key]) return;
+                                applyQty(key, cart[key].qty + 1, true);
+                            });
+                            var qtyInput = box.querySelector('[data-qty]');
+                            if (capSales && row.available > 0) {
+                                var capped = maxQtyFor(row, key);
+                                qtyInput.max = String(capped > 0 ? capped : row.qty);
+                                if (row.qty >= capped - 0.0001) plus.disabled = true;
+                            }
+                            qtyInput.addEventListener('change', function (event) {
+                                var typed = Number(event.target.value);
+                                applyQty(key, isFinite(typed) ? typed : 0, true);
                             });
                             lines.appendChild(box);
                             var picked = tileFor(key);
@@ -524,6 +619,7 @@
 
                     function openReview() {
                         if (!review) return;
+                        syncQtyFields();
                         if (Object.keys(cart).length === 0) {
                             if (reviewHint) reviewHint.textContent = 'Add at least one item.';
                             return;

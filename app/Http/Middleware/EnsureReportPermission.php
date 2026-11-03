@@ -27,6 +27,10 @@ class EnsureReportPermission
             return $next($request);
         }
 
+        if (ReportAuthSession::mustStayOnPda($routeName)) {
+            return redirect()->route('reports.pda.index');
+        }
+
         $reportKey = ReportNavigation::activeKey($routeName);
 
         if (in_array($reportKey, ['users', 'sqlite-backups', 'database-sync'], true)) {

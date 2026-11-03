@@ -235,6 +235,7 @@
         .report-nav__label { pointer-events: none; }
     }
 </style>
+@if (! $pdaFocused)
 <script>
 (function () {
     var toggle = document.querySelector('.report-nav-toggle');
@@ -308,3 +309,4 @@
     });
 })();
 </script>
+@endif

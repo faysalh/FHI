@@ -73,7 +73,7 @@
     .pda-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
     .pda-tile[hidden] { display: none !important; }
     .pda-tile {
-        position: relative; overflow: hidden; width: 100%; min-height: 0; padding: 0;
+        position: relative; z-index: 0; overflow: hidden; width: 100%; min-height: 0; padding: 0;
         border-radius: 12px; border: 1px solid #e2e8f0; background: #fff; color: inherit;
         font: inherit; text-align: right; cursor: pointer; touch-action: pan-y; user-select: none;
     }
@@ -156,7 +156,7 @@
     @media (min-width: 700px) {
         .pda-pos { display: grid; grid-template-columns: minmax(0, 1fr) 268px; align-items: start; gap: 12px; }
         .pda-grid-wrap, .pda-cart { max-height: calc(100vh - 250px); }
-        .pda-cart { position: sticky; top: 12px; }
+        .pda-cart { position: sticky; top: 12px; z-index: 30; }
     }
     .pda-sell { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
     .pda-sell form { margin: 0; }
@@ -169,7 +169,9 @@
     .pda-sale-back a:first-child { font-size: 18px; color: inherit; }
     .pda-sale-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
     .pda-sale-bar .pda-total { margin: 0; font-size: 18px; }
+    .pda-sale-bar .pda-stock-note { flex: 1 0 100%; margin: 0; }
     .pda-sale-bar .pda-locate-status { flex: 1 0 100%; min-height: 0; margin: 0; }
+    .pda-qty button:disabled { opacity: 0.35; cursor: not-allowed; }
     .pda-sale-bar .pda-locate-status:empty { display: none; }
     .pda-sale-bar .pda-btn--primary { margin-left: auto; min-height: 44px; }
     @media (max-width: 699px) {
@@ -186,7 +188,7 @@
     }
     .pda-review[hidden] { display: none !important; }
     .pda-review {
-        position: fixed; inset: 0; z-index: 60;
+        position: fixed; inset: 0; z-index: 80;
         display: flex; align-items: flex-end; justify-content: center;
         background: rgba(15, 23, 42, 0.45);
     }

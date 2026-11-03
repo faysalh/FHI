@@ -598,6 +598,7 @@ class PdaWorkspaceService
             : max(0, ((int) ($customer['price_group'] ?? 1)) - 1);
         $priceGroup = SalesItemPriceTiers::columnForAccountGroup($accountPriceGroup);
         $normalized = [];
+        $drawn = [];
         $total = 0.0;
         foreach ($lines as $line) {
             $item = $catalog[$this->guid($line['item_id'])] ?? null;
@@ -622,6 +623,15 @@ class PdaWorkspaceService
             if ($qty <= 0 || $price < 0) {
                 throw new RuntimeException('Check the quantity.');
             }
+            $itemId = (string) $item['id'];
+            $drawn[$itemId] = $this->takeSaleStock(
+                $kind,
+                (string) $item['name'],
+                (float) $item['balance'],
+                $drawn[$itemId] ?? 0.0,
+                $qty,
+                (float) $unit['scale']
+            );
             $total += $qty * $price;
             $normalized[] = [
                 'item_id' => $item['id'],
@@ -814,6 +824,27 @@ class PdaWorkspaceService
         if ($latitude === 0.0 && $longitude === 0.0) {
             throw new RuntimeException('Location permission is required before this can be saved.');
         }
+    }
+
+    /**
+     * Keep a sale inside the quantity on hand. Orders and returns are unchanged.
+     * A zero or negative balance is left to the zero-stock permission.
+     */
+    private function takeSaleStock(string $kind, string $name, float $balance, float $drawn, float $qty, float $scale): float
+    {
+        if ($kind !== 'sale' || $balance <= 0) {
+            return $drawn;
+        }
+        if ($scale <= 0) {
+            $scale = 1.0;
+        }
+        $next = $drawn + ($qty * $scale);
+        if ($next - $balance > 0.0001) {
+            $label = rtrim(rtrim(number_format($balance, 3, '.', ''), '0'), '.');
+            throw new RuntimeException($name.' only has '.$label.' available.');
+        }
+
+        return $next;
     }
 
     /**

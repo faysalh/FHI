@@ -41,9 +41,14 @@ use App\Http\Controllers\StorageItemsReportController;
 use App\Http\Controllers\StorageQuantityReportController;
 use App\Http\Controllers\StorageReportController;
 use App\Http\Controllers\VisitsReportController;
+use App\Support\ReportAuthSession;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
+    if (ReportAuthSession::isPdaFocused()) {
+        return redirect()->route('reports.pda.index');
+    }
+
     return view('landing');
 });
 

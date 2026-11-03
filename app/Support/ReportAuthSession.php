@@ -281,29 +281,65 @@ final class ReportAuthSession
         $request->session()->regenerateToken();
     }
 
+    /**
+     * Grants that stay inside the salesman phone app and do not open another report.
+     *
+     * @return list<string>
+     */
+    public static function pdaOnlyPermissionKeys(): array
+    {
+        return ['pda', 'pda-locations', 'pda-item-detail', 'pda-zero-stock'];
+    }
+
+    /**
+     * Signed-in user whose only page is PDA. Extra PDA grants (locations, item
+     * detail, zero stock) still count. Any other report brings the full menu back.
+     */
     public static function isPdaFocused(): bool
     {
         if (! self::isAuthenticated() || self::isSuperAdmin()) {
             return false;
         }
 
-        $keys = [];
-        foreach (ReportNavigation::sectionsForUser(self::allowedReportKeys(), false) as $section) {
-            foreach ($section['items'] as $item) {
-                if (($item['key'] ?? '') === 'guide') {
-                    continue;
-                }
-                $keys[] = (string) $item['key'];
+        $allowed = self::allowedReportKeys();
+        if (! in_array('pda', $allowed, true)) {
+            return false;
+        }
+
+        $pdaKeys = self::pdaOnlyPermissionKeys();
+        foreach ($allowed as $key) {
+            if ($key === 'guide') {
+                continue;
+            }
+            if (! in_array($key, $pdaKeys, true)) {
+                return false;
             }
         }
 
-        return $keys === ['pda'];
+        return true;
+    }
+
+    public static function mustStayOnPda(string $routeName): bool
+    {
+        if (! self::isPdaFocused()) {
+            return false;
+        }
+
+        if ($routeName === 'reports.no-access' || str_starts_with($routeName, 'reports.pda') || str_starts_with($routeName, 'reports.guide')) {
+            return false;
+        }
+
+        return true;
     }
 
     public static function defaultLandingRouteName(): string
     {
         if (self::isSuperAdmin()) {
             return 'reports.dashboard-lab.index';
+        }
+
+        if (self::isPdaFocused()) {
+            return 'reports.pda.index';
         }
 
         $sections = ReportNavigation::sectionsForUser(self::allowedReportKeys(), false);
