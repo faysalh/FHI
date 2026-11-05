@@ -23,7 +23,12 @@
     var locationWatchId = null;
     var lastLocation = null;
     var lastLocationAt = 0;
+    var locationDenied = false;
+    var cameraStarted = false;
+    var holdingResult = false;
+    var latestFaceStatus = '';
     var debugMode = /[?&]debug=1(?:&|$)/.test(window.location.search);
+    var LOCATION_FRESH_MS = 120000;
 
     function setStatus(text, className) {
         if (!statusEl) return;
@@ -39,9 +44,11 @@
 
     function clearStatusLater() {
         if (statusClearTimer) clearTimeout(statusClearTimer);
+        holdingResult = true;
         statusClearTimer = setTimeout(function () {
+            holdingResult = false;
             if (statusEl && statusEl.textContent === lastStatusText) {
-                setStatus(config.labels.ready || 'Ready');
+                setStatus(latestFaceStatus || config.labels.ready || 'Ready');
             }
         }, 5000);
     }
@@ -69,12 +76,25 @@
         return config.labels.locationDenied || 'Location permission denied';
     }
 
+    function accuracyMeters(fix) {
+        var value = fix && typeof fix.location_accuracy === 'number' ? fix.location_accuracy : null;
+        return value !== null && isFinite(value) ? value : null;
+    }
+
     function storePosition(position) {
-        lastLocation = {
+        if (!position || !position.coords) return;
+        var next = {
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,
             location_accuracy: position.coords.accuracy
         };
+        if (lastLocation && Date.now() - lastLocationAt < LOCATION_FRESH_MS) {
+            var nextAcc = accuracyMeters(next);
+            var prevAcc = accuracyMeters(lastLocation);
+            if (nextAcc === null && prevAcc !== null) return;
+            if (nextAcc !== null && prevAcc !== null && nextAcc > prevAcc + 50) return;
+        }
+        lastLocation = next;
         lastLocationAt = Date.now();
         if (debugMode) {
             setDebug(
@@ -84,49 +104,79 @@
         }
     }
 
-    function startLocationWatch() {
-        return new Promise(function (resolve, reject) {
-            if (!navigator.geolocation) {
-                reject(new Error(config.labels.locationUnsupported || 'Geolocation is not supported on this device.'));
-                return;
-            }
+    function markLocationDenied(error) {
+        locationDenied = true;
+        if (locationWatchId !== null && navigator.geolocation) {
+            navigator.geolocation.clearWatch(locationWatchId);
+            locationWatchId = null;
+        }
+        setStatus(locationErrorMessage(error));
+    }
 
-            setStatus(config.labels.requestingLocation || 'Allow location access…');
-
-            navigator.geolocation.getCurrentPosition(
-                function (position) {
-                    storePosition(position);
-                    if (locationWatchId !== null) {
-                        navigator.geolocation.clearWatch(locationWatchId);
-                    }
-                    locationWatchId = navigator.geolocation.watchPosition(
-                        storePosition,
-                        function () {},
-                        {
-                            enableHighAccuracy: true,
-                            maximumAge: 15000,
-                            timeout: 20000
-                        }
-                    );
-                    resolve(lastLocation);
-                },
-                function (error) {
-                    reject(new Error(locationErrorMessage(error)));
-                },
-                {
-                    enableHighAccuracy: true,
-                    maximumAge: 0,
-                    timeout: 20000
+    function ensureLocationWatch() {
+        if (locationDenied || locationWatchId !== null || !navigator.geolocation) return;
+        locationWatchId = navigator.geolocation.watchPosition(
+            storePosition,
+            function (error) {
+                if (error && error.code === 1) {
+                    markLocationDenied(error);
                 }
-            );
-        });
+            },
+            {
+                enableHighAccuracy: true,
+                maximumAge: 60000,
+                timeout: 30000
+            }
+        );
+    }
+
+    function requestQuickLocation() {
+        if (locationDenied || !navigator.geolocation) return;
+        navigator.geolocation.getCurrentPosition(
+            storePosition,
+            function (error) {
+                if (error && error.code === 1) {
+                    markLocationDenied(error);
+                    return;
+                }
+                if (lastLocation) return;
+                navigator.geolocation.getCurrentPosition(
+                    storePosition,
+                    function (secondError) {
+                        if (secondError && secondError.code === 1) {
+                            markLocationDenied(secondError);
+                        }
+                    },
+                    {
+                        enableHighAccuracy: false,
+                        maximumAge: 180000,
+                        timeout: 15000
+                    }
+                );
+            },
+            {
+                enableHighAccuracy: false,
+                maximumAge: 120000,
+                timeout: 12000
+            }
+        );
+    }
+
+    function beginLocation() {
+        if (!navigator.geolocation) {
+            setStatus(config.labels.locationUnsupported || 'Geolocation is not supported on this device.');
+            return;
+        }
+        setStatus(config.labels.requestingLocation || 'Allow location access…');
+        ensureLocationWatch();
+        requestQuickLocation();
     }
 
     function currentLocationPayload() {
         if (!lastLocation) {
             return null;
         }
-        if (Date.now() - lastLocationAt > 60000) {
+        if (Date.now() - lastLocationAt > LOCATION_FRESH_MS) {
             return null;
         }
         return {
@@ -151,8 +201,10 @@
 
         var locationPayload = currentLocationPayload();
         if (!locationPayload) {
-            setStatus(config.labels.waitingLocation || 'Waiting for location…');
-            scheduleNextScan(config.scanIntervalIdleMs || 2000);
+            if (!locationDenied) {
+                setStatus(config.labels.waitingLocation || 'Finding location… you can stand at the camera.');
+            }
+            scheduleNextScan(1000);
             return;
         }
 
@@ -165,7 +217,7 @@
         scanning = true;
         setStatus(config.labels.verifying || 'Face locked — verifying 3 samples…');
 
-        detector.captureFreshDescriptors(3, 250, 6000, function (captured, total) {
+        detector.captureFreshDescriptors(3, 250, 8000, function (captured, total) {
             setStatus('Verifying face ' + captured + '/' + total + '…');
         })
             .then(function (descriptors) {
@@ -252,6 +304,26 @@
             });
     }
 
+    function startCamera() {
+        if (cameraStarted) return;
+        cameraStarted = true;
+        if (!currentLocationPayload() && !locationDenied) {
+            setStatus(config.labels.requestingCamera || 'Allow camera access…');
+        }
+        detector.start()
+            .then(function () {
+                if (!currentLocationPayload() && !locationDenied) {
+                    setStatus(config.labels.waitingLocation || 'Finding location… you can stand at the camera.');
+                } else if (!holdingResult) {
+                    setStatus(latestFaceStatus || config.labels.ready || 'Ready');
+                }
+                scheduleNextScan(config.scanIntervalIdleMs || 2000);
+            })
+            .catch(function (err) {
+                setStatus((err && err.message) ? err.message : 'Camera failed');
+            });
+    }
+
     setStatus(config.labels.starting || 'Starting…');
 
     detector = new FaceIdDetector({
@@ -259,7 +331,10 @@
         video: video,
         overlay: null,
         onStatus: function (text) {
+            latestFaceStatus = text || '';
             if (debugMode) setDebug(text);
+            if (scanning || holdingResult || locationDenied || !currentLocationPayload() || !text) return;
+            setStatus(text);
         },
         onReadyChange: function () {},
         onDebug: function (info) {
@@ -269,18 +344,8 @@
         }
     });
 
-    startLocationWatch()
-        .then(function () {
-            setStatus(config.labels.requestingCamera || 'Allow camera access…');
-            return detector.start();
-        })
-        .then(function () {
-            setStatus(config.labels.ready || 'Ready');
-            scheduleNextScan(config.scanIntervalIdleMs || 2000);
-        })
-        .catch(function (err) {
-            setStatus((err && err.message) ? err.message : 'Setup failed');
-        });
+    beginLocation();
+    setTimeout(startCamera, 400);
 
     window.addEventListener('beforeunload', function () {
         if (locationWatchId !== null) {

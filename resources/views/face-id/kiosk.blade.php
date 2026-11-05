@@ -95,10 +95,10 @@ window.FaceIdKioskConfig = {
         starting: @json(__('Starting…')),
         requestingLocation: @json(__('Allow location access…')),
         requestingCamera: @json(__('Allow camera access…')),
-        waitingLocation: @json(__('Waiting for location…')),
+        waitingLocation: @json(__('Finding location… you can stand at the camera.')),
         locationDenied: @json(__('Location permission denied. Enable location for this site in browser settings.')),
         locationUnavailable: @json(__('Location unavailable on this device.')),
-        locationTimeout: @json(__('Location request timed out. Try again.')),
+        locationTimeout: @json(__('Still finding location. Stay at the camera.')),
         locationUnsupported: @json(__('Geolocation is not supported on this device.')),
         ready: @json(__('Ready')),
         verifying: @json(__('Face locked — verifying 3 samples…')),
@@ -110,7 +110,7 @@ window.FaceIdKioskConfig = {
     }
 };
 </script>
-<script src="{{ asset('js/face-id-kiosk.js') }}?v=4"></script>
+<script src="{{ asset('js/face-id-kiosk.js') }}?v=5"></script>
 <script>
 (function () {
     if (/[?&]debug=1(?:&|$)/.test(window.location.search)) {

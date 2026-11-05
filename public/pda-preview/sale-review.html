@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sale review preview</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            background: #e2e8f0;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+            color: #0f172a;
+        }
+        .phone {
+            width: 390px;
+            height: 780px;
+            background: #f8fafc;
+            border-radius: 28px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
+            border: 8px solid #0f172a;
+        }
+        .sale-back {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            padding: 16px 14px 8px;
+        }
+        .sale-back strong { font-size: 18px; direction: rtl; }
+        .sale-back span { color: #4f46e5; font-weight: 700; }
+        .finder {
+            margin: 0 14px 8px;
+            height: 44px;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            background: #fff;
+            color: #94a3b8;
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+        }
+        .cats { display: flex; gap: 6px; padding: 0 14px 10px; }
+        .cat {
+            border: 1px solid #c7d2fe;
+            background: #fff;
+            color: #312e81;
+            border-radius: 999px;
+            padding: 6px 12px;
+            font-weight: 700;
+            font-size: 14px;
+        }
+        .cat.on { background: #4f46e5; color: #fff; border-color: #4338ca; }
+        .grid { display: grid; gap: 8px; padding: 0 14px; }
+        .tile {
+            display: grid;
+            grid-template-columns: 68px 1fr 76px;
+            gap: 8px;
+            align-items: center;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 6px;
+        }
+        .stock { text-align: center; }
+        .stock b { display: block; font-size: 18px; color: #0f766e; }
+        .stock small { color: #64748b; font-size: 10px; font-weight: 700; letter-spacing: 0.03em; }
+        .copy { text-align: right; direction: rtl; }
+        .copy b { display: block; }
+        .copy span { font-weight: 800; }
+        .photo { width: 76px; height: 76px; border-radius: 10px; background: #e2e8f0; }
+        .dim {
+            position: absolute;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.45);
+        }
+        .sheet {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #fff;
+            border-radius: 18px 18px 0 0;
+            padding: 14px 14px 16px;
+            box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.18);
+        }
+        .sheet h1 { margin: 0 0 2px; font-size: 18px; }
+        .client { margin: 0 0 10px; direction: rtl; text-align: right; font-weight: 700; }
+        .line {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 8px 0;
+            border-top: 1px solid #e2e8f0;
+        }
+        .line strong { direction: rtl; unicode-bidi: isolate; }
+        .meta { color: #64748b; font-size: 13px; }
+        .sum { font-weight: 800; white-space: nowrap; }
+        .totals { margin-top: 8px; }
+        .totals div {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+        }
+        .grand { font-size: 22px; font-weight: 800; }
+        .actions { display: flex; gap: 8px; margin-top: 12px; }
+        .btn {
+            flex: 1;
+            min-height: 48px;
+            border-radius: 10px;
+            border: 1px solid #c7d2fe;
+            background: #eef2ff;
+            color: #312e81;
+            font: inherit;
+            font-weight: 700;
+        }
+        .btn.primary {
+            background: #4f46e5;
+            color: #fff;
+            border-color: #4338ca;
+        }
+    </style>
+</head>
+<body>
+    <div class="phone">
+        <div class="sale-back">
+            <strong>ماركيت بانة</strong>
+            <span>Visit</span>
+        </div>
+        <div class="finder">Name or code</div>
+        <div class="cats">
+            <span class="cat on">All</span>
+            <span class="cat">Fresh</span>
+            <span class="cat">Frozen</span>
+        </div>
+        <div class="grid">
+            <div class="tile">
+                <div class="stock"><b>18</b><small>STOCK</small></div>
+                <div class="copy"><b>دجاج كامل</b><span>4,500</span></div>
+                <div class="photo"></div>
+            </div>
+            <div class="tile">
+                <div class="stock"><b>9</b><small>STOCK</small></div>
+                <div class="copy"><b>أجنحة</b><span>3,250</span></div>
+                <div class="photo"></div>
+            </div>
+        </div>
+        <div class="dim"></div>
+        <section class="sheet" aria-label="Review sale">
+            <h1>Review sale</h1>
+            <p class="client">ماركيت بانة</p>
+            <div class="line">
+                <div>
+                    <strong>دجاج كامل</strong>
+                    <div class="meta">2 × KG · 4,500</div>
+                </div>
+                <div class="sum">9,000</div>
+            </div>
+            <div class="line">
+                <div>
+                    <strong>أجنحة</strong>
+                    <div class="meta">1 × KG · 3,250</div>
+                </div>
+                <div class="sum">3,250</div>
+            </div>
+            <div class="totals">
+                <div><span>Collected now</span><b>5,000</b></div>
+                <div class="grand"><span>Total</span><span>12,250</span></div>
+            </div>
+            <div class="actions">
+                <button class="btn" type="button">Change</button>
+                <button class="btn primary" type="button">Confirm sale</button>
+            </div>
+        </section>
+    </div>
+</body>
+</html>
