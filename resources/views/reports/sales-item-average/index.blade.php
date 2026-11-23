@@ -3,14 +3,6 @@
 
 @section('content')
 <header class="page-header"><h1>Sales by item average</h1></header>
-<p class="hint">
-        First level shows <strong>categories</strong> (from <code>fld_description</code>). Click a category to drill down to
-        <strong>item names</strong> (from <code>fld_item_name</code>) with the same columns.
-        Quantity, amount, and weight use posted sales invoices (<code>S</code>) and the same discount-aware amount as the Sales report.
-        If <strong>From</strong> and <strong>To</strong> are set, average columns use business days in that range
-        (Fridays and holidays from <a href="{{ route('reports.holidays.index') }}">Settings → Holidays</a> excluded, same as Dashboard lab).
-        Balance coverage is current balance ÷ avg quantity per business day.
-    </p>
 
     <form id="sales-item-average-filter-form" method="GET" action="{{ route('reports.sales-item-average.index') }}">
         <details class="filters-panel" open>

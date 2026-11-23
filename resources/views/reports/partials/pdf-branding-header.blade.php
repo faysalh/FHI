@@ -24,7 +24,7 @@
                 </td>
                 <td class="logo-cell">
                     @if (! empty($brandingLogoDataUri))
-                        <img src="{{ $brandingLogoDataUri }}" alt="logo">
+                        <img src="{{ $brandingLogoDataUri }}" width="78" height="78" alt="logo">
                     @endif
                 </td>
             </tr>

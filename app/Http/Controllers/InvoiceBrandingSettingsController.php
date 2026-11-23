@@ -9,6 +9,7 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Throwable;
 
 class InvoiceBrandingSettingsController extends Controller
@@ -19,6 +20,19 @@ class InvoiceBrandingSettingsController extends Controller
     {
         return view('reports.invoice-branding.index', [
             'settings' => $this->getSettings(),
+        ]);
+    }
+
+    public function logo(): BinaryFileResponse
+    {
+        $path = trim((string) ($this->getSettings()['logo_path'] ?? ''));
+        $disk = Storage::disk('public');
+        if ($path === '' || ! $disk->exists($path)) {
+            abort(404);
+        }
+
+        return response()->file($disk->path($path), [
+            'Cache-Control' => 'private, max-age=300',
         ]);
     }
 

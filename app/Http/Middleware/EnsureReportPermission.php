@@ -27,9 +27,13 @@ class EnsureReportPermission
             return $next($request);
         }
 
+        if (ReportAuthSession::mustStayOnPda($routeName)) {
+            return redirect()->route('reports.pda.index');
+        }
+
         $reportKey = ReportNavigation::activeKey($routeName);
 
-        if ($reportKey === 'users' || $reportKey === 'sqlite-backups') {
+        if (in_array($reportKey, ['users', 'sqlite-backups', 'database-sync'], true)) {
             if (! ReportAuthSession::isSuperAdmin()) {
                 abort(403, 'Only administrators can access this settings page.');
             }
@@ -38,6 +42,36 @@ class EnsureReportPermission
         }
 
         if ($reportKey === 'guide') {
+            return $next($request);
+        }
+
+        if ($reportKey === 'face-id') {
+            if (! ReportAuthSession::canAccessAnyFaceId()) {
+                abort(403, 'You do not have access to this report.');
+            }
+
+            return $next($request);
+        }
+
+        if ($reportKey === 'market-study') {
+            if (! ReportAuthSession::canAccessAnyMarketStudy()) {
+                abort(403, 'You do not have access to this report.');
+            }
+
+            return $next($request);
+        }
+
+        if ($reportKey === 'hr-leave') {
+            if (! ReportAuthSession::canAccessReport('hr-leave') && ! ReportAuthSession::canAccessReport('hr-leave-approve')) {
+                abort(403, 'You do not have access to this report.');
+            }
+
+            return $next($request);
+        }
+
+        if ($reportKey === 'sales'
+            && ! ReportAuthSession::canAccessReport('sales')
+            && ReportAuthSession::canAccessReport('sales-by-item')) {
             return $next($request);
         }
 

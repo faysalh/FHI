@@ -39,11 +39,11 @@ final class ReportGuide
                     ),
                     self::topic(
                         'sales',
-                        'Sales',
-                        'Posted sales (type S) by client for a date range, with optional category breakdown and exports.',
+                        'Sales report by item',
+                        'Posted sales and sales returns, one row per item, for a date range.',
                         [
-                            'Filter by date range, governorate preset, storage, salesmen, clients, and category options. Toggle Quantity, Amount, and Weight columns off if you do not need them.',
-                            'Amounts use discount-aware line totals; expand a client row to see line items.',
+                            'Filter by date, salesman, city, category, or item name or code.',
+                            'Sales qty and amount are types S and POS. Return qty and amount are types SR and POSR. Net columns subtract returns.',
                             'Export PDF or CSV with the same filters as on screen.',
                         ],
                         'reports.sales.index'
@@ -59,17 +59,6 @@ final class ReportGuide
                         'reports.sales-item-average.index'
                     ),
                     self::topic(
-                        'sales-by-item',
-                        'Sales by item',
-                        'Category totals for one salesman, split by each client’s assigned price group (وكيل … كي).',
-                        [
-                            'Choose date range, salesman, and optional city, storage, category, price group, or column filters.',
-                            'Amounts follow the same ERP tier rules as Sales by salesman (invoice salesman, ماركيت hybrid header discount).',
-                            'Export PDF or CSV with the same filters as on screen.',
-                        ],
-                        'reports.sales-by-item.index'
-                    ),
-                    self::topic(
                         'sales-by-salesman',
                         'By salesman',
                         'Sales totals grouped by salesman for a period.',
@@ -82,12 +71,13 @@ final class ReportGuide
                     self::topic(
                         'comparison',
                         'Comparison',
-                        'Compare two date ranges side by side (quantities, amounts, weights).',
+                        'Compare the calendar months inside one date range (quantities, amounts, weights).',
                         [
-                            'Enter period A and period B, then Apply.',
-                            'Use exports to share the comparison outside the app.',
+                            'Totals come from the Asan item summary for posted sales invoices.',
+                            'Choose one range, then Apply. 1 Oct to 22 Nov compares October with 1–22 November. 1 Sep to 22 Nov adds September.',
+                            'The change column is the latest month minus the month before it. Use exports to share outside the app.',
                         ],
-                        'reports.comparison.index'
+                        'reports.comparison.asan.index'
                     ),
                     self::topic(
                         'cities',
@@ -137,20 +127,45 @@ final class ReportGuide
                         ],
                         'reports.storage.index'
                     ),
+                    self::topic(
+                        'storage-quantity',
+                        'Storage quantity',
+                        'Item balances from SP_Get_Item_Balance (Normal) or SP_Get_Item_Balance_Adv (Adv).',
+                        [
+                            'Choose Normal or Adv mode, year, storage, and optional serial/batch or as-of datetime.',
+                            'Use Hide zero balances or Hide negative balances to trim the table.',
+                            'Export PDF/CSV with the same filters.',
+                        ],
+                        'reports.storage-quantity.index'
+                    ),
                 ],
             ],
             [
                 'label' => 'Operations',
                 'topics' => [
                     self::topic(
+                        'pda',
+                        'PDA',
+                        'Phone workspace for a salesman: customers, prices, visits, and vouchers.',
+                        [
+                            'An administrator links the login to one Asan salesman on Users.',
+                            'Start a visit, then save a sale, order, return, or receipt. The phone must allow location.',
+                            'Vouchers stay unposted until Settings → PDA sync runs.',
+                            'A location is saved for every salesman when a voucher is saved. Only an administrator, or a user granted PDA locations, can open that list.',
+                            'The item list shows one price. Opening an item for every price tier and stock in every store needs the PDA item detail permission.',
+                            'A sale cannot add an item whose balance is zero unless the user is granted PDA sell zero stock. Orders and returns can still use that item.',
+                        ],
+                        'reports.pda.index'
+                    ),
+                    self::topic(
                         'deliveries',
                         'Deliveries',
-                        'Delivery status per invoice, driver/companion teams, and batch PDF assignment.',
+                        'Delivery status per invoice, driver/companion teams, and batch PDF/Excel assignment.',
                         [
                             'Report tab: mark delivered / not delivered and assign a daily team per invoice.',
                             'Setup drivers & companions: maintain people and car details (local SQLite).',
                             'Setup daily teams: pair driver + companion per date; delete removes assignments.',
-                            'Batch assignment: upload a PDF — all matched invoices move to the selected team, even if previously assigned elsewhere.',
+                            'Batch assignment: upload a PDF or Excel/CSV — all matched invoices move to the selected team, even if previously assigned elsewhere.',
                         ],
                         'reports.deliveries.index'
                     ),
@@ -175,6 +190,29 @@ final class ReportGuide
                             'Complete or delete tasks from the row actions; re-open from Completed.',
                         ],
                         'reports.tasks.index'
+                    ),
+                    self::topic(
+                        'hr-employees',
+                        'Employees',
+                        'Employee file for drivers, companions, Face ID people, and anyone else.',
+                        [
+                            'Pick a driver, companion, or Face ID person, or add someone who is not in those lists.',
+                            'Phone, job, ID number, and emergency contact are stored in the local employee file.',
+                            'Adding a person here does not change Deliveries or Face ID.',
+                        ],
+                        'reports.hr.employees.index'
+                    ),
+                    self::topic(
+                        'hr-leave',
+                        'Leave',
+                        'Leave requests filed by staff and approved by a manager.',
+                        [
+                            'File leave needs the File leave permission. Approve or reject needs Approve leave.',
+                            'Hourly leave is one date and a time range. Other types use a from/to date range.',
+                            'The count skips Fridays and dates on the Holidays page. 17 to 20 is 4 days before those days are removed.',
+                            'Print a request or download its PDF. The list can also be exported as PDF or CSV.',
+                        ],
+                        'reports.hr.leave.index'
                     ),
                     self::topic(
                         'damages',
@@ -230,6 +268,7 @@ final class ReportGuide
                         [
                             'Add a date and label; remove with the delete icon.',
                             'Fridays are always excluded automatically.',
+                            'Leave requests skip these dates as well.',
                         ],
                         'reports.holidays.index'
                     ),
@@ -273,6 +312,18 @@ final class ReportGuide
                             'SQL Server report data is not included — only local app settings.',
                         ],
                         'reports.sqlite-backups.index'
+                    ),
+                    self::topic(
+                        'database-sync',
+                        'PDA sync',
+                        'Import invoices and customers sent from PDA devices (administrators only).',
+                        [
+                            'Runs dbo.SP_Pda_Sync — the same as Sync in AsanAccounting for PDA data.',
+                            'Automatic mode: set interval in seconds; skips when no PDA invoices or customers are waiting.',
+                            'Requires the Windows Laravel scheduler task (see the page for setup).',
+                            'Do not run while AsanAccounting PDA sync is open on another PC.',
+                        ],
+                        'reports.database-sync.index'
                     ),
                 ],
             ],
@@ -337,7 +388,7 @@ final class ReportGuide
             $topics = [];
             foreach ($section['topics'] as $topic) {
                 $key = $topic['key'];
-                if (($key === 'users' || $key === 'sqlite-backups') && ! $isSuperAdmin) {
+                if (in_array($key, ['users', 'sqlite-backups', 'database-sync'], true) && ! $isSuperAdmin) {
                     continue;
                 }
                 if (! $isSuperAdmin) {

@@ -33,12 +33,6 @@
            class="{{ ($filters['panel'] ?? 'table') === 'charts' ? 'active' : '' }}">City sales charts</a>
     </nav>
 
-    <p class="hint">
-        Store document lines for the selected dates, filtered by <strong>client city</strong> on <code>dbo.tbl_accounting_accounts</code>
-        (same column as Visits). Only posted sales invoices (<code>fld_type_alias = S</code>); amount includes proportional invoice header and extra discounts (same basis as the Sales report). Category breakdowns match Sales; only the geography filter differs.
-        Read-only.
-    </p>
-
     @if (! $hasCityColumn)
         <div class="error">City column is not configured or not found. Set <code>REPORTING_ACCOUNT_CITY_COLUMN</code> in <code>.env</code> or add a city field on accounts. Charts need this column.</div>
     @endif

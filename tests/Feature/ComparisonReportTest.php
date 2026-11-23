@@ -4,101 +4,35 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
-use App\Repositories\ComparisonReportRepository;
-use App\Repositories\VisitsReportRepository;
-use App\Services\CitiesGovernorateSqliteService;
-use App\Services\ReportAssemblyPriorityService;
-use Mockery;
 use Tests\TestCase;
 
 class ComparisonReportTest extends TestCase
 {
-    protected function tearDown(): void
+    public function test_comparison_report_opens_the_asan_comparison(): void
     {
-        Mockery::close();
-        parent::tearDown();
+        $this->get('/reports/comparison')
+            ->assertRedirect('/reports/comparison/asan');
     }
 
-    private function mockDependencies(?ComparisonReportRepository $repo = null): ComparisonReportRepository
+    public function test_comparison_report_keeps_filters_when_opening_asan(): void
     {
-        $repo ??= Mockery::mock(ComparisonReportRepository::class);
-
-        $visits = Mockery::mock(VisitsReportRepository::class);
-        $visits->shouldReceive('getCityOptions')->andReturn(['Baghdad']);
-        $visits->shouldReceive('getSalesmanOptions')->andReturn([
-            ['id' => 's1', 'name' => 'Salesman 1'],
-        ]);
-
-        $gov = Mockery::mock(CitiesGovernorateSqliteService::class);
-        $gov->shouldReceive('listGovernorates')->andReturn([]);
-        $assembly = Mockery::mock(ReportAssemblyPriorityService::class);
-        $assembly->shouldReceive('sortRows')->andReturnUsing(static fn (array $rows): array => $rows);
-
-        $this->app->instance(ComparisonReportRepository::class, $repo);
-        $this->app->instance(VisitsReportRepository::class, $visits);
-        $this->app->instance(CitiesGovernorateSqliteService::class, $gov);
-        $this->app->instance(ReportAssemblyPriorityService::class, $assembly);
-
-        return $repo;
+        $this->get('/reports/comparison?exclude_category=Frozen')
+            ->assertRedirect('/reports/comparison/asan?exclude_category=Frozen');
     }
 
-    public function test_comparison_report_renders_with_diff_colors(): void
+    public function test_asan_comparison_uses_one_range_and_names_each_month(): void
     {
-        $repo = Mockery::mock(ComparisonReportRepository::class);
-        $repo->shouldReceive('getItemRows')
-            ->twice()
-            ->andReturn(
-                [(object) ['category_name' => 'Cat A', 'item_name' => 'Item A', 'quantity_total' => 10, 'amount_total' => 100, 'weight_total' => 5]],
-                [(object) ['category_name' => 'Cat A', 'item_name' => 'Item A', 'quantity_total' => 14, 'amount_total' => 90, 'weight_total' => 9]]
-            );
-        $repo->shouldReceive('getCategoryOptions')->andReturn(['Cat A']);
-
-        $this->mockDependencies($repo);
-
-        $response = $this->get('/reports/comparison');
+        $response = $this->get('/reports/comparison/asan?date_from=2026-09-01&date_to=2026-11-22');
 
         $response->assertOk();
-        $response->assertSee('Comparison report');
-        $response->assertSee('Difference (P2 - P1)');
-        $response->assertSee('Growth %');
-        $response->assertSee('Total');
-        $response->assertSee('Item A');
-        $response->assertSee('pos"', false);
-        $response->assertSee('neg"', false);
-    }
-
-    public function test_comparison_report_passes_exclude_category_to_repository(): void
-    {
-        $repo = Mockery::mock(ComparisonReportRepository::class);
-        $repo->shouldReceive('getItemRows')
-            ->withArgs(function (string $from, string $to, array $cities, ?string $salesman, ?string $exclude) {
-                return $exclude === 'Frozen';
-            })
-            ->twice()
-            ->andReturn([]);
-        $repo->shouldReceive('getCategoryOptions')->andReturn(['Fresh', 'Frozen']);
-
-        $this->mockDependencies($repo);
-
-        $response = $this->get('/reports/comparison?exclude_category=Frozen');
-
-        $response->assertOk();
-        $response->assertSee('Exclude category');
-    }
-
-    public function test_comparison_report_exclude_category_appears_in_dropdown(): void
-    {
-        $repo = Mockery::mock(ComparisonReportRepository::class);
-        $repo->shouldReceive('getItemRows')->twice()->andReturn([]);
-        $repo->shouldReceive('getCategoryOptions')->andReturn(['Cat A', 'Cat B']);
-
-        $this->mockDependencies($repo);
-
-        $response = $this->get('/reports/comparison');
-
-        $response->assertOk();
-        $response->assertSee('Cat A');
-        $response->assertSee('Cat B');
-        $response->assertSee('Exclude category');
+        $response->assertSee('name="date_from"', false);
+        $response->assertSee('value="2026-09-01"', false);
+        $response->assertSee('value="2026-11-22"', false);
+        $response->assertDontSee('Period 1 from');
+        $response->assertSee('Sep 2026');
+        $response->assertSee('Oct 2026');
+        $response->assertSee('Nov 2026');
+        $response->assertSee('2026-09-01 to 2026-09-30');
+        $response->assertSee('2026-11-01 to 2026-11-22');
     }
 }

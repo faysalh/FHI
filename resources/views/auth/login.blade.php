@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Sign in — Reporting</title>
+    @include('reports.partials.pwa-head')
     @include('reports.partials.theme')
     <style>
         body.report-app--login {
@@ -46,6 +47,7 @@
 
         <button type="submit" class="btn btn--primary">Sign in</button>
     </form>
+    @include('reports.partials.pwa-install')
 </div>
 @include('reports.partials.mobile-reports')
 </body>

@@ -24,16 +24,6 @@
     @endforeach
 </nav>
 
-<p class="hint">
-    Top {{ $limit }} ranked by
-    @if ($isGrowthTab)
-        <strong>revenue growth %</strong> vs the prior period of equal length ({{ $priorPeriodLabel ?? '—' }}).
-    @else
-        <strong>{{ $filters['metric'] ?? 'amount' }}</strong> for posted sales invoices (<code>S</code>) with the same discount-aware amounts as the Sales report.
-    @endif
-    Share % is each row’s amount divided by total period sales for the current filters.
-</p>
-
 @if (!empty($errorMessage))
     <div class="alert alert--error" role="alert">{{ $errorMessage }}</div>
 @endif

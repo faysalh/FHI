@@ -196,6 +196,40 @@ class PromotionsTest extends TestCase
         $this->assertTrue(PromotionsWeekdays::isDailyVisitSchedule($days));
     }
 
+    public function test_assignments_can_be_transferred_and_cleared(): void
+    {
+        $fromId = $this->promotions->createPromoter('From Promoter', 'Van 1');
+        $toId = $this->promotions->createPromoter('To Promoter', 'Van 2');
+        $this->promotions->assignClient($fromId, '7001', 'Shop One', [1, 3]);
+        $this->promotions->assignClient($fromId, '7002', 'Shop Two', PromotionsWeekdays::allowedWeekdayNumbers());
+
+        $page = $this->sessionWithPermissions(['promotions'])->get(
+            '/reports/promotions?tab=assignments&promoter_id='.$fromId
+        );
+        $page->assertOk();
+        $page->assertSee('Clear all');
+        $page->assertSee('Transfer all');
+        $page->assertSee('To Promoter');
+
+        $this->sessionWithPermissions(['promotions'])->post('/reports/promotions/assignments/transfer', [
+            'tab' => 'assignments',
+            'promoter_id' => $fromId,
+            'target_promoter_id' => $toId,
+        ])->assertRedirect('/reports/promotions?promoter_id='.$toId.'&tab=assignments');
+
+        $this->assertSame([], $this->promotions->listAssignmentsForPromoter($fromId));
+        $moved = $this->promotions->listAssignmentsForPromoter($toId);
+        $this->assertCount(2, $moved);
+        $this->assertSame([1, 3], PromotionsWeekdays::parseCsv((string) $moved[0]->visit_days_override));
+
+        $this->sessionWithPermissions(['promotions'])->post('/reports/promotions/assignments/clear', [
+            'tab' => 'assignments',
+            'promoter_id' => $toId,
+        ])->assertRedirect('/reports/promotions?promoter_id='.$toId.'&tab=assignments');
+
+        $this->assertSame([], $this->promotions->listAssignmentsForPromoter($toId));
+    }
+
     public function test_assignments_page_loads_without_sql_server_query(): void
     {
         $promoterId = $this->promotions->createPromoter('Local Only', '');

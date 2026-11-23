@@ -68,6 +68,128 @@ final class ReportAuthSession
         return array_values(array_unique($out));
     }
 
+    public static function canDeleteManufacturing(): bool
+    {
+        return self::canAccessReport('manufacturing-delete');
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function marketStudyPermissionKeys(): array
+    {
+        return [
+            'market-study-view',
+            'market-study-add',
+            'market-study-edit',
+            'market-study-delete',
+        ];
+    }
+
+    public static function canAccessAnyMarketStudy(): bool
+    {
+        if (self::isSuperAdmin()) {
+            return true;
+        }
+
+        foreach (self::marketStudyPermissionKeys() as $key) {
+            if (self::canAccessReport($key)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static function canViewMarketStudy(): bool
+    {
+        return self::isSuperAdmin() || self::canAccessReport('market-study-view');
+    }
+
+    public static function canAddMarketStudy(): bool
+    {
+        return self::isSuperAdmin() || self::canAccessReport('market-study-add');
+    }
+
+    public static function canEditMarketStudy(): bool
+    {
+        return self::isSuperAdmin() || self::canAccessReport('market-study-edit');
+    }
+
+    public static function canDeleteMarketStudy(): bool
+    {
+        return self::isSuperAdmin() || self::canAccessReport('market-study-delete');
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function faceIdTabKeys(): array
+    {
+        return ['face-id-employees', 'face-id-logs', 'face-id-kiosk'];
+    }
+
+    public static function canAccessAnyFaceId(): bool
+    {
+        if (self::isSuperAdmin()) {
+            return true;
+        }
+
+        // Legacy single Face ID permission granted full access.
+        if (self::canAccessReport('face-id')) {
+            return true;
+        }
+
+        foreach (self::faceIdTabKeys() as $key) {
+            if (self::canAccessReport($key)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static function canAccessFaceIdTab(string $tab): bool
+    {
+        if (self::isSuperAdmin() || self::canAccessReport('face-id')) {
+            return true;
+        }
+
+        return match ($tab) {
+            'employees' => self::canAccessReport('face-id-employees'),
+            'logs' => self::canAccessReport('face-id-logs'),
+            'kiosk' => self::canAccessReport('face-id-kiosk'),
+            default => false,
+        };
+    }
+
+    /**
+     * Expand legacy {@code face-id} grants into per-tab keys for the users UI.
+     *
+     * @param  list<string>  $keys
+     * @return list<string>
+     */
+    public static function normalizeReportPermissionKeys(array $keys): array
+    {
+        $out = [];
+        $hasLegacyFaceId = false;
+        foreach ($keys as $key) {
+            if (! is_string($key) || $key === '') {
+                continue;
+            }
+            if ($key === 'face-id') {
+                $hasLegacyFaceId = true;
+                continue;
+            }
+            $out[] = $key;
+        }
+        if ($hasLegacyFaceId) {
+            $out = array_merge($out, self::faceIdTabKeys());
+        }
+
+        return array_values(array_unique($out));
+    }
+
     public static function canAccessReport(string $reportKey): bool
     {
         if ($reportKey === '') {
@@ -88,7 +210,16 @@ final class ReportAuthSession
         }
 
         // Legacy permission key from before dashboard-lab became the sole dashboard.
-        return $reportKey === 'dashboard-lab' && in_array('dashboard', $allowed, true);
+        if ($reportKey === 'dashboard-lab' && in_array('dashboard', $allowed, true)) {
+            return true;
+        }
+
+        // Legacy Face ID key covers all Face ID tabs.
+        if (in_array($reportKey, self::faceIdTabKeys(), true) && in_array('face-id', $allowed, true)) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -150,10 +281,65 @@ final class ReportAuthSession
         $request->session()->regenerateToken();
     }
 
+    /**
+     * Grants that stay inside the salesman phone app and do not open another report.
+     *
+     * @return list<string>
+     */
+    public static function pdaOnlyPermissionKeys(): array
+    {
+        return ['pda', 'pda-locations', 'pda-item-detail', 'pda-zero-stock'];
+    }
+
+    /**
+     * Signed-in user whose only page is PDA. Extra PDA grants (locations, item
+     * detail, zero stock) still count. Any other report brings the full menu back.
+     */
+    public static function isPdaFocused(): bool
+    {
+        if (! self::isAuthenticated() || self::isSuperAdmin()) {
+            return false;
+        }
+
+        $allowed = self::allowedReportKeys();
+        if (! in_array('pda', $allowed, true)) {
+            return false;
+        }
+
+        $pdaKeys = self::pdaOnlyPermissionKeys();
+        foreach ($allowed as $key) {
+            if ($key === 'guide') {
+                continue;
+            }
+            if (! in_array($key, $pdaKeys, true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public static function mustStayOnPda(string $routeName): bool
+    {
+        if (! self::isPdaFocused()) {
+            return false;
+        }
+
+        if ($routeName === 'reports.no-access' || str_starts_with($routeName, 'reports.pda') || str_starts_with($routeName, 'reports.guide')) {
+            return false;
+        }
+
+        return true;
+    }
+
     public static function defaultLandingRouteName(): string
     {
         if (self::isSuperAdmin()) {
             return 'reports.dashboard-lab.index';
+        }
+
+        if (self::isPdaFocused()) {
+            return 'reports.pda.index';
         }
 
         $sections = ReportNavigation::sectionsForUser(self::allowedReportKeys(), false);

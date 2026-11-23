@@ -1,5 +1,5 @@
 # Registers a Windows scheduled task that runs Laravel's scheduler every minute.
-# Required for daily SQLite auto backup (and any future scheduled jobs).
+# Required for daily SQLite auto backup and automatic PDA sync (and any future scheduled jobs).
 #
 # Run as Administrator from PowerShell:
 #   powershell -ExecutionPolicy Bypass -File "C:\Program Files\ReportingApp\scripts\register-reporting-scheduler.ps1"

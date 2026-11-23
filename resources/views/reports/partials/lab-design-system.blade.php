@@ -522,23 +522,6 @@
         pointer-events: none;
     }
 
-    /* Branding bar */
-    .branding-bar {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 12px;
-        padding: 12px 14px;
-        border: 1px solid var(--rp-border);
-        border-radius: var(--rp-radius);
-        background: #f8fafc;
-        margin-bottom: 16px;
-        border-left: 3px solid #6366f1;
-    }
-    .branding-bar__name { font-size: 15px; font-weight: 700; color: #0f172a; }
-    .branding-bar__meta { font-size: 12px; color: #475569; margin-top: 2px; }
-    .branding-bar__logo { max-height: 104px; max-width: 240px; object-fit: contain; }
-
     /* Holidays settings */
     .holidays-form__grid {
         display: grid;

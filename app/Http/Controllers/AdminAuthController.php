@@ -77,6 +77,14 @@ class AdminAuthController extends Controller
         );
 
         $intended = (string) $request->session()->pull('reports_admin_intended_url', '');
+        if (ReportAuthSession::isPdaFocused()) {
+            if ($intended !== '' && $this->isPdaUrl($intended)) {
+                return redirect()->to($intended);
+            }
+
+            return redirect()->route('reports.pda.index');
+        }
+
         if ($intended !== '' && ! $this->isLoginUrl($intended)) {
             return redirect()->to($intended);
         }
@@ -101,5 +109,13 @@ class AdminAuthController extends Controller
         $path = (string) (parse_url($url, PHP_URL_PATH) ?? '');
 
         return str_ends_with(rtrim($path, '/'), '/login');
+    }
+
+    private function isPdaUrl(string $url): bool
+    {
+        $path = (string) (parse_url($url, PHP_URL_PATH) ?? '');
+        $path = '/'.trim($path, '/');
+
+        return $path === '/reports/pda' || str_starts_with($path, '/reports/pda/');
     }
 }

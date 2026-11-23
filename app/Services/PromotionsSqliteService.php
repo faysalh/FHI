@@ -226,6 +226,36 @@ class PromotionsSqliteService
         );
     }
 
+    public function clearAssignmentsForPromoter(int $promoterId): int
+    {
+        $this->ensureReady();
+        $this->findPromoterOrFail($promoterId);
+
+        return DB::connection(self::CONNECTION)->delete(
+            'DELETE FROM '.self::ASSIGNMENTS_TABLE.' WHERE promoter_id = ?',
+            [$promoterId]
+        );
+    }
+
+    public function transferAssignments(int $fromPromoterId, int $toPromoterId): int
+    {
+        $this->ensureReady();
+        $this->findPromoterOrFail($fromPromoterId);
+        $this->findPromoterOrFail($toPromoterId);
+        if ($fromPromoterId === $toPromoterId) {
+            throw new \InvalidArgumentException('Choose a different promoter.');
+        }
+
+        return DB::connection(self::CONNECTION)->transaction(function () use ($fromPromoterId, $toPromoterId): int {
+            return DB::connection(self::CONNECTION)->update(
+                'UPDATE '.self::ASSIGNMENTS_TABLE.'
+                 SET promoter_id = ?, updated_at = ?
+                 WHERE promoter_id = ?',
+                [$toPromoterId, now()->toDateTimeString(), $fromPromoterId]
+            );
+        });
+    }
+
     /**
      * @return list<int>
      */

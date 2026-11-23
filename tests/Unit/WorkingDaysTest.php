@@ -51,6 +51,12 @@ class WorkingDaysTest extends TestCase
 
         $this->assertSame(20, $fridaysOnly);
         $this->assertSame(17, $withEid);
+
+        $listed = WorkingDays::holidayDatesBetween(
+            Carbon::parse('2026-03-01'),
+            Carbon::parse('2026-03-31')
+        );
+        $this->assertSame(['2026-03-20', '2026-03-21', '2026-03-22', '2026-03-23'], $listed);
     }
 
     #[Test]

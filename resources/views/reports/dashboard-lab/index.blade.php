@@ -5,7 +5,6 @@
 <header class="page-header">
     <h1>Dashboard</h1>
 </header>
-<p class="lab-desc">Live KPI snapshot for a saved governorate and optional salesman filter. Metrics refresh when you change the toolbar; charts and category tables follow the same scope.@if ($historicalDatesEnabled ?? false) Use <strong>As of date</strong> to review a past day (defaults to today). Add <code>?live=1</code> to the URL to force live mode, or set <code>DASHBOARD_LAB_HISTORICAL_DATES=false</code> in <code>.env</code> to hide date controls entirely.@endif</p>
 
 @if ($governorateError || $dataError)
     <div class="alert alert--error" role="alert">

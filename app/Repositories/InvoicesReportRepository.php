@@ -14,6 +14,9 @@ class InvoicesReportRepository
 {
     private const MAX_EXPORT_ROWS = 10000;
 
+    /** @var array<string, array<string, string>> */
+    private array $tableColumns = [];
+
     public function __construct(
         private readonly VisitsReportRepository $visits
     ) {}
@@ -76,55 +79,73 @@ class InvoicesReportRepository
         ?string $salesmanId,
         ?string $searchText,
         int $page,
-        int $perPage
+        int $perPage,
+        ?int $knownTotal = null
     ): LengthAwarePaginator {
         if (DB::getDriverName() !== 'sqlsrv') {
             throw new RuntimeException('Invoices report requires SQL Server (sqlsrv).');
         }
 
-        $perPage = max(1, min(100, $perPage));
+        $perPage = max(1, min(250, $perPage));
         $page = max(1, $page);
         [$baseFrom, $bindings] = $this->baseFromAndBindings($dateFrom, $dateTo, $cities, $store, $salesmanId, $searchText);
 
-        $countSql = "
-            SELECT COUNT(*) AS c
-            FROM (
-                SELECT t.fld_store_document_title_id
-                {$baseFrom}
-                GROUP BY t.fld_store_document_title_id
-            ) AS invoices
-        ";
-        $total = (int) (DB::selectOne($countSql, $bindings)->c ?? 0);
+        $total = $knownTotal;
+        if ($total === null) {
+            $countSql = "
+                SELECT COUNT(*) AS c
+                FROM (
+                    SELECT t.fld_store_document_title_id
+                    {$baseFrom}
+                    GROUP BY t.fld_store_document_title_id
+                ) AS invoices
+            ";
+            $total = (int) (DB::selectOne($countSql, $bindings)->c ?? 0);
+        }
+
+        $paginatorMeta = ['path' => request()->url(), 'query' => request()->query()];
+        if ($total === 0) {
+            return new LengthAwarePaginator([], 0, $perPage, $page, $paginatorMeta);
+        }
 
         $offset = max(0, ($page - 1) * $perPage);
+        $due = $this->clientDueFromInvoiceExpr('page');
         $dataSql = "
             SELECT
-                t.fld_store_document_title_id AS invoice_id,
-                MAX({$this->invoiceNumberExpr()}) AS invoice_no,
-                MAX(CAST(t.fld_store_document_title_date AS date)) AS invoice_date,
-                MAX(CAST(t.fld_last_print_date AS datetime)) AS last_print_date,
-                MAX({$this->creationTimeExpr()}) AS created_at,
-                MAX(COALESCE(a.fld_account_code, N'')) AS client_code,
-                MAX(COALESCE(a.fld_account_name, t.fld_person_name, N'(no account)')) AS client_name,
-                MAX(LTRIM(RTRIM(CAST(COALESCE(ad.fld_account_mobile, N'') AS NVARCHAR(200))))) AS client_phone,
-                MAX(LTRIM(RTRIM(CAST(COALESCE(ad.fld_account_address, N'') AS NVARCHAR(500))))) AS client_address,
-                MAX({$this->cityExprSql()}) AS city_name,
-                MAX(LTRIM(RTRIM(CAST(COALESCE(st.fld_store_name, N'') AS NVARCHAR(500))))) AS store_name,
-                MAX(COALESCE(sm.fld_account_name, N'')) AS salesman_name,
-                MAX(LTRIM(RTRIM(CAST(COALESCE(smd.fld_account_mobile, N'') AS NVARCHAR(200))))) AS salesman_phone,
-                MAX(LTRIM(RTRIM(CAST(COALESCE(t.fld_store_document_title_desc, N'') AS NVARCHAR(2000))))) AS invoice_desc,
-                SUM(CAST(d.fld_store_document_quantity AS decimal(24, 6))) AS quantity_total,
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(d.fld_store_document_unit_price AS decimal(24, 6))
-                    * (1 - (CAST(COALESCE(d.fld_store_document_discount_percent, 0) AS decimal(24, 6)) / 100.0))
-                ) AS invoice_amount,
-                MAX({$this->clientDueExpr()}) AS client_due_amount
-            {$baseFrom}
-            GROUP BY
-                t.fld_store_document_title_id
-            ORDER BY invoice_date DESC, t.fld_store_document_title_id DESC
-            OFFSET {$offset} ROWS FETCH NEXT {$perPage} ROWS ONLY
+                page.*,
+                {$due} AS client_due_amount
+            FROM (
+                SELECT
+                    t.fld_store_document_title_id AS invoice_id,
+                    MAX(a.fld_account_id) AS account_id,
+                    MAX(t.fld_store_document_title_date) AS balance_date,
+                    MAX(t.fld_year_id_ref) AS year_id,
+                    MAX({$this->invoiceNumberExpr()}) AS invoice_no,
+                    MAX(CAST(t.fld_store_document_title_date AS date)) AS invoice_date,
+                    MAX(CAST(t.fld_last_print_date AS datetime)) AS last_print_date,
+                    MAX({$this->creationTimeExpr()}) AS created_at,
+                    MAX(COALESCE(a.fld_account_code, N'')) AS client_code,
+                    MAX(COALESCE(a.fld_account_name, t.fld_person_name, N'(no account)')) AS client_name,
+                    MAX(LTRIM(RTRIM(CAST(COALESCE(ad.fld_account_mobile, N'') AS NVARCHAR(200))))) AS client_phone,
+                    MAX(LTRIM(RTRIM(CAST(COALESCE(ad.fld_account_address, N'') AS NVARCHAR(500))))) AS client_address,
+                    MAX({$this->cityExprSql()}) AS city_name,
+                    MAX(LTRIM(RTRIM(CAST(COALESCE(st.fld_store_name, N'') AS NVARCHAR(500))))) AS store_name,
+                    MAX(COALESCE(sm.fld_account_name, N'')) AS salesman_name,
+                    MAX(LTRIM(RTRIM(CAST(COALESCE(smd.fld_account_mobile, N'') AS NVARCHAR(200))))) AS salesman_phone,
+                    MAX(LTRIM(RTRIM(CAST(COALESCE(t.fld_store_document_title_desc, N'') AS NVARCHAR(2000))))) AS invoice_desc,
+                    SUM(CAST(d.fld_store_document_quantity AS decimal(24, 6))) AS quantity_total,
+                    SUM(
+                        CAST(d.fld_store_document_quantity AS decimal(24, 6))
+                        * CAST(d.fld_store_document_unit_price AS decimal(24, 6))
+                        * (1 - (CAST(COALESCE(d.fld_store_document_discount_percent, 0) AS decimal(24, 6)) / 100.0))
+                    ) AS invoice_amount
+                {$baseFrom}
+                GROUP BY
+                    t.fld_store_document_title_id
+                ORDER BY invoice_date DESC, t.fld_store_document_title_id DESC
+                OFFSET {$offset} ROWS FETCH NEXT {$perPage} ROWS ONLY
+            ) AS page
+            ORDER BY page.invoice_date DESC, page.invoice_id DESC
         ";
 
         $items = DB::select($dataSql, $bindings);
@@ -134,7 +155,7 @@ class InvoicesReportRepository
             $total,
             $perPage,
             $page,
-            ['path' => request()->url(), 'query' => request()->query()]
+            $paginatorMeta
         );
     }
 
@@ -157,29 +178,48 @@ class InvoicesReportRepository
         [$baseFrom, $bindings] = $this->baseFromAndBindings($dateFrom, $dateTo, $cities, $store, $salesmanId, $searchText);
         $limit = self::MAX_EXPORT_ROWS;
 
+        $due = $this->clientDueFromInvoiceExpr('inv');
         $dataSql = "
             SELECT
-                t.fld_store_document_title_id AS invoice_id,
-                MAX({$this->invoiceNumberExpr()}) AS invoice_no,
-                MAX(CAST(t.fld_store_document_title_date AS date)) AS invoice_date,
-                MAX(CAST(t.fld_last_print_date AS datetime)) AS last_print_date,
-                MAX({$this->creationTimeExpr()}) AS created_at,
-                MAX(COALESCE(a.fld_account_code, N'')) AS client_code,
-                MAX(COALESCE(a.fld_account_name, t.fld_person_name, N'(no account)')) AS client_name,
-                MAX({$this->cityExprSql()}) AS city_name,
-                MAX(LTRIM(RTRIM(CAST(COALESCE(st.fld_store_name, N'') AS NVARCHAR(500))))) AS store_name,
-                MAX(COALESCE(sm.fld_account_name, N'')) AS salesman_name,
-                SUM(CAST(d.fld_store_document_quantity AS decimal(24, 6))) AS quantity_total,
-                SUM(
-                    CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                    * CAST(d.fld_store_document_unit_price AS decimal(24, 6))
-                    * (1 - (CAST(COALESCE(d.fld_store_document_discount_percent, 0) AS decimal(24, 6)) / 100.0))
-                ) AS invoice_amount,
-                MAX({$this->clientDueExpr()}) AS client_due_amount
-            {$baseFrom}
-            GROUP BY
-                t.fld_store_document_title_id
-            ORDER BY invoice_date DESC, t.fld_store_document_title_id DESC
+                inv.invoice_id,
+                inv.invoice_no,
+                inv.invoice_date,
+                inv.last_print_date,
+                inv.created_at,
+                inv.client_code,
+                inv.client_name,
+                inv.city_name,
+                inv.store_name,
+                inv.salesman_name,
+                inv.quantity_total,
+                inv.invoice_amount,
+                {$due} AS client_due_amount
+            FROM (
+                SELECT
+                    t.fld_store_document_title_id AS invoice_id,
+                    MAX(a.fld_account_id) AS account_id,
+                    MAX(t.fld_store_document_title_date) AS balance_date,
+                    MAX(t.fld_year_id_ref) AS year_id,
+                    MAX({$this->invoiceNumberExpr()}) AS invoice_no,
+                    MAX(CAST(t.fld_store_document_title_date AS date)) AS invoice_date,
+                    MAX(CAST(t.fld_last_print_date AS datetime)) AS last_print_date,
+                    MAX({$this->creationTimeExpr()}) AS created_at,
+                    MAX(COALESCE(a.fld_account_code, N'')) AS client_code,
+                    MAX(COALESCE(a.fld_account_name, t.fld_person_name, N'(no account)')) AS client_name,
+                    MAX({$this->cityExprSql()}) AS city_name,
+                    MAX(LTRIM(RTRIM(CAST(COALESCE(st.fld_store_name, N'') AS NVARCHAR(500))))) AS store_name,
+                    MAX(COALESCE(sm.fld_account_name, N'')) AS salesman_name,
+                    SUM(CAST(d.fld_store_document_quantity AS decimal(24, 6))) AS quantity_total,
+                    SUM(
+                        CAST(d.fld_store_document_quantity AS decimal(24, 6))
+                        * CAST(d.fld_store_document_unit_price AS decimal(24, 6))
+                        * (1 - (CAST(COALESCE(d.fld_store_document_discount_percent, 0) AS decimal(24, 6)) / 100.0))
+                    ) AS invoice_amount
+                {$baseFrom}
+                GROUP BY
+                    t.fld_store_document_title_id
+            ) AS inv
+            ORDER BY inv.invoice_date DESC, inv.invoice_id DESC
             OFFSET 0 ROWS FETCH NEXT {$limit} ROWS ONLY
         ";
 
@@ -232,7 +272,7 @@ class InvoicesReportRepository
      * Grand totals across all invoices matching filters (not current page).
      *
      * @param  list<string>  $cities
-     * @return stdClass{quantity_total: float, invoice_amount: float, client_due_amount: float}
+     * @return stdClass{invoice_count: int, quantity_total: float, invoice_amount: float, client_due_amount: float}
      */
     public function getReportTotals(
         string $dateFrom,
@@ -248,29 +288,40 @@ class InvoicesReportRepository
 
         [$baseFrom, $bindings] = $this->baseFromAndBindings($dateFrom, $dateTo, $cities, $store, $salesmanId, $searchText);
 
+        $due = $this->clientDueFromInvoiceExpr('inv');
         $sql = "
             SELECT
-                COALESCE(SUM(inv.quantity_total), 0) AS quantity_total,
-                COALESCE(SUM(inv.invoice_amount), 0) AS invoice_amount,
-                COALESCE(SUM(inv.client_due_amount), 0) AS client_due_amount
+                COUNT(*) AS invoice_count,
+                COALESCE(SUM(priced.quantity_total), 0) AS quantity_total,
+                COALESCE(SUM(priced.invoice_amount), 0) AS invoice_amount,
+                COALESCE(SUM(priced.client_due_amount), 0) AS client_due_amount
             FROM (
                 SELECT
-                    t.fld_store_document_title_id AS invoice_id,
-                    SUM(CAST(d.fld_store_document_quantity AS decimal(24, 6))) AS quantity_total,
-                    SUM(
-                        CAST(d.fld_store_document_quantity AS decimal(24, 6))
-                        * CAST(d.fld_store_document_unit_price AS decimal(24, 6))
-                        * (1 - (CAST(COALESCE(d.fld_store_document_discount_percent, 0) AS decimal(24, 6)) / 100.0))
-                    ) AS invoice_amount,
-                    MAX({$this->clientDueExpr()}) AS client_due_amount
-                {$baseFrom}
-                GROUP BY t.fld_store_document_title_id
-            ) AS inv
+                    inv.quantity_total,
+                    inv.invoice_amount,
+                    {$due} AS client_due_amount
+                FROM (
+                    SELECT
+                        t.fld_store_document_title_id AS invoice_id,
+                        MAX(a.fld_account_id) AS account_id,
+                        MAX(t.fld_store_document_title_date) AS balance_date,
+                        MAX(t.fld_year_id_ref) AS year_id,
+                        SUM(CAST(d.fld_store_document_quantity AS decimal(24, 6))) AS quantity_total,
+                        SUM(
+                            CAST(d.fld_store_document_quantity AS decimal(24, 6))
+                            * CAST(d.fld_store_document_unit_price AS decimal(24, 6))
+                            * (1 - (CAST(COALESCE(d.fld_store_document_discount_percent, 0) AS decimal(24, 6)) / 100.0))
+                        ) AS invoice_amount
+                    {$baseFrom}
+                    GROUP BY t.fld_store_document_title_id
+                ) AS inv
+            ) AS priced
         ";
 
         $row = DB::selectOne($sql, $bindings);
 
         return $row ?? (object) [
+            'invoice_count' => 0,
             'quantity_total' => 0,
             'invoice_amount' => 0,
             'client_due_amount' => 0,
@@ -501,8 +552,8 @@ class InvoicesReportRepository
                 ON smd.fld_account_id_ref = sm.fld_account_id
             LEFT JOIN dbo.tbl_stores AS st
                 ON st.fld_store_id = t.fld_store_id_ref
-            WHERE CAST(t.fld_store_document_title_date AS date) >= CAST(? AS date)
-              AND CAST(t.fld_store_document_title_date AS date) <= CAST(? AS date)
+            WHERE t.fld_store_document_title_date >= CAST(? AS datetime)
+              AND t.fld_store_document_title_date < DATEADD(day, 1, CAST(? AS datetime))
               AND ISNULL(t.fld_is_cancelled, 0) = 0
               AND ISNULL(d.fld_is_cancelled, 0) = 0
               {$this->salesOnlyScopeSql()}
@@ -567,6 +618,18 @@ class InvoicesReportRepository
         )';
     }
 
+    private function clientDueFromInvoiceExpr(string $alias): string
+    {
+        return "COALESCE(
+            CAST(dbo.FN_Get_Prev_Account_Balance(
+                {$alias}.account_id,
+                {$alias}.balance_date,
+                {$alias}.year_id
+            ) AS decimal(24, 6)),
+            CAST(0 AS decimal(24, 6))
+        )";
+    }
+
     private function cityExprSql(): string
     {
         $cityCol = $this->visits->getAccountCityColumnName();
@@ -622,15 +685,29 @@ class InvoicesReportRepository
 
     private function resolveColumnName(string $schema, string $table, array $candidates): ?string
     {
-        foreach ($candidates as $column) {
-            $row = DB::selectOne(
-                'SELECT TOP 1 COLUMN_NAME
+        $cacheKey = $schema.'.'.$table;
+        if (! array_key_exists($cacheKey, $this->tableColumns)) {
+            $rows = DB::select(
+                'SELECT COLUMN_NAME
                  FROM INFORMATION_SCHEMA.COLUMNS
-                 WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?',
-                [$schema, $table, $column]
+                 WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
+                [$schema, $table]
             );
-            if ($row !== null) {
-                return (string) $column;
+            $found = [];
+            foreach ($rows as $row) {
+                $name = (string) ($row->COLUMN_NAME ?? '');
+                if ($name !== '') {
+                    $found[strtolower($name)] = $name;
+                }
+            }
+            $this->tableColumns[$cacheKey] = $found;
+        }
+
+        $columns = $this->tableColumns[$cacheKey];
+        foreach ($candidates as $column) {
+            $match = $columns[strtolower($column)] ?? null;
+            if (is_string($match) && $match !== '') {
+                return $match;
             }
         }
 

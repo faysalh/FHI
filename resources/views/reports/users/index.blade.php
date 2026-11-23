@@ -5,7 +5,11 @@
 <header class="page-header">
     <h1>Users</h1>
 </header>
-<p class="hint">Create login accounts and choose which report tabs each user can open. Administrators see every report and can manage users.</p>
+<p class="hint">
+    Create login accounts and choose which report tabs each user can open.
+    Administrators see every report and can manage users.
+    Permission changes apply on the user’s next page load (no reinstall needed); ask them to refresh or open the report again if it was blocked before.
+</p>
 
 @if (session('status'))
     <div class="alert alert--success">{{ session('status') }}</div>
@@ -44,6 +48,11 @@
                 </label>
             </div>
         </div>
+        @include('reports.users.partials.pda-salesman-field', [
+            'fieldId' => 'new_pda_salesman',
+            'selected' => old('pda_salesman_user_id', ''),
+            'pdaSalesmen' => $pdaSalesmen ?? [],
+        ])
 
         <fieldset class="users-permissions" data-permissions-fieldset>
             <legend>Report access</legend>
@@ -101,7 +110,9 @@
             @php
                 $userId = (int) ($user->id ?? 0);
                 $isAdmin = (int) ($user->is_super_admin ?? 0) === 1;
-                $userKeys = is_array($user->report_keys ?? null) ? $user->report_keys : [];
+                $userKeys = \App\Support\ReportAuthSession::normalizeReportPermissionKeys(
+                    is_array($user->report_keys ?? null) ? $user->report_keys : []
+                );
             @endphp
             <details class="users-row" @if($loop->first) open @endif>
                 <summary>
@@ -114,6 +125,9 @@
                     @if ($userId === $currentUserId)
                         <span class="muted">(you)</span>
                     @endif
+                    @if (!empty($user->pda_salesman_name))
+                        <span class="muted">· PDA {{ $user->pda_salesman_name }}</span>
+                    @endif
                 </summary>
                 <div class="users-row__body">
                     <form method="POST" action="{{ route('reports.users.update', $userId) }}">
@@ -123,6 +137,11 @@
                             <input type="checkbox" name="is_super_admin" value="1" @checked($isAdmin) data-toggle-admin>
                             Administrator (full access)
                         </label>
+                        @include('reports.users.partials.pda-salesman-field', [
+                            'fieldId' => 'pda-salesman-'.$userId,
+                            'selected' => (string) ($user->pda_salesman_user_id ?? ''),
+                            'pdaSalesmen' => $pdaSalesmen ?? [],
+                        ])
 
                         <fieldset class="users-permissions" data-permissions-fieldset @if($isAdmin) hidden @endif>
                             <legend>Report access</legend>

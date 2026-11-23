@@ -41,6 +41,12 @@
         } else if (kind === 'last-month') {
             start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
             end = new Date(now.getFullYear(), now.getMonth(), 0);
+        } else if (kind === 'this-and-last-month') {
+            start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            end = now;
+        } else if (kind === 'last-3-months') {
+            start = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+            end = now;
         } else if (kind === 'this-month-vs-last-month') {
             start2 = new Date(now.getFullYear(), now.getMonth(), 1);
             end2 = now;

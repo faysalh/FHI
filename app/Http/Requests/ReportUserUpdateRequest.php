@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Requests;
 
+use App\Support\ReportNavigation;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 class ReportUserUpdateRequest extends FormRequest
@@ -32,6 +34,7 @@ class ReportUserUpdateRequest extends FormRequest
             'deliveries_default_storage' => trim((string) $this->input('deliveries_default_storage', '')),
             'storage_can_filter_storage' => $this->boolean('storage_can_filter_storage'),
             'storage_allowed_storages' => $this->normalizeStorageAllowedInput(),
+            'pda_salesman_user_id' => $this->nullableSalesmanId(),
         ]);
     }
 
@@ -51,6 +54,13 @@ class ReportUserUpdateRequest extends FormRequest
         ), static fn (string $s): bool => $s !== '')));
     }
 
+    private function nullableSalesmanId(): ?string
+    {
+        $value = strtoupper(trim((string) $this->input('pda_salesman_user_id', '')));
+
+        return $value === '' ? null : $value;
+    }
+
     /**
      * @return array<string, array<int, mixed>>
      */
@@ -59,7 +69,7 @@ class ReportUserUpdateRequest extends FormRequest
         return [
             'is_super_admin' => ['boolean'],
             'report_keys' => ['array'],
-            'report_keys.*' => ['string', 'max:80'],
+            'report_keys.*' => ['string', 'max:80', Rule::in(ReportNavigation::assignablePermissionKeys())],
             'deliveries_can_filter_date' => ['sometimes', 'boolean'],
             'deliveries_can_filter_city' => ['sometimes', 'boolean'],
             'deliveries_can_filter_storage' => ['sometimes', 'boolean'],
@@ -72,6 +82,7 @@ class ReportUserUpdateRequest extends FormRequest
             'storage_allowed_storages.*' => ['string', 'max:500'],
             'password' => ['nullable', 'string', 'min:6', 'max:200'],
             'password_confirmation' => ['nullable', 'same:password'],
+            'pda_salesman_user_id' => ['nullable', 'uuid'],
         ];
     }
 

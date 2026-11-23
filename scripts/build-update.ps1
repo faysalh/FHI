@@ -50,12 +50,17 @@ if (-not $iscc) {
 
 Write-Host ''
 Write-Host 'Compiling update installer...' -ForegroundColor Cyan
-& $iscc (Join-Path $Root 'installer\reporting-app.iss')
+& $iscc '/DUpdateBuild' (Join-Path $Root 'installer\reporting-app.iss')
 if ($LASTEXITCODE -ne 0) {
     throw "Inno Setup failed with exit code $LASTEXITCODE"
 }
 
-$exePath = Join-Path $Root 'dist\ReportingApp-Setup.exe'
+$exePath = Get-ChildItem (Join-Path $Root 'dist') -Filter 'ReportingApp-Update-*.exe' |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1 -ExpandProperty FullName
+if (-not $exePath) {
+    throw 'Update installer was not created in dist\'
+}
 $sizeMb = [math]::Round((Get-Item $exePath).Length / 1MB, 1)
 
 Write-Host ''
@@ -64,6 +69,6 @@ Write-Host "  $exePath ($sizeMb MB)"
 Write-Host ''
 Write-Host 'On the server:' -ForegroundColor Yellow
 Write-Host '  1. Optional: Settings → SQLite backups → create a backup'
-Write-Host '  2. Run ReportingApp-Setup.exe as Administrator'
+Write-Host '  2. Run the ReportingApp-Update exe as Administrator'
 Write-Host '  3. Choose the SAME install folder (e.g. C:\Program Files\ReportingApp)'
-Write-Host '  4. Existing .env and database\*.sqlite are kept automatically'
+Write-Host '  4. Leave the SQL password blank. .env, SQL Server, and every SQLite file stay as they are'

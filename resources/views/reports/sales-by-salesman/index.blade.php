@@ -3,19 +3,6 @@
 
 @section('content')
 <header class="page-header"><h1>Sales by salesman</h1></header>
-<p class="hint">
-        Per-client totals from store document lines for the selected <strong>salesman</strong> and date range.
-        Sales are attributed by the <strong>salesman on the invoice</strong> (<code>fld_sales_man_id_ref</code> on the document title), not only the client account’s assigned salesman.
-        <strong>Amount</strong> = posted sales invoices (<code>S</code>): <strong>ماركيت</strong> lines use qty × price after line discount when the invoice has no header discount; otherwise proportional invoice header discount only (rounded per line). Other price groups use qty × price after line discount only (same basis as the ERP salesman report).
-        <strong>Client price group</strong> maps the account’s numeric tier <strong>0–4</strong> (same order as storage sale prices 1–5, DB value is one less):
-        <em>0 وكيل</em>, <em>1 وكيل 2</em>, <em>2 ماركيت</em>, <em>3 جملة</em>, <em>4 كي</em> (see
-        <a href="{{ route('reports.storage-items.index') }}">Storage items</a> sale prices 1–5).
-        @if (!empty($priceGroupColumn))
-            Tier source: <code>{{ $priceGroupColumn }}</code> (account and/or <code>dbo.tbl_accounting_account_details</code>, COALESCE + MAX per account).
-        @else
-            No matching column was auto-detected; set <code>REPORTING_ACCOUNT_CLIENT_PRICE_GROUP_COLUMN</code> in <code>.env</code> if needed.
-        @endif
-    </p>
 
     <form id="sales-by-salesman-form" method="GET" action="{{ route('reports.sales-by-salesman.index') }}">
         <details class="filters-panel" open>
