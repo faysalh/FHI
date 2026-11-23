@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Http\Requests\PdaVoucherRequest;
 use App\Services\ClientSuspensionSqliteService;
 use App\Services\PdaLocationSqliteService;
 use App\Services\PdaWorkspaceService;
@@ -11,8 +12,12 @@ use App\Services\ReportsUsersSqliteService;
 use App\Support\ReportAuthSession;
 use App\Support\ReportNavigation;
 use ReflectionMethod;
+use Illuminate\Http\Request;
+use Illuminate\Routing\Route;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Mockery;
 use RuntimeException;
 use Tests\TestCase;
@@ -100,6 +105,19 @@ class PdaWorkspaceTest extends TestCase
         $service = new PdaWorkspaceService(new ReportsUsersSqliteService, new PdaLocationSqliteService, new ClientSuspensionSqliteService);
         $this->expectException(RuntimeException::class);
         $service->assertCoordinates(0.0, 0.0);
+    }
+
+    public function test_a_voucher_without_a_location_fix_is_allowed(): void
+    {
+        $this->assertVoucherLocationError(null, null, false);
+        $this->assertVoucherLocationError('', '', false);
+        $this->assertVoucherLocationError(0, 0, true);
+        $this->assertVoucherLocationError(36.2, null, true);
+
+        $script = (string) file_get_contents(resource_path('views/reports/pda/partials/location-script.blade.php'));
+        $this->assertStringContainsString('function saveWithoutLocation()', $script);
+        $this->assertStringContainsString('Saving without a location.', $script);
+        $this->assertStringNotContainsString('Turn on location for this phone, then save again.', $script);
     }
 
     public function test_unlinked_login_sees_the_pda_message(): void
@@ -249,6 +267,8 @@ class PdaWorkspaceTest extends TestCase
         $page->assertDontSee('id="report-nav-menu"', false);
         $page->assertSee('Customers', false);
         $page->assertSee('Unposted', false);
+        $page->assertSee('Today', false);
+        $page->assertSee(route('reports.pda.today'), false);
 
         $this->get('/')->assertRedirect(route('reports.pda.index'));
     }
@@ -306,5 +326,102 @@ class PdaWorkspaceTest extends TestCase
         } catch (RuntimeException $e) {
             $this->assertSame('Chicken only has 5 available.', $e->getMessage());
         }
+    }
+
+    public function test_refresh_customers_drops_the_cached_list(): void
+    {
+        $users = new ReportsUsersSqliteService;
+        $users->ensureReady();
+        $id = $users->createUser('pda-refresh', 'password123', false, ['pda']);
+        $salesmanId = '11111111-1111-1111-1111-111111111111';
+        $users->savePdaSalesmanLink(
+            $id,
+            $salesmanId,
+            '22222222-2222-2222-2222-222222222222',
+            'Ali'
+        );
+        Cache::put('pda.customers.v3.'.$salesmanId, [['id' => 'old']], 180);
+
+        $this->withSession([
+            'reports_admin_authenticated' => true,
+            'reports_user_id' => $id,
+            'reports_username' => 'pda-refresh',
+            'reports_is_super_admin' => false,
+            'reports_allowed_keys' => ['pda'],
+        ])->post(route('reports.pda.customers.refresh'))
+            ->assertRedirect(route('reports.pda.index'))
+            ->assertSessionHas('status', 'Customer list refreshed.');
+
+        $this->assertFalse(Cache::has('pda.customers.v3.'.$salesmanId));
+    }
+
+    public function test_sales_steps_offer_refresh_customers_instead_of_the_guide(): void
+    {
+        $salesman = ['user_id' => '11111111-1111-1111-1111-111111111111'];
+
+        $customers = $this->renderHowToLink('reports.pda.index', $salesman);
+        $this->assertStringContainsString('Refresh customers', $customers);
+        $this->assertStringContainsString(route('reports.pda.customers.refresh'), $customers);
+        $this->assertStringNotContainsString('How to use this page', $customers);
+
+        foreach (['reports.pda.customers.show', 'reports.pda.visits.show', 'reports.pda.vouchers.create'] as $routeName) {
+            $html = $this->renderHowToLink($routeName, $salesman);
+            $this->assertStringContainsString('Refresh customers', $html);
+            $this->assertStringNotContainsString('How to use this page', $html);
+        }
+
+        $items = $this->renderHowToLink('reports.pda.items', $salesman);
+        $this->assertStringContainsString('How to use this page', $items);
+        $this->assertStringNotContainsString('Refresh customers', $items);
+
+        $unlinked = $this->renderHowToLink('reports.pda.index', []);
+        $this->assertStringContainsString('How to use this page', $unlinked);
+        $this->assertStringNotContainsString('Refresh customers', $unlinked);
+    }
+
+    private function assertVoucherLocationError(mixed $lat, mixed $lng, bool $expectsLocationError): void
+    {
+        $request = PdaVoucherRequest::create('/reports/pda/visits/x/voucher', 'POST', [
+            'kind' => 'sale',
+            'lat' => $lat,
+            'lng' => $lng,
+            'lines' => [[
+                'item_id' => '11111111-1111-1111-1111-111111111111',
+                'unit_row_id' => '22222222-2222-2222-2222-222222222222',
+                'qty' => 1,
+                'price' => 1000,
+            ]],
+        ]);
+        $request->setContainer($this->app);
+        $request->setRedirector($this->app->make('redirect'));
+
+        $errors = [];
+        try {
+            $request->validateResolved();
+        } catch (ValidationException $e) {
+            $errors = $e->errors();
+        }
+
+        if ($expectsLocationError) {
+            $this->assertArrayHasKey('lat', $errors);
+        } else {
+            $this->assertArrayNotHasKey('lat', $errors);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $salesman
+     */
+    private function renderHowToLink(string $routeName, array $salesman): string
+    {
+        $request = Request::create('/reports/pda', 'GET');
+        $route = new Route('GET', '/reports/pda', static fn () => null);
+        $route->name($routeName);
+        $request->setRouteResolver(static fn () => $route);
+        $this->app->instance('request', $request);
+
+        return view('reports.partials.report-how-to-link', [
+            'salesman' => $salesman,
+        ])->render();
     }
 }

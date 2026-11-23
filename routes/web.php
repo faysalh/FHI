@@ -17,6 +17,7 @@ use App\Http\Controllers\DeliveriesReportController;
 use App\Http\Controllers\FaceIdController;
 use App\Http\Controllers\FaceIdKioskController;
 use App\Http\Controllers\GovernoratesSettingsController;
+use App\Http\Controllers\HrController;
 use App\Http\Controllers\IdentifierController;
 use App\Http\Controllers\InvoiceBrandingSettingsController;
 use App\Http\Controllers\InvoicesReportController;
@@ -32,7 +33,7 @@ use App\Http\Controllers\ReportAssemblyController;
 use App\Http\Controllers\ReportGuideController;
 use App\Http\Controllers\ReportUsersController;
 use App\Http\Controllers\SalesByItemAverageReportController;
-use App\Http\Controllers\SalesByItemReportController;
+use App\Http\Controllers\ItemBasedSalesReportController;
 use App\Http\Controllers\SalesBySalesmanReportController;
 use App\Http\Controllers\SalesReportController;
 use App\Http\Controllers\SchemaExplorerController;
@@ -68,7 +69,7 @@ Route::prefix('reports')->middleware(['reports.admin', 'reports.permission'])->g
     Route::redirect('dashboard/metrics', 'dashboard-lab/metrics', 301);
     Route::get('/dashboard-lab', [DashboardLabController::class, 'index'])->name('reports.dashboard-lab.index');
     Route::get('/dashboard-lab/metrics', [DashboardLabController::class, 'metrics'])->name('reports.dashboard-lab.metrics');
-    Route::get('/sales', [SalesReportController::class, 'index'])->name('reports.sales.index');
+    Route::get('/sales', [ItemBasedSalesReportController::class, 'index'])->name('reports.sales.index');
     Route::get('/sales/client-items', [SalesReportController::class, 'clientItems'])->name('reports.sales.client-items');
     Route::get('/comparison', function (\Illuminate\Http\Request $request) {
         return redirect()->route('reports.comparison.asan.index', $request->query());
@@ -81,8 +82,8 @@ Route::prefix('reports')->middleware(['reports.admin', 'reports.permission'])->g
     Route::get('/rankings', [RankingsReportController::class, 'index'])->name('reports.rankings.index');
     Route::get('/rankings/export/pdf', [RankingsReportController::class, 'exportPdf'])->name('reports.rankings.export.pdf');
     Route::get('/rankings/export/csv', [RankingsReportController::class, 'exportCsv'])->name('reports.rankings.export.csv');
-    Route::get('/sales/export/pdf', [SalesReportController::class, 'exportPdf'])->name('reports.sales.export.pdf');
-    Route::get('/sales/export/csv', [SalesReportController::class, 'exportCsv'])->name('reports.sales.export.csv');
+    Route::get('/sales/export/pdf', [ItemBasedSalesReportController::class, 'exportPdf'])->name('reports.sales.export.pdf');
+    Route::get('/sales/export/csv', [ItemBasedSalesReportController::class, 'exportCsv'])->name('reports.sales.export.csv');
     Route::get('/sales-item-average', [SalesByItemAverageReportController::class, 'index'])->name('reports.sales-item-average.index');
     Route::get('/sales-item-average/items', [SalesByItemAverageReportController::class, 'categoryItems'])->name('reports.sales-item-average.items');
     Route::get('/sales-item-average/export/pdf', [SalesByItemAverageReportController::class, 'exportPdf'])->name('reports.sales-item-average.export.pdf');
@@ -90,9 +91,15 @@ Route::prefix('reports')->middleware(['reports.admin', 'reports.permission'])->g
     Route::get('/sales-by-salesman', [SalesBySalesmanReportController::class, 'index'])->name('reports.sales-by-salesman.index');
     Route::get('/sales-by-salesman/export/pdf', [SalesBySalesmanReportController::class, 'exportPdf'])->name('reports.sales-by-salesman.export.pdf');
     Route::get('/sales-by-salesman/export/csv', [SalesBySalesmanReportController::class, 'exportCsv'])->name('reports.sales-by-salesman.export.csv');
-    Route::get('/sales-by-item', [SalesByItemReportController::class, 'index'])->name('reports.sales-by-item.index');
-    Route::get('/sales-by-item/export/pdf', [SalesByItemReportController::class, 'exportPdf'])->name('reports.sales-by-item.export.pdf');
-    Route::get('/sales-by-item/export/csv', [SalesByItemReportController::class, 'exportCsv'])->name('reports.sales-by-item.export.csv');
+    Route::get('/sales-by-item', function (\Illuminate\Http\Request $request) {
+        return redirect()->route('reports.sales.index', $request->query());
+    })->name('reports.sales-by-item.index');
+    Route::get('/sales-by-item/export/pdf', function (\Illuminate\Http\Request $request) {
+        return redirect()->route('reports.sales.export.pdf', $request->query());
+    })->name('reports.sales-by-item.export.pdf');
+    Route::get('/sales-by-item/export/csv', function (\Illuminate\Http\Request $request) {
+        return redirect()->route('reports.sales.export.csv', $request->query());
+    })->name('reports.sales-by-item.export.csv');
     Route::get('/storage-items', [StorageItemsReportController::class, 'index'])->name('reports.storage-items.index');
     Route::get('/storage-items/evaluation', [StorageItemsReportController::class, 'evaluation'])->name('reports.storage-items.evaluation');
     Route::get('/storage-items/export/pdf', [StorageItemsReportController::class, 'exportPdf'])->name('reports.storage-items.export.pdf');
@@ -104,6 +111,7 @@ Route::prefix('reports')->middleware(['reports.admin', 'reports.permission'])->g
     Route::get('/storage/export/pdf', [StorageReportController::class, 'exportPdf'])->name('reports.storage.export.pdf');
     Route::get('/storage/export/csv', [StorageReportController::class, 'exportCsv'])->name('reports.storage.export.csv');
     Route::get('/pda', [PdaController::class, 'index'])->name('reports.pda.index');
+    Route::post('/pda/customers/refresh', [PdaController::class, 'refreshCustomers'])->name('reports.pda.customers.refresh');
     Route::get('/pda/customers/{customer}', [PdaController::class, 'customer'])->name('reports.pda.customers.show');
     Route::post('/pda/visits', [PdaController::class, 'startVisit'])->name('reports.pda.visits.store');
     Route::get('/pda/visits/{visit}', [PdaController::class, 'showVisit'])->name('reports.pda.visits.show');
@@ -120,6 +128,7 @@ Route::prefix('reports')->middleware(['reports.admin', 'reports.permission'])->g
     Route::get('/pda/questionnaires/{questionnaire}', [PdaController::class, 'questionnaire'])->name('reports.pda.questionnaires.show');
     Route::post('/pda/questionnaires/{questionnaire}', [PdaController::class, 'storeQuestionnaire'])->name('reports.pda.questionnaires.store');
     Route::get('/pda/unposted', [PdaController::class, 'unposted'])->name('reports.pda.unposted');
+    Route::get('/pda/today', [PdaController::class, 'today'])->name('reports.pda.today');
     Route::get('/deliveries', [DeliveriesReportController::class, 'index'])->name('reports.deliveries.index');
     Route::post('/deliveries/setup/driver', [DeliveriesReportController::class, 'saveDriver'])->name('reports.deliveries.setup.driver');
     Route::put('/deliveries/setup/driver/{person}', [DeliveriesReportController::class, 'updateDriver'])->name('reports.deliveries.setup.driver.update');
@@ -264,4 +273,14 @@ Route::prefix('reports')->middleware(['reports.admin', 'reports.permission'])->g
     Route::post('/database-sync/run', [DatabaseSynchronizeController::class, 'run'])->name('reports.database-sync.run');
     Route::post('/database-sync/auto-settings', [DatabaseSynchronizeController::class, 'updateAutoSync'])->name('reports.database-sync.auto-settings');
     Route::post('/database-sync/auto-run', [DatabaseSynchronizeController::class, 'runAutoSyncNow'])->name('reports.database-sync.auto-run');
+    Route::get('/hr/employees', [HrController::class, 'employees'])->name('reports.hr.employees.index');
+    Route::post('/hr/employees', [HrController::class, 'storeEmployee'])->name('reports.hr.employees.store');
+    Route::put('/hr/employees/{employee}', [HrController::class, 'updateEmployee'])->name('reports.hr.employees.update');
+    Route::get('/hr/leave', [HrController::class, 'leave'])->name('reports.hr.leave.index');
+    Route::post('/hr/leave', [HrController::class, 'storeLeave'])->name('reports.hr.leave.store');
+    Route::get('/hr/leave/export/pdf', [HrController::class, 'exportPdf'])->name('reports.hr.leave.export.pdf');
+    Route::get('/hr/leave/export/csv', [HrController::class, 'exportCsv'])->name('reports.hr.leave.export.csv');
+    Route::get('/hr/leave/{leave}/print', [HrController::class, 'printLeave'])->name('reports.hr.leave.print');
+    Route::get('/hr/leave/{leave}/pdf', [HrController::class, 'leavePdf'])->name('reports.hr.leave.pdf');
+    Route::post('/hr/leave/{leave}/decide', [HrController::class, 'decideLeave'])->name('reports.hr.leave.decide');
 });

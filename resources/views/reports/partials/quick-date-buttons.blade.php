@@ -6,6 +6,8 @@
         'last-month' => 'Last month',
         'this-month-vs-last-month' => 'This month vs last month',
         'last-30-vs-prior-30' => 'Last 30 vs prior 30',
+        'this-and-last-month' => 'This month vs last month',
+        'last-3-months' => 'Last 3 months',
     ];
 @endphp
 <div class="pie-quick-dates" aria-label="Quick date ranges">

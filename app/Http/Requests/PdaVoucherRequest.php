@@ -66,8 +66,8 @@ class PdaVoucherRequest extends FormRequest
             'paid' => ['nullable', 'numeric', 'min:0'],
             'discount' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'notes' => ['nullable', 'string', 'max:500'],
-            'lat' => ['required', 'numeric', 'between:-90,90'],
-            'lng' => ['required', 'numeric', 'between:-180,180'],
+            'lat' => ['nullable', 'numeric', 'between:-90,90'],
+            'lng' => ['nullable', 'numeric', 'between:-180,180'],
             'accuracy' => ['nullable', 'numeric', 'min:0'],
             'lines' => ['array'],
             'lines.*.item_id' => ['required', 'uuid'],
@@ -81,9 +81,13 @@ class PdaVoucherRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator): void {
-            $lat = (float) $this->input('lat', 0);
-            $lng = (float) $this->input('lng', 0);
-            if ($lat === 0.0 && $lng === 0.0) {
+            $latRaw = $this->input('lat');
+            $lngRaw = $this->input('lng');
+            $latBlank = $latRaw === null || $latRaw === '';
+            $lngBlank = $lngRaw === null || $lngRaw === '';
+            if ($latBlank !== $lngBlank) {
+                $validator->errors()->add('lat', 'Location permission is required before this voucher can be saved.');
+            } elseif (! $latBlank && (float) $latRaw === 0.0 && (float) $lngRaw === 0.0) {
                 $validator->errors()->add('lat', 'Location permission is required before this voucher can be saved.');
             }
             $kind = (string) $this->input('kind');
@@ -103,8 +107,8 @@ class PdaVoucherRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'lat.required' => 'Location permission is required before this voucher can be saved.',
-            'lng.required' => 'Location permission is required before this voucher can be saved.',
+            'lat.numeric' => 'Location permission is required before this voucher can be saved.',
+            'lng.numeric' => 'Location permission is required before this voucher can be saved.',
         ];
     }
 }

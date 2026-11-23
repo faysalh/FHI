@@ -39,11 +39,11 @@ final class ReportGuide
                     ),
                     self::topic(
                         'sales',
-                        'Sales',
-                        'Posted sales (type S) by client for a date range, with optional category breakdown and exports.',
+                        'Sales report by item',
+                        'Posted sales and sales returns, one row per item, for a date range.',
                         [
-                            'Filter by date range, governorate preset, storage, salesmen, clients, and category options. Toggle Quantity, Amount, and Weight columns off if you do not need them.',
-                            'Amounts use discount-aware line totals; expand a client row to see line items.',
+                            'Filter by date, salesman, city, category, or item name or code.',
+                            'Sales qty and amount are types S and POS. Return qty and amount are types SR and POSR. Net columns subtract returns.',
                             'Export PDF or CSV with the same filters as on screen.',
                         ],
                         'reports.sales.index'
@@ -59,17 +59,6 @@ final class ReportGuide
                         'reports.sales-item-average.index'
                     ),
                     self::topic(
-                        'sales-by-item',
-                        'Sales by item',
-                        'Category totals for one salesman, split by each client’s assigned price group (وكيل … كي).',
-                        [
-                            'Choose date range, salesman, and optional city, storage, category, price group, or column filters.',
-                            'Amounts follow the same ERP tier rules as Sales by salesman (invoice salesman, ماركيت hybrid header discount).',
-                            'Export PDF or CSV with the same filters as on screen.',
-                        ],
-                        'reports.sales-by-item.index'
-                    ),
-                    self::topic(
                         'sales-by-salesman',
                         'By salesman',
                         'Sales totals grouped by salesman for a period.',
@@ -82,11 +71,11 @@ final class ReportGuide
                     self::topic(
                         'comparison',
                         'Comparison',
-                        'Compare two date ranges side by side (quantities, amounts, weights).',
+                        'Compare the calendar months inside one date range (quantities, amounts, weights).',
                         [
                             'Totals come from the Asan item summary for posted sales invoices.',
-                            'Enter period 1 and period 2, then Apply. Difference is period 2 minus period 1.',
-                            'Use exports to share outside the app.',
+                            'Choose one range, then Apply. 1 Oct to 22 Nov compares October with 1–22 November. 1 Sep to 22 Nov adds September.',
+                            'The change column is the latest month minus the month before it. Use exports to share outside the app.',
                         ],
                         'reports.comparison.asan.index'
                     ),
@@ -203,6 +192,29 @@ final class ReportGuide
                         'reports.tasks.index'
                     ),
                     self::topic(
+                        'hr-employees',
+                        'Employees',
+                        'Employee file for drivers, companions, Face ID people, and anyone else.',
+                        [
+                            'Pick a driver, companion, or Face ID person, or add someone who is not in those lists.',
+                            'Phone, job, ID number, and emergency contact are stored in the local employee file.',
+                            'Adding a person here does not change Deliveries or Face ID.',
+                        ],
+                        'reports.hr.employees.index'
+                    ),
+                    self::topic(
+                        'hr-leave',
+                        'Leave',
+                        'Leave requests filed by staff and approved by a manager.',
+                        [
+                            'File leave needs the File leave permission. Approve or reject needs Approve leave.',
+                            'Hourly leave is one date and a time range. Other types use a from/to date range.',
+                            'The count skips Fridays and dates on the Holidays page. 17 to 20 is 4 days before those days are removed.',
+                            'Print a request or download its PDF. The list can also be exported as PDF or CSV.',
+                        ],
+                        'reports.hr.leave.index'
+                    ),
+                    self::topic(
                         'damages',
                         'Damages',
                         'Record damaged goods locally with pricing from sales or storage tiers.',
@@ -256,6 +268,7 @@ final class ReportGuide
                         [
                             'Add a date and label; remove with the delete icon.',
                             'Fridays are always excluded automatically.',
+                            'Leave requests skip these dates as well.',
                         ],
                         'reports.holidays.index'
                     ),

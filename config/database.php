@@ -188,6 +188,18 @@ return [
             'transaction_mode' => 'DEFERRED',
         ],
 
+        'hr_sqlite' => [
+            'driver' => 'sqlite',
+            'url' => null,
+            'database' => env('HR_SQLITE_DATABASE', database_path('hr.sqlite')),
+            'prefix' => '',
+            'foreign_key_constraints' => true,
+            'busy_timeout' => null,
+            'journal_mode' => null,
+            'synchronous' => null,
+            'transaction_mode' => 'DEFERRED',
+        ],
+
         'mysql' => [
             'driver' => 'mysql',
             'url' => env('DB_URL'),

@@ -37,11 +37,10 @@ final class ReportNavigation
                 'label' => 'Sales & analytics',
                 'items' => [
                     ['key' => 'dashboard-lab', 'route' => 'reports.dashboard-lab.index', 'label' => 'Dashboard', 'title' => 'Governorate sales and invoice snapshot'],
-                    ['key' => 'sales', 'route' => 'reports.sales.index', 'label' => 'Sales', 'title' => 'Sales by client and period'],
+                    ['key' => 'sales', 'route' => 'reports.sales.index', 'label' => 'Sales report by item', 'title' => 'Posted sales and returns, one row per item', 'permission_any_exact' => ['sales', 'sales-by-item']],
                     ['key' => 'sales-item-average', 'route' => 'reports.sales-item-average.index', 'label' => 'Item average', 'title' => 'Sales by item average'],
-                    ['key' => 'sales-by-item', 'route' => 'reports.sales-by-item.index', 'label' => 'Sales by item', 'title' => 'Category sales split by client price group'],
                     ['key' => 'sales-by-salesman', 'route' => 'reports.sales-by-salesman.index', 'label' => 'By salesman', 'title' => 'Sales by salesman'],
-                    ['key' => 'comparison', 'route' => 'reports.comparison.asan.index', 'label' => 'Comparison', 'title' => 'Compare two periods'],
+                    ['key' => 'comparison', 'route' => 'reports.comparison.asan.index', 'label' => 'Comparison', 'title' => 'Compare the months inside a date range'],
                     ['key' => 'rankings', 'route' => 'reports.rankings.index', 'label' => 'Rankings', 'title' => 'Top clients, items, salesmen, and growth'],
                     ['key' => 'cities', 'route' => 'reports.cities.index', 'label' => 'Cities', 'title' => 'Sales by city'],
                     ['key' => 'visits', 'route' => 'reports.visits.index', 'label' => 'Visits', 'title' => 'Client visit status'],
@@ -147,6 +146,29 @@ final class ReportNavigation
                     ['key' => 'deliveries', 'route' => 'reports.deliveries.index', 'label' => 'Deliveries', 'title' => 'Delivery status and teams'],
                     ['key' => 'invoices', 'route' => 'reports.invoices.index', 'label' => 'Invoices', 'title' => 'Invoice search and details'],
                     ['key' => 'tasks', 'route' => 'reports.tasks.index', 'label' => 'Tasks', 'title' => 'Task notes and invoice-day reminders'],
+                    ['key' => 'hr-employees', 'route' => 'reports.hr.employees.index', 'label' => 'Employees', 'title' => 'Employee file, contact details, and emergency contact'],
+                    [
+                        'key' => 'hr-leave',
+                        'route' => 'reports.hr.leave.index',
+                        'label' => 'Leave',
+                        'title' => 'File leave and print or export the request',
+                        'nav_only' => true,
+                        'permission_any_exact' => ['hr-leave', 'hr-leave-approve'],
+                    ],
+                    [
+                        'key' => 'hr-leave',
+                        'route' => 'reports.hr.leave.index',
+                        'label' => 'File leave',
+                        'title' => 'File a leave request and print or export it',
+                        'permission_only' => true,
+                    ],
+                    [
+                        'key' => 'hr-leave-approve',
+                        'route' => 'reports.hr.leave.index',
+                        'label' => 'Approve leave',
+                        'title' => 'Approve or reject leave requests',
+                        'permission_only' => true,
+                    ],
                     ['key' => 'it-work-log', 'route' => 'reports.it-work-log.index', 'label' => 'IT Work', 'title' => 'Personal IT work start/finish log'],
                     ['key' => 'damages', 'route' => 'reports.damages.index', 'label' => 'Damages', 'title' => 'Damaged goods entries'],
                     [
@@ -232,22 +254,36 @@ final class ReportNavigation
                 if (! $isSuperAdmin) {
                     $key = $item['key'];
                     $isGuide = $key === 'guide';
-                    $permissionAny = is_array($item['permission_any'] ?? null) ? $item['permission_any'] : null;
-                    if ($permissionAny !== null) {
-                        $hasAny = in_array('face-id', $allowedKeys, true);
-                        if (! $hasAny) {
-                            foreach ($permissionAny as $anyKey) {
-                                if (isset($allowed[$anyKey])) {
-                                    $hasAny = true;
-                                    break;
-                                }
+                    $permissionExact = is_array($item['permission_any_exact'] ?? null) ? $item['permission_any_exact'] : null;
+                    if ($permissionExact !== null) {
+                        $hasExact = false;
+                        foreach ($permissionExact as $exactKey) {
+                            if (is_string($exactKey) && isset($allowed[$exactKey])) {
+                                $hasExact = true;
+                                break;
                             }
                         }
-                        if (! $hasAny) {
+                        if (! $hasExact) {
                             continue;
                         }
-                    } elseif (! $isGuide && ! isset($allowed[$key])) {
-                        continue;
+                    } else {
+                        $permissionAny = is_array($item['permission_any'] ?? null) ? $item['permission_any'] : null;
+                        if ($permissionAny !== null) {
+                            $hasAny = in_array('face-id', $allowedKeys, true);
+                            if (! $hasAny) {
+                                foreach ($permissionAny as $anyKey) {
+                                    if (isset($allowed[$anyKey])) {
+                                        $hasAny = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (! $hasAny) {
+                                continue;
+                            }
+                        } elseif (! $isGuide && ! isset($allowed[$key])) {
+                            continue;
+                        }
                     }
                 }
                 $items[] = [
@@ -319,7 +355,7 @@ final class ReportNavigation
         return match (true) {
             str_starts_with($routeName, 'reports.dashboard-lab') => 'dashboard-lab',
             str_starts_with($routeName, 'reports.sales-item-average') => 'sales-item-average',
-            str_starts_with($routeName, 'reports.sales-by-item') => 'sales-by-item',
+            str_starts_with($routeName, 'reports.sales-by-item') => 'sales',
             str_starts_with($routeName, 'reports.sales-by-salesman') => 'sales-by-salesman',
             str_starts_with($routeName, 'reports.sales') => 'sales',
             str_starts_with($routeName, 'reports.storage-quantity') => 'storage-quantity',
@@ -331,6 +367,8 @@ final class ReportNavigation
             str_starts_with($routeName, 'reports.deliveries') => 'deliveries',
             str_starts_with($routeName, 'reports.invoices') => 'invoices',
             str_starts_with($routeName, 'reports.tasks') => 'tasks',
+            str_starts_with($routeName, 'reports.hr.employees') => 'hr-employees',
+            str_starts_with($routeName, 'reports.hr.leave') => 'hr-leave',
             str_starts_with($routeName, 'reports.it-work-log') => 'it-work-log',
             str_starts_with($routeName, 'reports.holidays') => 'holidays',
             str_starts_with($routeName, 'reports.governorates') => 'governorates',

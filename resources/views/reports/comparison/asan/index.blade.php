@@ -3,28 +3,21 @@
 
 @section('content')
 <header class="page-header"><h1>Comparison report</h1></header>
+<p class="hint">Choose one date range. Each calendar month inside it is compared. 1 Oct to 22 Nov compares October with 1–22 November. 1 Sep to 22 Nov compares September, October, and 1–22 November.</p>
 
     <form id="comparison-asan-filter-form" method="GET" action="{{ route('reports.comparison.asan.index') }}">
         <details class="filters-panel" open>
             <summary>Filters</summary>
                 <div class="filters-body">
-                    @include('reports.partials.quick-date-buttons', ['presets' => ['this-month-vs-last-month', 'last-30-vs-prior-30', 'this-month', 'last-30', 'last-month']])
+                    @include('reports.partials.quick-date-buttons', ['presets' => ['this-and-last-month', 'last-3-months', 'this-month', 'last-month', 'last-30']])
                     <div class="filters-grid">
         <div>
-            <label for="date_from_1">Period 1 from</label>
-            <input type="date" id="date_from_1" name="date_from_1" value="{{ $filters['date_from_1'] }}">
+            <label for="date_from">From</label>
+            <input type="date" id="date_from" name="date_from" value="{{ $filters['date_from'] }}">
         </div>
         <div>
-            <label for="date_to_1">Period 1 to</label>
-            <input type="date" id="date_to_1" name="date_to_1" value="{{ $filters['date_to_1'] }}">
-        </div>
-        <div>
-            <label for="date_from_2">Period 2 from</label>
-            <input type="date" id="date_from_2" name="date_from_2" value="{{ $filters['date_from_2'] }}">
-        </div>
-        <div>
-            <label for="date_to_2">Period 2 to</label>
-            <input type="date" id="date_to_2" name="date_to_2" value="{{ $filters['date_to_2'] }}">
+            <label for="date_to">To</label>
+            <input type="date" id="date_to" name="date_to" value="{{ $filters['date_to'] }}">
         </div>
         <div>
             <label for="city">City (optional)</label>
@@ -90,14 +83,16 @@
 
     @include('reports.partials.quick-date-buttons-script', [
         'formId' => 'comparison-asan-filter-form',
-        'fromId' => 'date_from_1',
-        'toId' => 'date_to_1',
-        'from2Id' => 'date_from_2',
-        'to2Id' => 'date_to_2',
+        'fromId' => 'date_from',
+        'toId' => 'date_to',
     ])
     @include('reports.partials.export-from-form-script', ['formId' => 'comparison-asan-filter-form', 'linkClass' => 'comparison-asan-export-link'])
 
-    @include('reports.comparison.partials.results-table')
+    @if (!empty($monthSummary))
+        <p class="hint">{{ $monthSummary }}</p>
+    @endif
+
+    @include('reports.comparison.partials.month-results-table')
 @endsection
 
 @push('styles')

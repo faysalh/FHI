@@ -40,6 +40,16 @@ class PdaController extends Controller
         ]));
     }
 
+    public function refreshCustomers(): RedirectResponse
+    {
+        $salesman = $this->requireSalesman();
+        $this->pda->forgetCustomerCatalog($salesman['user_id']);
+
+        return redirect()
+            ->route('reports.pda.index')
+            ->with('status', 'Customer list refreshed.');
+    }
+
     public function customer(string $customer): View|RedirectResponse
     {
         $salesman = $this->salesman();
@@ -182,6 +192,27 @@ class PdaController extends Controller
         }
 
         $input = $request->validated();
+        $signature = sha1(json_encode([
+            strtoupper($salesman['user_id']),
+            strtoupper($context['visit_id']),
+            (string) $input['kind'],
+            round((float) ($input['paid'] ?? 0), 2),
+            array_map(static fn (array $line): array => [
+                strtoupper((string) ($line['item_id'] ?? '')),
+                strtoupper((string) ($line['unit_row_id'] ?? '')),
+                round((float) ($line['qty'] ?? 0), 3),
+            ], array_values($input['lines'] ?? [])),
+        ], JSON_THROW_ON_ERROR));
+        $recent = $request->session()->get('pda_voucher_submit');
+        if (is_array($recent) && ($recent['key'] ?? '') === $signature && (int) ($recent['until'] ?? 0) >= time()) {
+            return redirect()
+                ->route('reports.pda.visits.show', ['visit' => $context['visit_id']])
+                ->with('status', 'Voucher saved. It stays unposted until PDA sync runs.');
+        }
+
+        $latitude = isset($input['lat']) && $input['lat'] !== '' ? (float) $input['lat'] : null;
+        $longitude = isset($input['lng']) && $input['lng'] !== '' ? (float) $input['lng'] : null;
+
         try {
             $this->pda->saveVoucher(
                 $salesman,
@@ -191,8 +222,8 @@ class PdaController extends Controller
                 (float) ($input['paid'] ?? 0),
                 (float) ($input['discount'] ?? 0),
                 (string) ($input['notes'] ?? ''),
-                (float) $input['lat'],
-                (float) $input['lng'],
+                $latitude,
+                $longitude,
                 isset($input['accuracy']) ? (float) $input['accuracy'] : null,
                 array_values($input['lines'] ?? []),
                 ReportAuthSession::canAccessReport('pda-zero-stock'),
@@ -201,9 +232,18 @@ class PdaController extends Controller
             return back()->withInput()->withErrors(['pda' => $e->getMessage()]);
         }
 
+        $request->session()->put('pda_voucher_submit', [
+            'key' => $signature,
+            'until' => time() + 30,
+        ]);
+
+        $status = $latitude === null
+            ? 'Voucher saved without a location. It stays unposted until PDA sync runs.'
+            : 'Voucher saved. It stays unposted until PDA sync runs.';
+
         return redirect()
             ->route('reports.pda.visits.show', ['visit' => $context['visit_id']])
-            ->with('status', 'Voucher saved. It stays unposted until PDA sync runs.');
+            ->with('status', $status);
     }
 
     public function items(Request $request): View
@@ -440,6 +480,21 @@ class PdaController extends Controller
 
         return view('reports.pda.unposted', $this->page($salesman, [
             'vouchers' => $this->guarded(fn (): array => $this->pda->unposted($salesman['user_id']), []),
+        ]));
+    }
+
+    public function today(): View
+    {
+        $salesman = $this->salesman();
+        if ($salesman instanceof View) {
+            return $salesman;
+        }
+
+        $day = now()->toDateString();
+
+        return view('reports.pda.today', $this->page($salesman, [
+            'dayLabel' => now()->format('Y-m-d'),
+            'vouchers' => $this->guarded(fn (): array => $this->pda->vouchersOnDay($salesman['user_id'], $day), []),
         ]));
     }
 

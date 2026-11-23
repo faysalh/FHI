@@ -87,24 +87,38 @@ final class WorkingDays
     }
 
     /**
-     * @return list<string> Y-m-d holiday dates for years touched by the range (plus env extras).
+     * Holiday dates inside an inclusive range. The keys are the Y-m-d values;
+     * sorting the true/false flags used to drop the dates themselves.
+     *
+     * @return list<string>
      */
     public static function holidayDatesBetween(CarbonInterface $start, CarbonInterface $end): array
     {
         $start = $start->copy()->startOfDay();
         $end = $end->copy()->startOfDay();
-        $years = range((int) $start->year, (int) $end->year);
-        $dates = [];
+        if ($start->gt($end)) {
+            [$start, $end] = [$end->copy(), $start->copy()];
+        }
 
-        foreach ($years as $year) {
+        $dates = [];
+        foreach (range((int) $start->year, (int) $end->year) as $year) {
             foreach (self::configuredHolidayDatesForYear($year) as $d) {
-                $dates[$d] = true;
+                try {
+                    $day = Carbon::parse($d)->startOfDay();
+                } catch (Throwable) {
+                    continue;
+                }
+                if ($day->lt($start) || $day->gt($end)) {
+                    continue;
+                }
+                $dates[$day->toDateString()] = true;
             }
         }
 
-        sort($dates);
+        $keys = array_keys($dates);
+        sort($keys);
 
-        return $dates;
+        return $keys;
     }
 
     /**

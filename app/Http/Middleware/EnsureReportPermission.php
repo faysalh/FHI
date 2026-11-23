@@ -61,6 +61,20 @@ class EnsureReportPermission
             return $next($request);
         }
 
+        if ($reportKey === 'hr-leave') {
+            if (! ReportAuthSession::canAccessReport('hr-leave') && ! ReportAuthSession::canAccessReport('hr-leave-approve')) {
+                abort(403, 'You do not have access to this report.');
+            }
+
+            return $next($request);
+        }
+
+        if ($reportKey === 'sales'
+            && ! ReportAuthSession::canAccessReport('sales')
+            && ReportAuthSession::canAccessReport('sales-by-item')) {
+            return $next($request);
+        }
+
         if ($reportKey !== '' && ! ReportAuthSession::canAccessReport($reportKey)) {
             abort(403, 'You do not have access to this report.');
         }

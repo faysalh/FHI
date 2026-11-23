@@ -974,7 +974,7 @@ if (-not $installInPlace) {
     if (Test-Path $InstallPath) {
         if ($isUpgradeCopy) {
             Write-Host '  Existing installation detected - upgrading in place.' -ForegroundColor Yellow
-            Write-Host '  Preserving: .env, database\*.sqlite, storage\app\sqlite-backups\' -ForegroundColor Yellow
+            Write-Host '  Preserving: .env, database\*.sqlite, storage\app\sqlite-backups\, ReportingApp-RootCA.cer' -ForegroundColor Yellow
             if ([string]::IsNullOrWhiteSpace($upgradeBackupDir)) {
                 $upgradeBackupDir = Backup-InstallSqlite -InstallPath $InstallPath
             }
@@ -996,7 +996,7 @@ if (-not $installInPlace) {
         $PackageRoot, $InstallPath,
         '/MIR',
         '/XD', 'node_modules', '.git', 'dist', 'storage\app\sqlite-backups',
-        '/XF', '.env', 'sqlite-auto-backup.json', 'pda-auto-sync.json', '*.sqlite', '*.sqlite-wal', '*.sqlite-shm', '*.sqlite-journal',
+        '/XF', '.env', 'sqlite-auto-backup.json', 'pda-auto-sync.json', 'ReportingApp-RootCA.cer', '*.sqlite', '*.sqlite-wal', '*.sqlite-shm', '*.sqlite-journal',
         '/NFL', '/NDL', '/NJH', '/NJS', '/nc', '/ns', '/np',
         '/R:2', '/W:1',
         "/LOG:$robocopyLog"

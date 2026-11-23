@@ -353,6 +353,10 @@ return [
             'label' => 'Client payment suspensions',
             'connection' => 'client_suspensions_sqlite',
         ],
+        'hr' => [
+            'label' => 'Employees and leave',
+            'connection' => 'hr_sqlite',
+        ],
     ],
 
 ];

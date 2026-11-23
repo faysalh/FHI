@@ -159,6 +159,20 @@ class PdaWorkspaceService
     }
 
     /**
+     * Drop this salesman's customer list so the next open reads it again.
+     * A browser reload alone keeps the cached list for a few minutes.
+     */
+    public function forgetCustomerCatalog(string $salesmanUserId): void
+    {
+        $userId = $this->guid($salesmanUserId);
+        if ($userId === '') {
+            return;
+        }
+
+        Cache::forget('pda.customers.v3.'.$userId);
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
     public function customer(string $salesmanUserId, string $customerId): ?array
@@ -485,6 +499,39 @@ class PdaWorkspaceService
     }
 
     /**
+     * Vouchers this salesperson created on one calendar day. Posted and unposted are both included.
+     *
+     * @return list<object>
+     */
+    public function vouchersOnDay(string $salesmanUserId, string $day): array
+    {
+        $start = \Illuminate\Support\Carbon::parse($day)->startOfDay();
+
+        return $this->read(
+            'SELECT CAST(p.fld_voucher_id AS nvarchar(36)) AS voucher_id,
+                    p.fld_no, p.fld_voucher_Type, p.fld_date, p.fld_total, p.fld_paid, p.fld_customer_name, p.fld_notes,
+                    ISNULL(p.fld_is_posted, 0) AS fld_is_posted
+             FROM dbo.tbl_pda_store_title AS p
+             WHERE p.fld_user_id = ?
+               AND ISNULL(p.fld_is_canceled, 0) = 0
+               AND p.fld_date >= ?
+               AND p.fld_date < ?
+               AND NOT EXISTS (
+                    SELECT 1
+                    FROM dbo.tbl_store_document_titles AS d
+                    WHERE d.fld_pda_voucher_id_ref = p.fld_voucher_id
+                      AND ISNULL(d.fld_is_cancelled, 0) = 1
+               )
+             ORDER BY p.fld_date DESC',
+            [
+                $this->guid($salesmanUserId),
+                $start->toDateTimeString(),
+                $start->copy()->addDay()->toDateTimeString(),
+            ]
+        );
+    }
+
+    /**
      * @return array{visit_id: string, start_date: string}|null
      */
     public function openVisit(string $salesmanUserId, string $customerId): ?array
@@ -566,8 +613,8 @@ class PdaWorkspaceService
         float $paid,
         float $headerDiscount,
         string $notes,
-        float $latitude,
-        float $longitude,
+        ?float $latitude,
+        ?float $longitude,
         ?float $accuracy,
         array $lines,
         bool $allowZeroStock = false,
@@ -576,7 +623,13 @@ class PdaWorkspaceService
         if ($blocked !== null) {
             throw new RuntimeException($blocked);
         }
-        $this->assertCoordinates($latitude, $longitude);
+        $hasLocation = $latitude !== null && $longitude !== null;
+        if (! $hasLocation && ($latitude !== null || $longitude !== null)) {
+            throw new RuntimeException('Location permission is required before this can be saved.');
+        }
+        if ($hasLocation) {
+            $this->assertCoordinates($latitude, $longitude);
+        }
         $visitId = $this->guid($visitId);
         $this->assertOwnVisit($salesman['user_id'], $visitId);
         $type = match ($kind) {
@@ -656,14 +709,16 @@ class PdaWorkspaceService
 
         $write = $this->write();
         try {
-            $write->transaction(function () use ($write, $voucherId, $logId, $now, $salesman, $customer, $visitId, $type, $paid, $headerDiscount, $note, $latitude, $longitude, $number, $total, $normalized, $accountPriceGroup): void {
-                $write->insert(
-                    'INSERT INTO dbo.tbl_pda_coordination_logs (
-                        fld_log_id, fld_lat, fld_long, fld_type, fld_visit_id, fld_date, fld_server_date,
-                        fld_user_id_ref, sync_id, sync_created, sync_last_updated
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                    [$logId, $latitude, $longitude, 'web', $visitId, $now, $now, $salesman['user_id'], $this->newGuid(), $now, $now]
-                );
+            $write->transaction(function () use ($write, $voucherId, $logId, $now, $salesman, $customer, $visitId, $type, $paid, $headerDiscount, $note, $latitude, $longitude, $hasLocation, $number, $total, $normalized, $accountPriceGroup): void {
+                if ($hasLocation) {
+                    $write->insert(
+                        'INSERT INTO dbo.tbl_pda_coordination_logs (
+                            fld_log_id, fld_lat, fld_long, fld_type, fld_visit_id, fld_date, fld_server_date,
+                            fld_user_id_ref, sync_id, sync_created, sync_last_updated
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                        [$logId, $latitude, $longitude, 'web', $visitId, $now, $now, $salesman['user_id'], $this->newGuid(), $now, $now]
+                    );
+                }
                 $write->insert(
                     'INSERT INTO dbo.tbl_pda_store_title (
                         fld_voucher_id, fld_customer_id, fld_date, fld_discount, fld_paid, fld_total, fld_voucher_Type,
@@ -728,23 +783,25 @@ class PdaWorkspaceService
             throw new RuntimeException('Could not save the voucher.', 0, $e);
         }
 
-        try {
-            $this->locations->record(
-                $voucherId,
-                $salesman['user_id'],
-                $salesman['account_id'],
-                $salesman['name'],
-                $customer['id'],
-                $customer['name'],
-                $kind,
-                $latitude,
-                $longitude,
-                $accuracy,
-            );
-        } catch (Throwable $e) {
-            Log::error('pda.location_copy_failed', ['voucher_id' => $voucherId, 'message' => $e->getMessage()]);
-            $this->deleteUnpostedVoucher($voucherId, $logId);
-            throw new RuntimeException('The location could not be stored, so the voucher was not kept.');
+        if ($hasLocation) {
+            try {
+                $this->locations->record(
+                    $voucherId,
+                    $salesman['user_id'],
+                    $salesman['account_id'],
+                    $salesman['name'],
+                    $customer['id'],
+                    $customer['name'],
+                    $kind,
+                    $latitude,
+                    $longitude,
+                    $accuracy,
+                );
+            } catch (Throwable $e) {
+                Log::error('pda.location_copy_failed', ['voucher_id' => $voucherId, 'message' => $e->getMessage()]);
+                $this->deleteUnpostedVoucher($voucherId, $logId);
+                throw new RuntimeException('The location could not be stored, so the voucher was not kept.');
+            }
         }
 
         return $voucherId;

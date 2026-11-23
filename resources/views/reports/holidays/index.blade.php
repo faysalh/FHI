@@ -6,8 +6,8 @@
     <h1>Holidays &amp; Eid</h1>
 </header>
 <p class="hint">
-        Dates listed here are treated as <strong>non-working days</strong> in dashboard calculations (along with every Friday).
-        Used for month projections and daily averages on the <a href="{{ route('reports.dashboard-lab.index') }}">Dashboard</a>.
+        Dates listed here are treated as <strong>non-working days</strong>, along with every Friday.
+        <a href="{{ route('reports.dashboard-lab.index') }}">Dashboard</a> projections and leave requests both skip them.
     </p>
 
 @if (session('status'))

@@ -11,4 +11,5 @@
     @endif
     <a href="{{ route('reports.pda.questionnaires') }}" @class(['is-active' => request()->routeIs('reports.pda.questionnaires', 'reports.pda.questionnaires.show')])>Questions</a>
     <a href="{{ route('reports.pda.unposted') }}" @class(['is-active' => request()->routeIs('reports.pda.unposted')])>Unposted</a>
+    <a href="{{ route('reports.pda.today') }}" @class(['is-active' => request()->routeIs('reports.pda.today')])>Today</a>
 </nav>

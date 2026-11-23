@@ -227,7 +227,9 @@ class FaceIdAttendanceTest extends TestCase
 
         $this->get("/attendance/{$token}")
             ->assertOk()
-            ->assertSee('Attendance kiosk', false);
+            ->assertSee('Attendance kiosk', false)
+            ->assertSee('id="kiosk-guide"', false)
+            ->assertSee('kiosk-guide-chin', false);
     }
 
     public function test_unknown_descriptor_is_not_logged(): void

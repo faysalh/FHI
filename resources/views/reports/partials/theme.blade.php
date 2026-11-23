@@ -290,18 +290,26 @@
     .info-panel { margin-bottom: 16px; }
     .report-how-to-link-wrap { margin: 0 0 12px; }
     .page-header .report-how-to-link-wrap { margin: 0; }
+    .report-how-to-link-wrap form { margin: 0; }
     .report-how-to-link {
         display: inline-flex;
         align-items: center;
         gap: 6px;
+        font-family: inherit;
         font-size: 13px;
         font-weight: 600;
+        line-height: 1.2;
         text-decoration: none;
         padding: 6px 12px;
         border-radius: 6px;
         background: #eef2ff;
         border: 1px solid #c7d2fe;
         color: #4338ca;
+        cursor: pointer;
+    }
+    button.report-how-to-link:disabled {
+        opacity: 0.7;
+        cursor: wait;
     }
     .page-header .report-how-to-link {
         background: rgba(255, 255, 255, 0.14);

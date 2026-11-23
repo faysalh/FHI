@@ -13,6 +13,9 @@
     }
 
     var video = document.getElementById('kiosk-video');
+    var stage = document.getElementById('kiosk-stage');
+    var guide = document.getElementById('kiosk-guide');
+    var punchEl = document.getElementById('kiosk-punch');
     var statusEl = document.getElementById('kiosk-status');
     var debugEl = document.getElementById('kiosk-debug');
     var detector = null;
@@ -28,7 +31,70 @@
     var holdingResult = false;
     var latestFaceStatus = '';
     var debugMode = /[?&]debug=1(?:&|$)/.test(window.location.search);
+    var lastGuideInfo = null;
     var LOCATION_FRESH_MS = 120000;
+    var GUIDE_WIDTH_RATIO = 0.62;
+    var GUIDE_HEIGHT_RATIO = 0.74;
+
+    function punchWindow() {
+        var hourText = new Intl.DateTimeFormat('en-GB', {
+            timeZone: 'Asia/Baghdad',
+            hour: '2-digit',
+            hourCycle: 'h23'
+        }).format(new Date());
+        var hour = parseInt(hourText, 10);
+        return (hour >= 5 && hour < 11) ? 'in' : 'out';
+    }
+
+    function placeGuide() {
+        if (!guide || !stage || !video) return;
+        var vw = video.videoWidth;
+        var vh = video.videoHeight;
+        var boxW = stage.clientWidth;
+        var boxH = stage.clientHeight;
+        if (vw <= 0 || vh <= 0 || boxW <= 0 || boxH <= 0) return;
+        var scale = Math.max(boxW / vw, boxH / vh);
+        var dispW = vw * scale;
+        var dispH = vh * scale;
+        var offsetX = (boxW - dispW) / 2;
+        var offsetY = (boxH - dispH) / 2;
+        guide.style.left = (offsetX + ((vw - (vw * GUIDE_WIDTH_RATIO)) / 2) * scale) + 'px';
+        guide.style.top = (offsetY + ((vh - (vh * GUIDE_HEIGHT_RATIO)) / 2) * scale) + 'px';
+        guide.style.width = (vw * GUIDE_WIDTH_RATIO * scale) + 'px';
+        guide.style.height = (vh * GUIDE_HEIGHT_RATIO * scale) + 'px';
+        guide.hidden = false;
+    }
+
+    function paintGuide(info) {
+        if (!guide) return;
+        if (info) lastGuideInfo = info;
+        info = info || lastGuideInfo;
+        var mode = punchWindow();
+        var state = 'is-search';
+        if (scanning || (info && info.ready)) {
+            state = 'is-ready';
+        } else if (info && info.detectionCount) {
+            state = 'is-warn';
+        }
+        var nudge = '';
+        var align = info && info.alignment ? info.alignment : null;
+        if (align && state !== 'is-ready') {
+            // The preview is mirrored, so a raw left offset appears on the right.
+            if (align.dx === -1) nudge += ' is-nudge-left';
+            if (align.dx === 1) nudge += ' is-nudge-right';
+            if (align.dy === -1) nudge += ' is-nudge-down';
+            if (align.dy === 1) nudge += ' is-nudge-up';
+            if (align.size === -1) nudge += ' is-closer';
+            if (align.size === 1) nudge += ' is-farther';
+        }
+        guide.className = 'kiosk-guide is-' + mode + ' ' + state + nudge;
+        if (punchEl) {
+            punchEl.textContent = mode === 'in'
+                ? (config.labels.clockInWindow || 'Clock in')
+                : (config.labels.clockOutWindow || 'Clock out');
+            punchEl.className = 'kiosk-punch' + (mode === 'out' ? ' is-out' : '');
+        }
+    }
 
     function setStatus(text, className) {
         if (!statusEl) return;
@@ -330,6 +396,13 @@
         modelsUrl: config.modelsUrl,
         video: video,
         overlay: null,
+        guideWidthRatio: GUIDE_WIDTH_RATIO,
+        guideHeightRatio: GUIDE_HEIGHT_RATIO,
+        videoConstraints: {
+            facingMode: { ideal: 'user' },
+            width: { ideal: 1080 },
+            height: { ideal: 1440 }
+        },
         onStatus: function (text) {
             latestFaceStatus = text || '';
             if (debugMode) setDebug(text);
@@ -338,11 +411,21 @@
         },
         onReadyChange: function () {},
         onDebug: function (info) {
+            placeGuide();
+            paintGuide(info);
             if (debugMode) {
                 setDebug('Score ' + (info.score || 0).toFixed(2) + ' | ' + (info.detectionCount || 0) + ' face(s)');
             }
         }
     });
+
+    paintGuide(null);
+    if (video) video.addEventListener('loadedmetadata', placeGuide);
+    window.addEventListener('resize', placeGuide);
+    if (window.ResizeObserver && stage) {
+        new ResizeObserver(placeGuide).observe(stage);
+    }
+    setInterval(function () { paintGuide(lastGuideInfo); }, 30000);
 
     beginLocation();
     setTimeout(startCamera, 400);

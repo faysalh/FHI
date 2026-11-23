@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Exports\ComparisonReportExport;
-use App\Http\Controllers\Concerns\BuildsComparisonPeriodView;
-use App\Http\Requests\ComparisonReportRequest;
+use App\Http\Requests\ComparisonAsanReportRequest;
 use App\Repositories\ComparisonAsanReportRepository;
 use App\Repositories\VisitsReportRepository;
 use App\Services\CitiesGovernorateSqliteService;
 use App\Services\ReportAssemblyPriorityService;
+use App\Support\ComparisonMonthRows;
+use App\Support\ComparisonMonthSpan;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -22,8 +23,6 @@ use Throwable;
 
 class ComparisonAsanReportController extends Controller
 {
-    use BuildsComparisonPeriodView;
-
     public function __construct(
         private readonly ComparisonAsanReportRepository $repository,
         private readonly VisitsReportRepository $visitsRepository,
@@ -31,14 +30,14 @@ class ComparisonAsanReportController extends Controller
         private readonly ReportAssemblyPriorityService $assemblyPriorityService
     ) {}
 
-    public function index(ComparisonReportRequest $request): View
+    public function index(ComparisonAsanReportRequest $request): View
     {
         $viewData = $this->buildViewData($request);
 
         return view('reports.comparison.asan.index', $viewData);
     }
 
-    public function exportPdf(ComparisonReportRequest $request): Response|RedirectResponse
+    public function exportPdf(ComparisonAsanReportRequest $request): Response|RedirectResponse
     {
         $viewData = $this->buildViewData($request);
         if (($viewData['errorMessage'] ?? null) !== null) {
@@ -51,7 +50,7 @@ class ComparisonAsanReportController extends Controller
         return $pdf->download('comparison-asan-report.pdf');
     }
 
-    public function exportCsv(ComparisonReportRequest $request): BinaryFileResponse|RedirectResponse
+    public function exportCsv(ComparisonAsanReportRequest $request): BinaryFileResponse|RedirectResponse
     {
         $viewData = $this->buildViewData($request);
         if (($viewData['errorMessage'] ?? null) !== null) {
@@ -59,7 +58,12 @@ class ComparisonAsanReportController extends Controller
                 ->with('error', 'Could not export CSV.');
         }
 
-        [$headings, $rows] = $this->buildExportRows($viewData);
+        [$headings, $rows] = ComparisonMonthRows::export(
+            $viewData['months'],
+            $viewData['groupedRows'],
+            $viewData['totals'],
+            $viewData['filters']['metrics']
+        );
 
         return Excel::download(
             new ComparisonReportExport($rows, $headings),
@@ -71,13 +75,12 @@ class ComparisonAsanReportController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function buildViewData(ComparisonReportRequest $request): array
+    private function buildViewData(ComparisonAsanReportRequest $request): array
     {
         $input = $request->validated();
-        $dateFrom1 = (string) $input['date_from_1'];
-        $dateTo1 = (string) $input['date_to_1'];
-        $dateFrom2 = (string) $input['date_from_2'];
-        $dateTo2 = (string) $input['date_to_2'];
+        $dateFrom = (string) $input['date_from'];
+        $dateTo = (string) $input['date_to'];
+        $months = ComparisonMonthSpan::between($dateFrom, $dateTo);
         $salesmanId = trim((string) ($input['salesman_id'] ?? ''));
         $city = trim((string) ($input['city'] ?? ''));
         $savedGovernorateId = (int) ($input['saved_governorate_id'] ?? 0);
@@ -128,16 +131,21 @@ class ComparisonAsanReportController extends Controller
         $branding = InvoiceBrandingSettingsController::getSettings();
         $effectiveExclude = $excludeCategory !== '' ? $excludeCategory : null;
         try {
-            $period1Rows = $this->repository->getItemRows($dateFrom1, $dateTo1, $citiesFilter, $salesmanId !== '' ? $salesmanId : null, $effectiveExclude);
-            $period2Rows = $this->repository->getItemRows($dateFrom2, $dateTo2, $citiesFilter, $salesmanId !== '' ? $salesmanId : null, $effectiveExclude);
-            $comparisonRows = $this->mergePeriodRows($period1Rows, $period2Rows);
+            $rowsByMonth = [];
+            foreach ($months as $month) {
+                $rowsByMonth[$month['key']] = $this->repository->getItemRows(
+                    $month['from'],
+                    $month['to'],
+                    $citiesFilter,
+                    $salesmanId !== '' ? $salesmanId : null,
+                    $effectiveExclude
+                );
+            }
+            $comparisonRows = ComparisonMonthRows::merge($months, $rowsByMonth);
             $comparisonRows = $this->assemblyPriorityService->sortRows($comparisonRows, 'category_name', 'item_name');
-
-            $allDates = [$dateFrom1, $dateTo1, $dateFrom2, $dateTo2];
-            sort($allDates);
             $categoryOptions = $this->repository->getCategoryOptions(
-                $allDates[0],
-                $allDates[3],
+                $dateFrom,
+                $dateTo,
                 $citiesFilter,
                 $salesmanId !== '' ? $salesmanId : null
             );
@@ -146,18 +154,22 @@ class ComparisonAsanReportController extends Controller
             $errorMessage = 'Unable to load Asan comparison report. Check logs and try again.';
         }
 
+        $groupedRows = $comparisonRows === [] ? [] : ComparisonMonthRows::grouped($comparisonRows, $months);
+        $totals = $comparisonRows === [] ? [] : ComparisonMonthRows::totals($comparisonRows, $months);
+
         return [
             'filters' => [
-                'date_from_1' => $dateFrom1,
-                'date_to_1' => $dateTo1,
-                'date_from_2' => $dateFrom2,
-                'date_to_2' => $dateTo2,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
                 'salesman_id' => $salesmanId,
                 'city' => $city,
                 'saved_governorate_id' => $savedGovernorateId > 0 ? $savedGovernorateId : '',
                 'metrics' => $metrics,
                 'exclude_category' => $excludeCategory,
             ],
+            'months' => $months,
+            'monthSummary' => ComparisonMonthSpan::summary($months),
+            'changeLabel' => ComparisonMonthSpan::changeLabel($months),
             'salesmanLabel' => $salesmanLabel,
             'governorateLabel' => $governorateLabel,
             'cityOptions' => $cityOptions,
@@ -165,8 +177,8 @@ class ComparisonAsanReportController extends Controller
             'savedGovernorates' => $savedGovernorates,
             'categoryOptions' => $categoryOptions,
             'rows' => $comparisonRows,
-            'groupedRows' => $this->groupRowsByCategoryWithGrowth($comparisonRows),
-            'totals' => $this->enrichTotalsWithGrowth($this->calculateTotals($comparisonRows)),
+            'groupedRows' => $groupedRows,
+            'totals' => $totals,
             'activeComparisonTab' => 'asan',
             ...\App\Support\ReportPdfBranding::viewData($branding),
             'errorMessage' => $errorMessage,

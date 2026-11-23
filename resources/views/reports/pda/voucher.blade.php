@@ -62,7 +62,7 @@
     @else
         <header class="page-header">
             <h1>{{ $titles[$kind] ?? 'Voucher' }}</h1>
-            <p class="hint">{{ $customer['name'] }} · price group {{ $priceGroup }}. Location is required.</p>
+            <p class="hint">{{ $customer['name'] }} · price group {{ $priceGroup }}. Location is saved when the phone can read it.</p>
         </header>
         @include('reports.pda.partials.subnav')
     @endif

@@ -142,17 +142,21 @@
             return Promise.reject(new Error('Camera API not available. Use HTTPS or localhost.'));
         }
         var attempts = [
-            {
+            { video: { facingMode: 'user' }, audio: false },
+            { video: true, audio: false }
+        ];
+        if (this.options.videoConstraints) {
+            attempts.unshift({ video: this.options.videoConstraints, audio: false });
+        } else {
+            attempts.unshift({
                 video: {
                     facingMode: 'user',
                     width: { ideal: 1280 },
                     height: { ideal: 960 }
                 },
                 audio: false
-            },
-            { video: { facingMode: 'user' }, audio: false },
-            { video: true, audio: false }
-        ];
+            });
+        }
         var self = this;
         function tryIndex(i) {
             if (i >= attempts.length) {
@@ -320,6 +324,43 @@
         return cx >= left && cx <= left + guideW && cy >= top && cy <= top + guideH;
     };
 
+    FaceIdDetector.prototype._faceAlignment = function (box) {
+        if (!this.video || !box) {
+            return null;
+        }
+        var vw = this.video.videoWidth;
+        var vh = this.video.videoHeight;
+        if (vw <= 0 || vh <= 0) {
+            return null;
+        }
+        var cx = box.x + (box.width / 2);
+        var cy = box.y + (box.height / 2);
+        var guideW = vw * this.options.guideWidthRatio;
+        var guideH = vh * this.options.guideHeightRatio;
+        var left = (vw - guideW) / 2;
+        var top = (vh - guideH) / 2;
+        var dx = 0;
+        var dy = 0;
+        if (cx < left) {
+            dx = -1;
+        } else if (cx > left + guideW) {
+            dx = 1;
+        }
+        if (cy < top) {
+            dy = -1;
+        } else if (cy > top + guideH) {
+            dy = 1;
+        }
+        var ratio = box.width / vw;
+        var size = 0;
+        if (ratio < this.options.minFaceWidthRatio) {
+            size = -1;
+        } else if (ratio > this.options.maxFaceWidthRatio) {
+            size = 1;
+        }
+        return { dx: dx, dy: dy, size: size };
+    };
+
     FaceIdDetector.prototype._faceSizeReason = function (box) {
         if (!this.video || this.video.videoWidth <= 0) {
             return 'Face size unavailable';
@@ -402,6 +443,11 @@
             }
         }
 
+        var alignment = null;
+        if (detections.length === 1 && detections[0].detection && detections[0].detection.box) {
+            alignment = this._faceAlignment(detections[0].detection.box);
+        }
+
         this._setReady(ready, reason);
         this.onStatus(status, tone);
         this.onDebug({
@@ -411,7 +457,8 @@
             videoWidth: this.video ? this.video.videoWidth : 0,
             videoHeight: this.video ? this.video.videoHeight : 0,
             fps: this._fps,
-            ready: ready
+            ready: ready,
+            alignment: alignment
         });
     };
 

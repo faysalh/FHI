@@ -16,6 +16,7 @@
             <nav class="pda-focus-nav" aria-label="Selling">
                 <a href="{{ route('reports.pda.index') }}" @class(['pda-focus-link', 'is-active' => request()->routeIs('reports.pda.index', 'reports.pda.customers.show', 'reports.pda.visits.show', 'reports.pda.vouchers.create')])>Customers</a>
                 <a href="{{ route('reports.pda.unposted') }}" @class(['pda-focus-link', 'is-active' => request()->routeIs('reports.pda.unposted')])>Unposted</a>
+                <a href="{{ route('reports.pda.today') }}" @class(['pda-focus-link', 'is-active' => request()->routeIs('reports.pda.today')])>Today</a>
             </nav>
         @else
         <button
